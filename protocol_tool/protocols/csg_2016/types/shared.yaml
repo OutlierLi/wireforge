@@ -1,0 +1,21 @@
+# CSG 2016 共享类型定义
+energy_4:
+  type: bcd_numeric
+  length: 4
+  format: "XXXXXX.XX"
+  unit: "kWh"
+  signed: false
+
+voltage_2:
+  type: bcd_numeric
+  length: 2
+  format: "XXX.X"
+  unit: "V"
+  signed: false
+
+current_3:
+  type: bcd_numeric
+  length: 3
+  format: "XXX.XXX"
+  unit: "A"
+  signed: true

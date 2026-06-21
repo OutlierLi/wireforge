@@ -1,0 +1,53 @@
+# DL/T 645-2007 读数据报文
+# control.func=0x11 → 读数据
+
+messages:
+  - kind: message
+    id: read_data_request
+    router: main
+    match:
+      control.func: 0x11
+      control.dir: 0
+    direction: request
+    body:
+      type: struct
+      fields:
+        - name: di
+          type: hex
+          length: 4
+          byte_order: little
+          description: "数据标识 DI0-DI3"
+
+        - name: di_data
+          type: routed_payload
+          router: read_data_response_di
+          length_from: length
+          length_adjust: -1  # 减去 DI 的长度
+          description: "DI 后续数据"
+
+  - kind: message
+    id: read_data_response
+    router: main
+    match:
+      control.func: 0x11
+      control.dir: 1
+    direction: response
+    body:
+      type: struct
+      fields:
+        - name: di
+          type: hex
+          length: 4
+          byte_order: little
+          description: "数据标识 DI0-DI3"
+
+        - name: di_data
+          type: routed_payload
+          router: read_data_response_di
+          selector:
+            field: di
+          boundary:
+            kind: remaining
+          on_unknown:
+            kind: raw
+          description: "DI 对应的数据"

@@ -1,0 +1,26 @@
+# DL/T 645-2007 DI=00010001 — 月冻结时间
+kind: variant
+id: dlt645_2007.read_data_response.monthly_freeze_time
+router: read_data_response_di
+
+match:
+  di: "00010001"
+
+body:
+  type: struct
+  fields:
+    - name: freeze_year
+      type: bcd
+      length: 1
+
+    - name: freeze_month
+      type: bcd
+      length: 1
+
+    - name: freeze_day
+      type: bcd
+      length: 1
+
+    - name: freeze_hour
+      type: bcd
+      length: 1

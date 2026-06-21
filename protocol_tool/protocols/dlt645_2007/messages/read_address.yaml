@@ -1,0 +1,35 @@
+# DL/T 645-2007 读通信地址报文
+# control.func=0x13 → 读通信地址
+
+messages:
+  - kind: message
+    id: read_address_request
+    router: main
+    match:
+      control.func: 0x13
+      control.dir: 0
+    direction: request
+    body:
+      type: struct
+      fields:
+        - name: reserved
+          type: hex
+          length: 4
+          description: "保留数据(AA AA AA AA)"
+
+  - kind: message
+    id: read_address_response
+    router: main
+    match:
+      control.func: 0x13
+      control.dir: 1
+    direction: response
+    body:
+      type: struct
+      fields:
+        - name: address_data
+          type: bcd
+          length: 6
+          byte_order: little
+          canonical_format: decimal_string
+          description: "通信地址"

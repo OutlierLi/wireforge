@@ -1,0 +1,33 @@
+# CSG 2016 协议包入口和路由声明
+id: csg_2016
+name: "CSG 2016 Meter Communication Protocol"
+version: "2016"
+
+frame_ref: frame.yaml
+
+sources:
+  messages: "messages/**/*.yaml"
+  variants: "variants/**/*.yaml"
+  types: "types/**/*.yaml"
+
+routers:
+  main:
+    kind: frame_router
+    keys:
+      - control.func
+    fallback: raw
+
+  afn_di_router:
+    kind: variant_router
+    keys:
+      - afn
+      - di
+    fallback: raw
+
+build:
+  default_frame: csg_2016.frame
+
+policies:
+  unknown_message: preserve_payload
+  unknown_variant: raw
+  strict_route_uniqueness: true

@@ -1,0 +1,182 @@
+{
+  "version": 1,
+  "protocol": "csg_2016",
+  "name": "CSG 2016 Meter Communication Protocol",
+  "frame": {
+    "id": "csg_2016.frame",
+    "fields": [
+      {
+        "id": "csg_2016.frame.start",
+        "name": "start",
+        "type_ref": "const",
+        "params": {
+          "value": 104,
+          "description": "帧起始符"
+        }
+      },
+      {
+        "id": "csg_2016.frame.total_length",
+        "name": "total_length",
+        "type_ref": "uint16_le",
+        "params": {
+          "description": "帧总长度(含起始符和结束符)"
+        }
+      },
+      {
+        "id": "csg_2016.frame.control",
+        "name": "control",
+        "type_ref": "bitset",
+        "params": {
+          "bits": [
+            {
+              "name": "dir",
+              "offset": 7,
+              "width": 1,
+              "description": "传输方向(0=下行,1=上行)"
+            },
+            {
+              "name": "prm",
+              "offset": 6,
+              "width": 1,
+              "description": "启动标志(0=从动,1=主动)"
+            },
+            {
+              "name": "add",
+              "offset": 5,
+              "width": 1,
+              "description": "地址域标志(0=无地址域,1=有地址域)"
+            },
+            {
+              "name": "func",
+              "bits": [
+                4,
+                3,
+                2,
+                1,
+                0
+              ],
+              "description": "功能码"
+            }
+          ]
+        }
+      },
+      {
+        "id": "csg_2016.frame.user_data",
+        "name": "user_data",
+        "type_ref": "routed_payload",
+        "params": {
+          "router": "main",
+          "length_from": "total_length",
+          "length_adjust": -6,
+          "description": "用户数据区"
+        },
+        "length_from": "total_length",
+        "length_adjust": -6
+      },
+      {
+        "id": "csg_2016.frame.checksum",
+        "name": "checksum",
+        "type_ref": "sum8",
+        "params": {
+          "algorithm": "sum8",
+          "cover": [
+            "control",
+            "user_data"
+          ],
+          "description": "校验和(控制域+用户数据区模256)"
+        }
+      },
+      {
+        "id": "csg_2016.frame.end",
+        "name": "end",
+        "type_ref": "const",
+        "params": {
+          "value": 22,
+          "description": "帧结束符"
+        }
+      }
+    ]
+  },
+  "routers": {
+    "main": {
+      "id": "main",
+      "key_paths": [
+        "control.func"
+      ],
+      "route_table": {
+        "[0]": "node:csg_2016.afn00_ack"
+      },
+      "fallback_policy": "raw",
+      "description": ""
+    }
+  },
+  "leaves": {
+    "node:csg_2016.afn00_ack": {
+      "id": "node:csg_2016.afn00_ack",
+      "name": "afn00_ack",
+      "fields": [
+        {
+          "id": "node:csg_2016.afn00_ack.afn",
+          "name": "afn",
+          "type_ref": "uint8",
+          "params": {
+            "description": "应用功能码AFN"
+          }
+        },
+        {
+          "id": "node:csg_2016.afn00_ack.seq",
+          "name": "seq",
+          "type_ref": "uint8",
+          "params": {
+            "description": "帧序列号SEQ"
+          }
+        },
+        {
+          "id": "node:csg_2016.afn00_ack.di",
+          "name": "di",
+          "type_ref": "hex",
+          "params": {
+            "length": 4,
+            "description": "数据单元标识"
+          },
+          "length": 4
+        },
+        {
+          "id": "node:csg_2016.afn00_ack.payload",
+          "name": "payload",
+          "type_ref": "routed_payload",
+          "params": {
+            "router": "afn_di_router",
+            "boundary": {
+              "kind": "remaining"
+            }
+          }
+        }
+      ],
+      "message_ref": "afn00_ack",
+      "router_id": "main"
+    }
+  },
+  "build_plans": {
+    "afn00_ack": {
+      "message_id": "afn00_ack",
+      "frame_id": "frame",
+      "route_chain": [
+        [
+          "main",
+          "[0]"
+        ]
+      ]
+    }
+  },
+  "algorithms": {},
+  "metadata": {
+    "compiled_at": "2026-06-21T10:39:18.763568+00:00",
+    "source_files": {
+      "protocol.yaml": "protocol_tool/protocols/csg_2016/protocol.yaml",
+      "frame.yaml": "protocol_tool/protocols/csg_2016/frame.yaml",
+      "types/shared.yaml": "protocol_tool/protocols/csg_2016/types/shared.yaml",
+      "messages/afn00_ack_nak.yaml": "protocol_tool/protocols/csg_2016/messages/afn00_ack_nak.yaml"
+    }
+  }
+}

@@ -1,0 +1,55 @@
+# DL/T 645-2007 共享类型定义
+energy_4:
+  type: bcd_numeric
+  length: 4
+  format: "XXXXXX.XX"
+  unit: "kWh"
+  signed: false
+
+energy_5:
+  type: bcd_numeric
+  length: 5
+  format: "XXXXXX.XXXX"
+  unit: "kWh"
+  signed: false
+
+demand_4:
+  type: bcd_numeric
+  length: 4
+  format: "XX.XXXX"
+  unit: "kW"
+  signed: true
+
+voltage_2:
+  type: bcd_numeric
+  length: 2
+  format: "XXX.X"
+  unit: "V"
+  signed: false
+
+current_3:
+  type: bcd_numeric
+  length: 3
+  format: "XXX.XXX"
+  unit: "A"
+  signed: true
+
+power_3:
+  type: bcd_numeric
+  length: 3
+  format: "XX.XXXX"
+  unit: "kW"
+  signed: true
+
+power_factor_2:
+  type: bcd_numeric
+  length: 2
+  format: "X.XXX"
+  signed: true
+
+frequency_2:
+  type: bcd_numeric
+  length: 2
+  format: "XX.XX"
+  unit: "Hz"
+  signed: false

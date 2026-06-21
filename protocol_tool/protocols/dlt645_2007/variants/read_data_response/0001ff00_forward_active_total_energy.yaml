@@ -1,0 +1,18 @@
+# DL/T 645-2007 DI=0001FF00 — 正向有功总电能 (forward active total energy)
+kind: variant
+id: dlt645_2007.read_data_response.forward_active_total_energy
+router: read_data_response_di
+
+match:
+  di: "0001FF00"
+
+body:
+  type: struct
+  fields:
+    - name: energy
+      type: bcd_numeric
+      type_name: energy_4
+      length: 4
+      format: "XXXXXX.XX"
+      unit: "kWh"
+      description: "正向有功总电能"

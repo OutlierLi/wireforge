@@ -1,0 +1,16 @@
+# 协议注册表 — 顶层入口，声明所有支持的协议
+protocols:
+  - id: dlt645_2007
+    package: dlt645_2007/protocol.yaml
+    enabled: true
+    detect_priority: 100
+
+  - id: csg_2016
+    package: csg_2016/protocol.yaml
+    enabled: true
+    detect_priority: 90
+
+  - id: ng_2019
+    package: ng_2019/protocol.yaml
+    enabled: true
+    detect_priority: 80

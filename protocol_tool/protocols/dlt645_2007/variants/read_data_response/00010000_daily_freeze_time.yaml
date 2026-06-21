@@ -1,0 +1,30 @@
+# DL/T 645-2007 DI=00010000 — 日冻结时间
+kind: variant
+id: dlt645_2007.read_data_response.daily_freeze_time
+router: read_data_response_di
+
+match:
+  di: "00010000"
+
+body:
+  type: struct
+  fields:
+    - name: freeze_year
+      type: bcd
+      length: 1
+      description: "冻结年份(后两位)"
+
+    - name: freeze_month
+      type: bcd
+      length: 1
+      description: "冻结月份"
+
+    - name: freeze_day
+      type: bcd
+      length: 1
+      description: "冻结日"
+
+    - name: freeze_hour
+      type: bcd
+      length: 1
+      description: "冻结时"

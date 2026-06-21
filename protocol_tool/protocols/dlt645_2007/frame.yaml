@@ -1,0 +1,69 @@
+# DL/T 645-2007 帧结构定义
+# 所有645协议报文均需满足该帧结构
+id: dlt645_2007.frame
+kind: frame
+
+fields:
+  - name: preamble
+    type: const_repeat
+    value: 0xFE
+    min: 0
+    max: 4
+    description: "前导字节，0-4个0xFE"
+
+  - name: start1
+    type: const
+    value: 0x68
+    description: "帧起始符"
+
+  - name: address
+    type: bcd
+    length: 6
+    byte_order: little
+    canonical_format: decimal_string
+    description: "6字节BCD地址域，低字节在前"
+
+  - name: start2
+    type: const
+    value: 0x68
+    description: "帧起始符（重复）"
+
+  - name: control
+    type: bitset
+    bits:
+      - { name: func, offset: 0, width: 5, description: "功能码" }
+      - { name: follow, offset: 5, width: 1, description: "是否有后续帧" }
+      - { name: ack, offset: 6, width: 1, description: "是否异常" }
+      - { name: dir, offset: 7, width: 1, description: "传输方向(0=主站,1=从站)" }
+
+  - name: length
+    type: uint8
+    description: "数据域长度"
+
+  - name: data
+    type: routed_payload
+    length_from: length
+    router: main
+    transform:
+      decode:
+        - algorithm: sub_33h
+      encode:
+        - algorithm: add_33h
+    description: "数据域（+33H编码）"
+
+  - name: cs
+    type: sum8
+    algorithm: sum8
+    cover:
+      - start1
+      - address
+      - start2
+      - control
+      - length
+      - data
+    description: "校验和（算术和模256）"
+
+  - name: end
+    type: const
+    value: 0x16
+    description: "帧结束符"

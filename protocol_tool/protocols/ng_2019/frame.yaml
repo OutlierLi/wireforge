@@ -1,0 +1,40 @@
+# NG 2019 帧结构定义 (Q/GDW 10376.2-2019)
+id: ng_2019.frame
+kind: frame
+
+fields:
+  - name: start
+    type: const
+    value: 0x68
+    description: "帧起始符"
+
+  - name: total_length
+    type: uint16_le
+    description: "帧总长度"
+
+  - name: control
+    type: bitset
+    bits:
+      - { name: dir, offset: 7, width: 1, description: "传输方向" }
+      - { name: prm, offset: 6, width: 1, description: "启动标志" }
+      - { name: comm_mode, bits: [5, 4, 3, 2, 1, 0], description: "通信方式" }
+
+  - name: user_data
+    type: routed_payload
+    router: main
+    length_from: total_length
+    length_adjust: -6
+    description: "用户数据区"
+
+  - name: checksum
+    type: sum8
+    algorithm: sum8
+    cover:
+      - control
+      - user_data
+    description: "校验和"
+
+  - name: end
+    type: const
+    value: 0x16
+    description: "帧结束符"

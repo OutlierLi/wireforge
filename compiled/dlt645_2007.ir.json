@@ -1,0 +1,457 @@
+{
+  "version": 1,
+  "protocol": "dlt645_2007",
+  "name": "DL/T 645-2007",
+  "frame": {
+    "id": "dlt645_2007.frame",
+    "fields": [
+      {
+        "id": "dlt645_2007.frame.preamble",
+        "name": "preamble",
+        "type_ref": "const_repeat",
+        "params": {
+          "value": 254,
+          "min": 0,
+          "max": 4,
+          "description": "前导字节，0-4个0xFE"
+        }
+      },
+      {
+        "id": "dlt645_2007.frame.start1",
+        "name": "start1",
+        "type_ref": "const",
+        "params": {
+          "value": 104,
+          "description": "帧起始符"
+        }
+      },
+      {
+        "id": "dlt645_2007.frame.address",
+        "name": "address",
+        "type_ref": "bcd",
+        "params": {
+          "length": 6,
+          "byte_order": "little",
+          "canonical_format": "decimal_string",
+          "description": "6字节BCD地址域，低字节在前"
+        },
+        "length": 6
+      },
+      {
+        "id": "dlt645_2007.frame.start2",
+        "name": "start2",
+        "type_ref": "const",
+        "params": {
+          "value": 104,
+          "description": "帧起始符（重复）"
+        }
+      },
+      {
+        "id": "dlt645_2007.frame.control",
+        "name": "control",
+        "type_ref": "bitset",
+        "params": {
+          "bits": [
+            {
+              "name": "func",
+              "offset": 0,
+              "width": 5,
+              "description": "功能码"
+            },
+            {
+              "name": "follow",
+              "offset": 5,
+              "width": 1,
+              "description": "是否有后续帧"
+            },
+            {
+              "name": "ack",
+              "offset": 6,
+              "width": 1,
+              "description": "是否异常"
+            },
+            {
+              "name": "dir",
+              "offset": 7,
+              "width": 1,
+              "description": "传输方向(0=主站,1=从站)"
+            }
+          ]
+        }
+      },
+      {
+        "id": "dlt645_2007.frame.length",
+        "name": "length",
+        "type_ref": "uint8",
+        "params": {
+          "description": "数据域长度"
+        }
+      },
+      {
+        "id": "dlt645_2007.frame.data",
+        "name": "data",
+        "type_ref": "routed_payload",
+        "params": {
+          "length_from": "length",
+          "router": "main",
+          "transform": {
+            "decode": [
+              {
+                "algorithm": "sub_33h"
+              }
+            ],
+            "encode": [
+              {
+                "algorithm": "add_33h"
+              }
+            ]
+          },
+          "description": "数据域（+33H编码）"
+        },
+        "length_from": "length",
+        "transforms": [
+          {
+            "algorithm": "sub_33h"
+          }
+        ]
+      },
+      {
+        "id": "dlt645_2007.frame.cs",
+        "name": "cs",
+        "type_ref": "sum8",
+        "params": {
+          "algorithm": "sum8",
+          "cover": [
+            "start1",
+            "address",
+            "start2",
+            "control",
+            "length",
+            "data"
+          ],
+          "description": "校验和（算术和模256）"
+        }
+      },
+      {
+        "id": "dlt645_2007.frame.end",
+        "name": "end",
+        "type_ref": "const",
+        "params": {
+          "value": 22,
+          "description": "帧结束符"
+        }
+      }
+    ]
+  },
+  "routers": {
+    "main": {
+      "id": "main",
+      "key_paths": [
+        "control.func",
+        "control.dir"
+      ],
+      "route_table": {
+        "[19,0]": "node:dlt645_2007.read_address_request",
+        "[19,1]": "node:dlt645_2007.read_address_response",
+        "[17,0]": "node:dlt645_2007.read_data_request",
+        "[17,1]": "node:dlt645_2007.read_data_response"
+      },
+      "fallback_policy": "raw",
+      "description": ""
+    },
+    "read_data_response_di": {
+      "id": "read_data_response_di",
+      "key_paths": [
+        "di"
+      ],
+      "route_table": {
+        "00010000": "node:dlt645_2007.dlt645_2007.read_data_response.daily_freeze_time",
+        "00010001": "node:dlt645_2007.dlt645_2007.read_data_response.monthly_freeze_time",
+        "0001FF00": "node:dlt645_2007.dlt645_2007.read_data_response.forward_active_total_energy"
+      },
+      "fallback_policy": "raw",
+      "description": ""
+    }
+  },
+  "leaves": {
+    "node:dlt645_2007.read_address_request": {
+      "id": "node:dlt645_2007.read_address_request",
+      "name": "read_address_request",
+      "fields": [
+        {
+          "id": "node:dlt645_2007.read_address_request.reserved",
+          "name": "reserved",
+          "type_ref": "hex",
+          "params": {
+            "length": 4,
+            "description": "保留数据(AA AA AA AA)"
+          },
+          "length": 4
+        }
+      ],
+      "message_ref": "read_address_request",
+      "router_id": "main"
+    },
+    "node:dlt645_2007.read_address_response": {
+      "id": "node:dlt645_2007.read_address_response",
+      "name": "read_address_response",
+      "fields": [
+        {
+          "id": "node:dlt645_2007.read_address_response.address_data",
+          "name": "address_data",
+          "type_ref": "bcd",
+          "params": {
+            "length": 6,
+            "byte_order": "little",
+            "canonical_format": "decimal_string",
+            "description": "通信地址"
+          },
+          "length": 6
+        }
+      ],
+      "message_ref": "read_address_response",
+      "router_id": "main"
+    },
+    "node:dlt645_2007.read_data_request": {
+      "id": "node:dlt645_2007.read_data_request",
+      "name": "read_data_request",
+      "fields": [
+        {
+          "id": "node:dlt645_2007.read_data_request.di",
+          "name": "di",
+          "type_ref": "hex",
+          "params": {
+            "length": 4,
+            "byte_order": "little",
+            "description": "数据标识 DI0-DI3"
+          },
+          "length": 4
+        },
+        {
+          "id": "node:dlt645_2007.read_data_request.di_data",
+          "name": "di_data",
+          "type_ref": "routed_payload",
+          "params": {
+            "router": "read_data_response_di",
+            "length_from": "length",
+            "length_adjust": -1,
+            "description": "DI 后续数据"
+          },
+          "length_from": "length",
+          "length_adjust": -1
+        }
+      ],
+      "message_ref": "read_data_request",
+      "router_id": "main"
+    },
+    "node:dlt645_2007.read_data_response": {
+      "id": "node:dlt645_2007.read_data_response",
+      "name": "read_data_response",
+      "fields": [
+        {
+          "id": "node:dlt645_2007.read_data_response.di",
+          "name": "di",
+          "type_ref": "hex",
+          "params": {
+            "length": 4,
+            "byte_order": "little",
+            "description": "数据标识 DI0-DI3"
+          },
+          "length": 4
+        },
+        {
+          "id": "node:dlt645_2007.read_data_response.di_data",
+          "name": "di_data",
+          "type_ref": "routed_payload",
+          "params": {
+            "router": "read_data_response_di",
+            "selector": {
+              "field": "di"
+            },
+            "boundary": {
+              "kind": "remaining"
+            },
+            "on_unknown": {
+              "kind": "raw"
+            },
+            "description": "DI 对应的数据"
+          }
+        }
+      ],
+      "message_ref": "read_data_response",
+      "router_id": "main"
+    },
+    "node:dlt645_2007.dlt645_2007.read_data_response.daily_freeze_time": {
+      "id": "node:dlt645_2007.dlt645_2007.read_data_response.daily_freeze_time",
+      "name": "dlt645_2007.read_data_response.daily_freeze_time",
+      "fields": [
+        {
+          "id": "node:dlt645_2007.dlt645_2007.read_data_response.daily_freeze_time.freeze_year",
+          "name": "freeze_year",
+          "type_ref": "bcd",
+          "params": {
+            "length": 1,
+            "description": "冻结年份(后两位)"
+          },
+          "length": 1
+        },
+        {
+          "id": "node:dlt645_2007.dlt645_2007.read_data_response.daily_freeze_time.freeze_month",
+          "name": "freeze_month",
+          "type_ref": "bcd",
+          "params": {
+            "length": 1,
+            "description": "冻结月份"
+          },
+          "length": 1
+        },
+        {
+          "id": "node:dlt645_2007.dlt645_2007.read_data_response.daily_freeze_time.freeze_day",
+          "name": "freeze_day",
+          "type_ref": "bcd",
+          "params": {
+            "length": 1,
+            "description": "冻结日"
+          },
+          "length": 1
+        },
+        {
+          "id": "node:dlt645_2007.dlt645_2007.read_data_response.daily_freeze_time.freeze_hour",
+          "name": "freeze_hour",
+          "type_ref": "bcd",
+          "params": {
+            "length": 1,
+            "description": "冻结时"
+          },
+          "length": 1
+        }
+      ],
+      "message_ref": "dlt645_2007.read_data_response.daily_freeze_time",
+      "router_id": "read_data_response_di",
+      "route_key": "00010000"
+    },
+    "node:dlt645_2007.dlt645_2007.read_data_response.monthly_freeze_time": {
+      "id": "node:dlt645_2007.dlt645_2007.read_data_response.monthly_freeze_time",
+      "name": "dlt645_2007.read_data_response.monthly_freeze_time",
+      "fields": [
+        {
+          "id": "node:dlt645_2007.dlt645_2007.read_data_response.monthly_freeze_time.freeze_year",
+          "name": "freeze_year",
+          "type_ref": "bcd",
+          "params": {
+            "length": 1
+          },
+          "length": 1
+        },
+        {
+          "id": "node:dlt645_2007.dlt645_2007.read_data_response.monthly_freeze_time.freeze_month",
+          "name": "freeze_month",
+          "type_ref": "bcd",
+          "params": {
+            "length": 1
+          },
+          "length": 1
+        },
+        {
+          "id": "node:dlt645_2007.dlt645_2007.read_data_response.monthly_freeze_time.freeze_day",
+          "name": "freeze_day",
+          "type_ref": "bcd",
+          "params": {
+            "length": 1
+          },
+          "length": 1
+        },
+        {
+          "id": "node:dlt645_2007.dlt645_2007.read_data_response.monthly_freeze_time.freeze_hour",
+          "name": "freeze_hour",
+          "type_ref": "bcd",
+          "params": {
+            "length": 1
+          },
+          "length": 1
+        }
+      ],
+      "message_ref": "dlt645_2007.read_data_response.monthly_freeze_time",
+      "router_id": "read_data_response_di",
+      "route_key": "00010001"
+    },
+    "node:dlt645_2007.dlt645_2007.read_data_response.forward_active_total_energy": {
+      "id": "node:dlt645_2007.dlt645_2007.read_data_response.forward_active_total_energy",
+      "name": "dlt645_2007.read_data_response.forward_active_total_energy",
+      "fields": [
+        {
+          "id": "node:dlt645_2007.dlt645_2007.read_data_response.forward_active_total_energy.energy",
+          "name": "energy",
+          "type_ref": "bcd_numeric",
+          "params": {
+            "type_name": "energy_4",
+            "length": 4,
+            "format": "XXXXXX.XX",
+            "unit": "kWh",
+            "description": "正向有功总电能"
+          },
+          "length": 4
+        }
+      ],
+      "message_ref": "dlt645_2007.read_data_response.forward_active_total_energy",
+      "router_id": "read_data_response_di",
+      "route_key": "0001FF00"
+    }
+  },
+  "build_plans": {
+    "read_address_request": {
+      "message_id": "read_address_request",
+      "frame_id": "frame",
+      "route_chain": [
+        [
+          "main",
+          "[19,0]"
+        ]
+      ]
+    },
+    "read_address_response": {
+      "message_id": "read_address_response",
+      "frame_id": "frame",
+      "route_chain": [
+        [
+          "main",
+          "[19,1]"
+        ]
+      ]
+    },
+    "read_data_request": {
+      "message_id": "read_data_request",
+      "frame_id": "frame",
+      "route_chain": [
+        [
+          "main",
+          "[17,0]"
+        ]
+      ]
+    },
+    "read_data_response": {
+      "message_id": "read_data_response",
+      "frame_id": "frame",
+      "route_chain": [
+        [
+          "main",
+          "[17,1]"
+        ]
+      ]
+    }
+  },
+  "algorithms": {},
+  "metadata": {
+    "compiled_at": "2026-06-21T10:38:14.278122+00:00",
+    "source_files": {
+      "protocol.yaml": "protocol_tool/protocols/dlt645_2007/protocol.yaml",
+      "frame.yaml": "protocol_tool/protocols/dlt645_2007/frame.yaml",
+      "types/shared.yaml": "protocol_tool/protocols/dlt645_2007/types/shared.yaml",
+      "messages/read_address.yaml": "protocol_tool/protocols/dlt645_2007/messages/read_address.yaml",
+      "messages/read_data.yaml": "protocol_tool/protocols/dlt645_2007/messages/read_data.yaml",
+      "variants/read_data_response/00010000_daily_freeze_time.yaml": "protocol_tool/protocols/dlt645_2007/variants/read_data_response/00010000_daily_freeze_time.yaml",
+      "variants/read_data_response/00010001_monthly_freeze_time.yaml": "protocol_tool/protocols/dlt645_2007/variants/read_data_response/00010001_monthly_freeze_time.yaml",
+      "variants/read_data_response/0001ff00_forward_active_total_energy.yaml": "protocol_tool/protocols/dlt645_2007/variants/read_data_response/0001ff00_forward_active_total_energy.yaml"
+    }
+  }
+}

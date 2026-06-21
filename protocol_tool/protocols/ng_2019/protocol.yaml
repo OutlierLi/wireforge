@@ -1,0 +1,38 @@
+# NG 2019 协议包入口和路由声明 (Q/GDW 10376.2-2019)
+id: ng_2019
+name: "Q/GDW 10376.2-2019 NG Protocol"
+version: "2019"
+
+frame_ref: frame.yaml
+
+sources:
+  messages: "messages/**/*.yaml"
+  variants: "variants/**/*.yaml"
+  types: "types/**/*.yaml"
+
+routers:
+  main:
+    kind: frame_router
+    keys:
+      - control.comm_mode
+    fallback: raw
+
+  afn_router:
+    kind: variant_router
+    keys:
+      - afn
+    fallback: raw
+
+  fn_router:
+    kind: variant_router
+    keys:
+      - fn
+    fallback: raw
+
+build:
+  default_frame: ng_2019.frame
+
+policies:
+  unknown_message: preserve_payload
+  unknown_variant: raw
+  strict_route_uniqueness: true
