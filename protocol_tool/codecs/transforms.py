@@ -87,7 +87,12 @@ def apply_transforms_decode(raw: bytes, transforms: tuple) -> bytes:
 
 
 def apply_transforms_encode(raw: bytes, transforms: tuple) -> bytes:
-    """Apply logical→wire transforms in reverse order."""
+    """Apply logical→wire transforms in reverse order.
+
+    Encode is the INVERSE of decode:
+    - decode sub_33h (wire→logical: subtract 0x33) → encode add_33h (logical→wire: add 0x33)
+    - decode add_33h (wire→logical: add 0x33)     → encode sub_33h (logical→wire: subtract 0x33)
+    """
     for t in reversed(transforms):
         if t.algorithm == "reverse_bytes":
             width = t.params.get("width", 0)
@@ -96,11 +101,11 @@ def apply_transforms_encode(raw: bytes, transforms: tuple) -> bytes:
                 raw = b"".join(chunks)
             else:
                 raw = raw[::-1]
-        elif t.algorithm == "add_33h":
-            # Encode: sub_33h on the logical side becomes add_33h on the wire side
-            raw = bytes((b + 0x33) & 0xFF for b in raw)
         elif t.algorithm == "sub_33h":
-            # Encode: add_33h on the logical side becomes sub_33h on the wire side
+            # decode subtracts 0x33 → encode ADDS 0x33
+            raw = bytes((b + 0x33) & 0xFF for b in raw)
+        elif t.algorithm == "add_33h":
+            # decode adds 0x33 → encode SUBTRACTS 0x33
             raw = bytes((b - 0x33) & 0xFF for b in raw)
         elif t.algorithm == "pn_fn":
             raw = bytes(

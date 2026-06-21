@@ -9,7 +9,8 @@ fields:
     value: 0xFE
     min: 0
     max: 4
-    description: "前导字节，0-4个0xFE"
+    default: 4
+    description: "前导字节，0-4个0xFE，默认4字节"
 
   - name: start1
     type: const

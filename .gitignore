@@ -21,3 +21,5 @@ venv/
 .idea/
 *.swp
 *.swo
+tests/check_output/
+log/

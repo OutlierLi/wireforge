@@ -116,28 +116,49 @@ class RoutedPayloadCodec(FieldCodec):
         - message_id: the message being built
         - route_chain: explicit route chain for the message
         """
-        # Determine which leaf to encode
-        message_id = context.message_id
+        # Determine which leaf to encode.
+        # For frame-level fields: use build_plan from message_id.
+        # For nested fields: resolve via the field's own router using context values.
+        import json
         leaf = None
+        router_id = field.params.get("router", "")
 
-        if message_id and self._ir:
+        # Try build_plan first (for frame-level routing)
+        message_id = context.message_id
+        if message_id and self._ir and not leaf:
             build_plan = self._ir.build_plans.get(message_id)
             if build_plan:
-                # Find the leaf node
-                for router_id, route_key in build_plan.route_chain:
-                    router_node = self._ir.routers.get(router_id)
-                    if router_node:
-                        leaf_id = router_node.route_table.get(route_key)
-                        if leaf_id:
-                            leaf = self._ir.leaves.get(leaf_id)
+                for rid, route_key in build_plan.route_chain:
+                    if rid == router_id or not router_id:
+                        rnode = self._ir.routers.get(rid)
+                        if rnode:
+                            lid = rnode.route_table.get(route_key)
+                            if lid:
+                                leaf = self._ir.leaves.get(lid)
+
+        # Try resolving via the field's router and context values (for nested routing)
+        if not leaf and router_id and router_id in (self._ir.routers if self._ir else {}):
+            rnode = self._ir.routers[router_id]
+            # Build key from context values
+            keys = []
+            for path in rnode.key_paths:
+                try:
+                    keys.append(context.get(path))
+                except KeyError:
+                    keys.append(0)
+            key_str = json.dumps(keys, separators=(",", ":")) if len(keys) > 1 else (
+                keys[0] if isinstance(keys[0], str) else json.dumps(keys)
+            )
+            lid = rnode.route_table.get(key_str)
+            if lid:
+                leaf = self._ir.leaves.get(lid)
 
         if leaf is None:
-            if message_id:
+            if router_id:
                 raise RouteError(
-                    f"Build error: message {message_id!r} has no reachable route "
-                    f"in any router. Check build_plans and route_table."
+                    f"Build error: no route found for router {router_id!r} "
+                    f"with field {field.name!r}. Check route_table."
                 )
-            # No message_id — write raw bytes (manual mode)
             if isinstance(value, bytes):
                 payload = value
             elif isinstance(value, dict) and "raw" in value:
@@ -146,7 +167,7 @@ class RoutedPayloadCodec(FieldCodec):
                 payload = bytes.fromhex(str(value))
             else:
                 raise RouteError(
-                    f"Build error: no message_id specified and no raw value provided "
+                    f"Build error: no message_id, no router, and no raw value "
                     f"for routed_payload field {field.name!r}"
                 )
         else:

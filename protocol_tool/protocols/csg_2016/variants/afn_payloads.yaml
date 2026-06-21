@@ -247,6 +247,27 @@ variants:
       type: struct
       fields: []
 
+
+  - kind: variant
+    id: csg_2016.afn03_query_delay
+    router: afn03_di_router
+    match:
+      di: "E8030304"
+    body:
+      type: struct
+      fields: []
+
+  - kind: variant
+    id: csg_2016.afn03_query_delay_resp
+    router: afn03_di_router
+    match:
+      di: "E8040304"
+    body:
+      type: struct
+      fields:
+        - name: delay_time
+          type: uint8
+
   # ═══════════════════════════════════════════════════════
   # AFN=04H 写参数 → afn04_di_router
   # ═══════════════════════════════════════════════════════

@@ -45,7 +45,9 @@ class UIntCodec(FieldCodec):
         writer: ByteWriter,
         context: BuildContext,
     ) -> None:
-        if not isinstance(value, int):
+        if value is None:
+            value = 0  # auto-computed field, will be fixed in two-pass encode
+        elif not isinstance(value, int):
             value = int(value)
         byte_order = self._effective_byte_order(field)
         length = self.field_length(field, context) or self._width

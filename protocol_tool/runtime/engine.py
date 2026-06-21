@@ -36,6 +36,7 @@ class DecodeResult:
     trace: list[dict[str, Any]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     raw_hex: str = ""
+    path_str: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -58,7 +59,9 @@ class BuildResult:
     frame: bytes = b""
     frame_hex: str = ""
     trace: list[dict[str, Any]] = field(default_factory=list)
-    parsed: dict[str, Any] | None = None  # Optional round-trip validation
+    path: list[dict[str, Any]] | None = None   # Route path taken
+    path_str: str = ""                          # Human-readable path
+    parsed: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -111,21 +114,72 @@ class DecodeEngine:
         from protocol_tool.runtime.context import DecodeContext
         from protocol_tool.runtime.stack import ExecutionStack
 
+        # Collect route path during decode
+        route_path = []
+        routed = self.codecs.get("routed_payload")
+        from protocol_tool.codecs.routed import RoutedPayloadCodec
+        orig_decode = None
+        if isinstance(routed, RoutedPayloadCodec):
+            orig_decode = routed.decode
+            def hook_decode(field, reader, ctx):
+                rid = field.params.get("router", "")
+                rnode = self.ir.routers.get(rid) if rid else None
+                if rnode:
+                    from protocol_tool.runtime.router import Router
+                    router = Router(rnode)
+                    try:
+                        keys = []
+                        for p in rnode.key_paths:
+                            try: keys.append((p, ctx.get(p)))
+                            except KeyError: keys.append((p, None))
+                        target = router.resolve(ctx)
+                        tname = self.ir.leaves[target].name if target and target in self.ir.leaves else str(target)
+                        route_path.append(f"{rid}[{_fmt_keys(keys)}]→{tname}")
+                    except Exception:
+                        pass
+                return orig_decode(field, reader, ctx)
+            routed.decode = hook_decode
+
         reader = DecodeReader(data, 0, len(data))
         context = DecodeContext()
         stack = ExecutionStack()
 
-        # Walk frame fields in order
-        for field in self.ir.frame.fields:
-            self._decode_field(field, reader, context, stack)
+        try:
+            for field in self.ir.frame.fields:
+                self._decode_field(field, reader, context, stack)
 
-        return DecodeResult(
-            protocol=self.ir.protocol,
-            values=context.values,
-            trace=[e.to_dict() for e in context.trace],
-            warnings=context.warnings,
-            raw_hex=data.hex(" ").upper(),
-        )
+            path_str = " → ".join(route_path)
+            result = DecodeResult(
+                protocol=self.ir.protocol,
+                values=context.values,
+                trace=[e.to_dict() for e in context.trace],
+                warnings=context.warnings,
+                raw_hex=data.hex(" ").upper(),
+                path_str=path_str,
+            )
+
+            from protocol_tool.utils.logger import log_decode
+            log_decode(
+                protocol=self.ir.protocol,
+                frame_hex=result.raw_hex,
+                path=result.path_str,
+                values=context.values,
+                warnings=context.warnings,
+            )
+            return result
+        except Exception as e:
+            from protocol_tool.utils.logger import log_decode
+            log_decode(
+                protocol=self.ir.protocol,
+                frame_hex=data.hex(" ").upper(),
+                path=" → ".join(route_path),
+                success=False,
+                error=str(e),
+            )
+            raise
+        finally:
+            if orig_decode and isinstance(routed, RoutedPayloadCodec):
+                routed.decode = orig_decode
 
     def decode_hex(self, hex_text: str) -> DecodeResult:
         """Decode a hex string."""
@@ -285,6 +339,19 @@ class DecodeEngine:
         return True
 
 
+def _fmt_keys(keys: list) -> str:
+    """Format route keys for logging."""
+    parts = []
+    for p, v in keys:
+        if isinstance(v, int):
+            parts.append(f"{p}=0x{v:02X}")
+        elif isinstance(v, str):
+            parts.append(f"{p}={v}")
+        else:
+            parts.append(f"{p}={v}")
+    return ", ".join(parts)
+
+
 class DecodeError(ValueError):
     """Raised when a decode step fails."""
     pass
@@ -320,22 +387,187 @@ class BuildEngine:
 
     # -- Public API --
 
-    def build(self, values: dict[str, Any], *, message_id: str | None = None) -> BuildResult:
-        # Re-bind RoutedPayloadCodec to this engine
-        routed = self.codecs.get("routed_payload")
-        from protocol_tool.codecs.routed import RoutedPayloadCodec
-        if isinstance(routed, RoutedPayloadCodec):
-            routed.set_engine(self, self.ir)
-        """Build a frame from field values.
+    def resolve_path(self, info: dict[str, Any]) -> dict:
+        """Given partial info (afn, di, direction, has_address...), find the
+        complete route path from frame root to target leaf through all routers.
 
-        Parameters
-        ----------
-        values:
-            Field values to encode. Can include nested dicts for struct fields.
-        message_id:
-            Optional message ID for routed payload dispatch.
-            If not provided, attempts to resolve from values.
+        Returns: {path, leaf_id, leaf_name, message_id, route_vals}
+        Raises ValueError if no matching path found.
         """
+        import json
+
+        # Find the frame-level router
+        frame_router_id = None
+        for field in self.ir.frame.fields:
+            if field.type_ref == "routed_payload":
+                frame_router_id = field.params.get("router", "")
+                break
+
+        if not frame_router_id or frame_router_id not in self.ir.routers:
+            raise ValueError("No frame-level router found")
+
+        # Map direction words to values
+        dir_val = None
+        direction = info.get("direction", "")
+        if direction == "downlink":  dir_val = 0
+        elif direction == "uplink": dir_val = 1
+
+        has_addr = info.get("has_address", False)
+        add_val = 1 if has_addr else 0
+
+        route_vals: dict[str, Any] = {}
+        path_steps: list[dict] = []
+        visited: set[str] = set()
+
+        def _walk(router_id: str, depth: int = 0) -> bool:
+            if depth > 10 or router_id in visited:
+                return False
+            visited.add(router_id)
+
+            rnode = self.ir.routers.get(router_id)
+            if not rnode:
+                return False
+
+            # Build candidate keys from info + current route_vals
+            candidates: list[tuple[str, str]] = []  # (key_str, leaf_id)
+
+            for key_str, target_id in rnode.route_table.items():
+                # Parse key
+                try:
+                    key_vals = json.loads(key_str)
+                except (json.JSONDecodeError, TypeError):
+                    key_vals = [key_str]
+                if not isinstance(key_vals, list):
+                    key_vals = [key_vals]
+
+                # Check if this key matches our info
+                match = True
+                for i, path in enumerate(rnode.key_paths):
+                    if i >= len(key_vals):
+                        match = False; break
+                    want = key_vals[i]
+                    short = path.split(".", 1)[-1]
+
+                    # Check against explicit info
+                    if short == "dir" and dir_val is not None and want != dir_val:
+                        match = False; break
+                    if short == "add" and add_val is not None and want != add_val:
+                        match = False; break
+                    if short == "afn" and "afn" in info and want != info["afn"]:
+                        match = False; break
+                    if short == "di" and "di" in info:
+                        di_info = info["di"]
+                        if isinstance(want, str) and isinstance(di_info, str):
+                            if want.upper() != di_info.upper():
+                                match = False; break
+                        elif want != di_info:
+                            match = False; break
+                    if short == "func" and "func" in info and want != info["func"]:
+                        match = False; break
+
+                if match:
+                    candidates.append((key_str, target_id))
+
+            if not candidates:
+                return False
+
+            for key_str, target_id in candidates:
+                leaf = self.ir.leaves.get(target_id)
+                if not leaf:
+                    continue
+
+                # Record this step's key values
+                try:
+                    key_vals = json.loads(key_str)
+                except (json.JSONDecodeError, TypeError):
+                    key_vals = [key_str]
+                if not isinstance(key_vals, list):
+                    key_vals = [key_vals]
+
+                saved = {}
+                for i, path in enumerate(rnode.key_paths):
+                    if i < len(key_vals):
+                        route_vals[path] = key_vals[i]
+                        saved[path] = key_vals[i]
+
+                # Check if leaf is a terminal (has sub-router or is end)
+                has_sub_router = any(
+                    f.type_ref == "routed_payload" and f.params.get("router", "") in self.ir.routers
+                    for f in leaf.fields
+                )
+
+                if has_sub_router:
+                    # Recurse into sub-routers
+                    for field in leaf.fields:
+                        if field.type_ref == "routed_payload":
+                            sub_router = field.params.get("router", "")
+                            if sub_router in self.ir.routers:
+                                if _walk(sub_router, depth + 1):
+                                    path_steps.append({
+                                        "router_id": router_id, "key_str": key_str,
+                                        "leaf_id": target_id, "leaf_name": leaf.name,
+                                    })
+                                    return True
+                    # Undo saved values if recursion failed
+                    for p in saved:
+                        route_vals.pop(p, None)
+                else:
+                    # Terminal leaf found
+                    path_steps.append({
+                        "router_id": router_id, "key_str": key_str,
+                        "leaf_id": target_id, "leaf_name": leaf.name,
+                    })
+                    return True
+
+            return False
+
+        if not _walk(frame_router_id):
+            raise ValueError(
+                f"No route found for info={info}. "
+                f"Check direction, afn, di, has_address values."
+            )
+
+        path_steps.reverse()
+        terminal = path_steps[-1]
+
+        return {
+            "path": path_steps,
+            "leaf_id": terminal["leaf_id"],
+            "leaf_name": terminal["leaf_name"],
+            "message_id": path_steps[0]["leaf_name"],  # first leaf is the frame-level message
+            "route_vals": dict(route_vals),
+            "path_str": " → ".join(
+                f"{s['router_id']}[{s['key_str']}]→{s['leaf_name']}" for s in path_steps
+            ),
+        }
+
+    def build(self, values: dict[str, Any], *,
+              message_id: str | None = None,
+              info: dict[str, Any] | None = None) -> BuildResult:
+        path_info = None
+        try:
+            # Re-bind RoutedPayloadCodec to this engine
+            routed = self.codecs.get("routed_payload")
+            from protocol_tool.codecs.routed import RoutedPayloadCodec
+            if isinstance(routed, RoutedPayloadCodec):
+                routed.set_engine(self, self.ir)
+
+            # Resolve path from info if no explicit message_id
+            if info and not message_id:
+                path_info = self.resolve_path(info)
+                message_id = path_info["message_id"]
+            # Merge route_vals into values so codecs can use them
+            if path_info:
+                for k, v in path_info["route_vals"].items():
+                    if k not in values:
+                        parts = k.split(".", 1)
+                        if len(parts) == 2:
+                            values.setdefault(parts[0], {})[parts[1]] = v
+                        else:
+                            values.setdefault(k, v)
+        except Exception:
+            pass  # path resolution may fail for optional nested routers
+
         from protocol_tool.codecs.base import ByteWriter
         from protocol_tool.runtime.context import BuildContext
 
@@ -345,16 +577,49 @@ class BuildEngine:
             message_id=message_id,
         )
 
-        # Walk frame fields in order
+        # Pre-compute payload length (two-pass: encode just to measure, discard output)
+        payload_len = {}
         for field in self.ir.frame.fields:
+            if field.type_ref == "routed_payload":
+                pre_writer = ByteWriter()
+                pre_ctx = BuildContext(values=values, message_id=message_id)
+                routed = self.codecs.get("routed_payload")
+                if isinstance(routed, RoutedPayloadCodec):
+                    routed.set_engine(self, self.ir)
+                self._encode_field(field, values, pre_writer, pre_ctx)
+                payload_len[field.name] = len(pre_writer)
+
+        # Inject computed lengths
+        for field in self.ir.frame.fields:
+            if field.name in ("total_length", "length"):
+                rp_name = "user_data" if "user_data" in payload_len else "data"
+                plen = payload_len.get(rp_name, 0)
+                if field.name == "total_length":
+                    values["total_length"] = plen + 6
+                elif field.name == "length":
+                    values["length"] = plen
             self._encode_field(field, values, writer, context)
 
         frame = writer.bytes()
-        return BuildResult(
+        result = BuildResult(
             protocol=self.ir.protocol,
             frame=frame,
             frame_hex=frame.hex(" ").upper(),
+            path=path_info["path"] if path_info else None,
+            path_str=path_info["path_str"] if path_info else "",
         )
+
+        # 记录日志
+        from protocol_tool.utils.logger import log_build
+        log_build(
+            protocol=self.ir.protocol,
+            info=info,
+            message_id=message_id,
+            path=result.path_str,
+            frame_hex=result.frame_hex,
+            values=values,
+        )
+        return result
 
     def build_hex(self, values: dict[str, Any], *, message_id: str | None = None) -> str:
         """Build and return hex string."""
@@ -389,7 +654,8 @@ class BuildEngine:
         # Auto-generated fields don't need user input
         auto_types = {"const", "const_repeat", "sum8", "xor8",
                       "crc16_modbus", "crc16_ccitt", "crc8", "routed_payload"}
-        if field.type_ref in auto_types or field.optional:
+        auto_names = {"total_length", "length"}  # frame-level computed fields
+        if field.type_ref in auto_types or field.name in auto_names or field.optional:
             field_value = values.get(field.name) if values else None
             # Still encode even if None — codec auto-generates the value
         else:
@@ -469,3 +735,41 @@ class BuildEngine:
 class BuildError(ValueError):
     """Raised when a build step fails."""
     pass
+
+
+def _compute_leaf_byte_length(leaf) -> int:
+    """Compute total byte length of a leaf's fields (recursive for nested routed_payload)."""
+    total = 0
+    for f in leaf.fields:
+        if f.optional:
+            continue
+        t = f.type_ref
+        if t == "routed_payload":
+            # Can't know without IR — return 0 for nested
+            continue
+        elif f.length is not None:
+            total += f.length
+        elif t == "uint8":
+            total += 1
+        elif t in ("uint16_le", "uint16_be"):
+            total += 2
+        elif t in ("uint24_le",):
+            total += 3
+        elif t in ("uint32_le", "uint32_be"):
+            total += 4
+        elif t in ("enum", "bitset"):
+            total += f.length or 1
+        elif t in ("hex", "bytes"):
+            total += f.length or 1
+        elif t == "bcd":
+            total += f.length or 1
+        elif t == "bcd_numeric":
+            total += f.length or 1
+        elif t == "ascii":
+            total += f.length or 1
+        elif t == "struct":
+            for sf in f.params.get("fields", []):
+                total += sf.get("length", 1)
+        else:
+            total += f.length or 1
+    return total
