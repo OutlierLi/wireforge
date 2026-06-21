@@ -1,0 +1,59 @@
+{
+  "name": "build",
+  "desc": "构造协议报文 (两阶段: Resolve → Encode)",
+  "enabled": true,
+  "timeout": 15000,
+  "params": [
+    {
+      "name": "proto",
+      "type": "choice",
+      "required": true,
+      "desc": "协议类型",
+      "values": ["dlt645", "csg"]
+    },
+    {
+      "name": "di",
+      "type": "str",
+      "required": false,
+      "desc": "数据标识DI，定位目标变体"
+    },
+    {
+      "name": "func",
+      "type": "hex",
+      "required": false,
+      "desc": "功能码，DLT645 目标定位"
+    },
+    {
+      "name": "afn",
+      "type": "hex",
+      "required": false,
+      "desc": "应用功能码，CSG 目标定位"
+    },
+    {
+      "name": "dir",
+      "type": "choice",
+      "required": false,
+      "desc": "传输方向",
+      "values": ["downlink", "uplink"],
+      "default": "downlink"
+    },
+    {
+      "name": "resolve",
+      "type": "bool",
+      "required": false,
+      "desc": "仅解析目标，返回 input_schema，不构造帧"
+    },
+    {
+      "name": "address",
+      "type": "str",
+      "required": false,
+      "desc": "帧地址域 (链路上下文)"
+    },
+    {
+      "name": "*",
+      "type": "dynamic",
+      "required": false,
+      "desc": "业务字段由 resolve 后动态决定: freeze_year, voltage, file_info 等"
+    }
+  ]
+}

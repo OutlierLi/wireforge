@@ -1,0 +1,21 @@
+{
+  "name": "decode",
+  "desc": "解析协议报文",
+  "enabled": true,
+  "timeout": 15000,
+  "params": [
+    {
+      "name": "proto",
+      "type": "choice",
+      "required": true,
+      "desc": "协议类型",
+      "values": ["dlt645", "csg"]
+    },
+    {
+      "name": "hex",
+      "type": "str",
+      "required": true,
+      "desc": "十六进制报文字节流，支持带空格格式"
+    }
+  ]
+}

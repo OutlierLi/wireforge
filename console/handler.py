@@ -59,60 +59,65 @@ def _hex(v: Any) -> int:
 # ── Build ─────────────────────────────────────────────────────────────
 
 def handle_build(args: dict[str, Any]) -> CmdResult:
-    proto = _proto(args.get("proto", "dlt645"))
-    _ensure_ir(proto)
+    """两阶段 Build: Resolve → Encode。
 
-    from protocol_tool.ir.nodes import ProtocolIR
-    from protocol_tool.codecs import create_builtin_registry
-    from protocol_tool.runtime.engine import BuildEngine, DecodeEngine
+    Phase 1: /build --proto csg --di E8020701 --resolve
+             → 返回 input_schema
 
-    ir = ProtocolIR.from_json_file(str(ROOT / "compiled" / f"{proto}.ir.json"))
+    Phase 2: /build --proto csg --di E8020701 --voltage 220 --current 5
+             → 构造完整帧
+    """
+    from console.build_resolver import resolve, encode, BuildTarget
 
-    if proto == "dlt645_2007":
-        func = _hex(args.get("func", 0x11))
-        dn = args.get("dir", "downlink")
-        dv = 0 if dn == "downlink" else 1
-        info = {"func": func, "direction": dn}
-        fv = {"preamble": 4, "address": "000000000001",
-              "control": {"func": func, "dir": dv, "ack": 0, "follow": 0},
-              "di": args.get("di", "00010000")}
-        if func == 0x13:
-            if dv == 0: fv["address"] = "AAAAAAAAAAAA"
-            else: fv["address_data"] = "000000000001"
-    else:
-        afn = _hex(args.get("afn", 0))
-        di_val = args.get("di", f"E800{afn:02X}01")
-        dn = args.get("dir", "downlink")
-        ha = args.get("addr", False)
-        info = {"afn": afn, "di": di_val, "direction": dn, "has_address": bool(ha)}
-        fv = {"afn": afn, "seq": 1, "di": di_val}
-        if ha:
-            fv["address_area"] = {"asrc": "000000000001", "adst": "000000000000"}
+    # 如果只传了定位参数没有业务字段，返回 input_schema
+    resolve_only = args.get("resolve", False) or args.get("schema", False)
+    # 区分定位参数和业务参数
+    target_keys = {"proto", "func", "afn", "di", "dir", "address", "intent",
+                   "preamble", "seq", "addr", "direction", "has_address", "resolve", "schema"}
+    target_info = {k: v for k, v in args.items() if k in target_keys and v is not None}
+    business_values = {k: v for k, v in args.items() if k not in target_keys}
 
-    be = BuildEngine(ir, create_builtin_registry())
-    de = DecodeEngine(ir, create_builtin_registry())
     try:
-        path_info = be.resolve_path(info)
-        r = be.build(fv, info=info)
-        de.decode(r.frame)
-        return CmdResult(
-            success=True, command="build",
-            path=r.path_str, frame_hex=r.frame_hex,
-            output={"protocol": proto, "path": r.path_str},
-        )
-    except ValueError as e:
-        # 路径不存在: 尝试 resolve 获取部分路径
-        partial_path = ""
-        try: partial_path = " → ".join(
-            s["leaf_name"] for s in be.resolve_path({k: v for k, v in info.items() if k != "has_address"}).get("path", [])
-        ) if "resolve_path" in dir(be) else ""
-        except Exception: pass
-        return CmdResult(
-            success=False, command="build", error=str(e),
-            path=partial_path,
-        )
+        target = resolve(target_info)
     except Exception as e:
         return CmdResult(success=False, command="build", error=str(e))
+
+    # --resolve: 只返回 input_schema，不构造帧
+    if resolve_only:
+        return CmdResult(
+            success=True, command="build",
+            path=target.path,
+            output=target.to_dict(),
+        )
+
+    # 将定位参数中同时作为业务字段的值 (如 di) 合并到 business_values
+    schema_names = {f.name for f in target.input_schema}
+    for k, v in target_info.items():
+        if k in schema_names and k not in business_values:
+            business_values[k] = v
+
+    # 正常构造: 如果 schema 为空（无必填业务字段），直接编码
+    has_required = any(f.required for f in target.input_schema)
+    if not business_values and has_required:
+        return CmdResult(
+            success=False, command="build",
+            error="no business fields provided. "
+                  "Use --resolve to see input_schema, then provide required fields",
+            path=target.path,
+            output={"input_schema": [f.to_dict() for f in target.input_schema],
+                    "derived_fields": target.derived_fields},
+        )
+
+    try:
+        frame_hex = encode(target, business_values)
+        return CmdResult(
+            success=True, command="build",
+            path=target.path, frame_hex=frame_hex,
+            output={"protocol": target.protocol, "path": target.path},
+        )
+    except Exception as e:
+        return CmdResult(success=False, command="build", error=str(e),
+                         path=target.path)
 
 
 # ── Decode ────────────────────────────────────────────────────────────
@@ -149,28 +154,26 @@ def handle_decode(args: dict[str, Any]) -> CmdResult:
         return CmdResult(success=False, command="decode", error=str(e))
 
 
-# ── 注册 ──────────────────────────────────────────────────────────────
+# ── 注册 (命令元数据从 JSON 文件加载) ──────────────────────────────────
 
-registry.register(Command(
-    name="build",
-    desc="构造协议报文",
-    params=[
-        Param("proto", "choice", required=True, desc="协议", values=["dlt645", "csg"]),
-        Param("func", "hex", desc="功能码 (DLT645)"),
-        Param("afn", "hex", desc="AFN (CSG)"),
-        Param("di", "str", desc="DI 数据标识"),
-        Param("dir", "choice", desc="方向", values=["downlink", "uplink"]),
-        Param("addr", "bool", desc="带地址域 (CSG)"),
-    ],
-    timeout=15000,
-), handle_build)
+def _register_all():
+    import json
+    cmds_dir = Path(__file__).resolve().parent / "commands"
+    handler_map = {"build": handle_build, "decode": handle_decode}
+    for fpath in sorted(cmds_dir.glob("*.json")):
+        data = json.loads(fpath.read_text())
+        params = [Param(
+            name=p["name"], type=p.get("type", "str"),
+            required=p.get("required", False), desc=p.get("desc", ""),
+            values=p.get("values"), default=p.get("default"),
+        ) for p in data.get("params", [])]
+        cmd = Command(
+            name=data["name"], desc=data.get("desc", ""),
+            params=params, enabled=data.get("enabled", True),
+            timeout=data.get("timeout", 15000),
+        )
+        h = handler_map.get(data["name"])
+        if h:
+            registry.register(cmd, h)
 
-registry.register(Command(
-    name="decode",
-    desc="解析协议报文",
-    params=[
-        Param("proto", "choice", required=True, desc="协议", values=["dlt645", "csg"]),
-        Param("hex", "str", required=True, desc="十六进制报文字节流"),
-    ],
-    timeout=15000,
-), handle_decode)
+_register_all()

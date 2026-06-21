@@ -1,6 +1,6 @@
-"""运行时日志 — 分行记录所有 Build 和 Decode 操作。
+"""运行时日志 — 分行记录所有 Build, Decode 和 Console 操作。
 
-日志位置: log/build.log, log/decode.log
+日志位置: log/build.log, log/decode.log, log/console.log
 格式:
   [BUILD] timestamp protocol=xxx
     info: {...}
@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +25,8 @@ def _ensure():
 
 
 def _ts() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    now = datetime.now().astimezone()
+    return now.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + now.strftime("%z")
 
 
 def log_build(protocol: str,
@@ -97,4 +98,38 @@ def _simplify(obj: Any) -> Any:
         return {k: _simplify(v) for k, v in obj.items()}
     if isinstance(obj, list):
         return [_simplify(i) for i in obj]
+    if isinstance(obj, bool):
+        return obj
+    if isinstance(obj, int) and not isinstance(obj, bool):
+        # 显示为十六进制
+        return f"0x{obj:02X}"
     return obj
+
+
+# ── Console 日志 ──────────────────────────────────────────────────────
+
+def log_console(command: str,
+                args: dict[str, Any] | None = None,
+                output: dict[str, Any] | None = None,
+                path: str | None = None,
+                frame_hex: str = "",
+                success: bool = True,
+                error: str = "") -> None:
+    """记录控制台命令调用。"""
+    _ensure()
+    tag = "[CONSOLE]" if success else "[CONSOLE][ERROR]"
+    lines = [f"{tag} {_ts()}  cmd={command}"]
+
+    if args:
+        lines.append(f"  args: {json.dumps(_simplify(args), ensure_ascii=False)}")
+    if path:
+        lines.append(f"  [PATH] {path}")
+    if frame_hex:
+        lines.append(f"  [FRAME] {frame_hex}")
+    if output:
+        lines.append(f"  [OUTPUT] {json.dumps(_simplify(output), ensure_ascii=False)}")
+    if error:
+        lines.append(f"  [ERROR] {error}")
+
+    with open(_LOG_DIR / "console.log", "a", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n\n")

@@ -12,16 +12,27 @@ import console.handler  # noqa: F401
 
 
 def exec_cmd(name: str, args: dict[str, Any]) -> CmdResult:
-    """执行命令。返回 CmdResult。"""
+    """执行命令。返回 CmdResult。自动记录到 log/console.log。"""
+    from protocol_tool.utils.logger import log_console
+
     handler = registry.handler(name)
     if not handler:
-        return CmdResult(success=False, command=name, error=f"unknown command: {name}")
+        result = CmdResult(success=False, command=name, error=f"unknown command: {name}")
+        log_console(command=name, args=args, success=False, error=result.error)
+        return result
 
     errors = registry.validate_args(name, args)
     if errors:
-        return CmdResult(success=False, command=name, error="; ".join(errors))
+        result = CmdResult(success=False, command=name, error="; ".join(errors))
+        log_console(command=name, args=args, success=False, error=result.error)
+        return result
 
-    return handler(args)
+    result = handler(args)
+    log_console(command=name, args=args, success=result.success,
+                path=result.path, frame_hex=result.frame_hex,
+                output=result.output if result.success else None,
+                error=result.error if not result.success else "")
+    return result
 
 
 def list_cmds() -> list[dict]:
