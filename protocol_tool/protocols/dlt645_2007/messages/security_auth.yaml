@@ -1,0 +1,86 @@
+# DL/T 645-2007 安全认证 + 多功能端子输出控制
+messages:
+  # ── 安全认证 (control.func=0x03) ──
+  - kind: message
+    id: security_auth_request
+    router: main
+    match:
+      control.func: 0x03
+      control.dir: 0
+    direction: request
+    description: "安全认证命令"
+    body:
+      type: struct
+      fields:
+        - name: auth_type
+          type: uint8
+          description: "认证类型"
+
+        - name: auth_data
+          type: bytes
+          boundary:
+            kind: remaining
+          description: "认证数据"
+
+  - kind: message
+    id: security_auth_response
+    router: main
+    match:
+      control.func: 0x03
+      control.dir: 1
+    direction: response
+    description: "安全认证 — 应答"
+    body:
+      type: struct
+      fields:
+        - name: auth_result
+          type: hex
+          length: 2
+          description: "认证结果状态字"
+
+        - name: auth_data
+          type: bytes
+          boundary:
+            kind: remaining
+          description: "认证返回数据"
+
+  # ── 多功能端子输出控制 (control.func=0x1D) ──
+  - kind: message
+    id: output_control_request
+    router: main
+    match:
+      control.func: 0x1D
+      control.dir: 0
+    direction: request
+    description: "多功能端子输出控制"
+    body:
+      type: struct
+      fields:
+        - name: control_word
+          type: uint8
+          description: "端子控制字"
+
+        - name: password
+          type: hex
+          length: 4
+
+        - name: operator_code
+          type: bcd
+          length: 4
+
+  - kind: message
+    id: output_control_response
+    router: main
+    match:
+      control.func: 0x1D
+      control.dir: 1
+    direction: response
+    description: "多功能端子输出控制 — 应答"
+    body:
+      type: struct
+      fields:
+        - name: status
+          type: enum
+          values:
+            0x00: "成功"
+            0x01: "失败"

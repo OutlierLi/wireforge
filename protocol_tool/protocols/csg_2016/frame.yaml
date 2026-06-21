@@ -1,5 +1,11 @@
 # CSG 2016 帧结构定义
 # 南网计量自动化终端本地通信模块接口协议(2016版)
+#
+# CSG 与 DLT645 的关键区别:
+# - 无 preamble 字节
+# - control 字节不含 func 字段 (功能码在 user_data 的 AFN 字节中)
+# - 使用 total_length 而非 data_length
+# - 数据域无 +33H 编码
 id: csg_2016.frame
 kind: frame
 
@@ -11,22 +17,23 @@ fields:
 
   - name: total_length
     type: uint16_le
-    description: "帧总长度(含起始符和结束符)"
+    description: "帧总长度 (含起始符和结束符)"
 
   - name: control
     type: bitset
     bits:
-      - { name: dir, offset: 7, width: 1, description: "传输方向(0=下行,1=上行)" }
-      - { name: prm, offset: 6, width: 1, description: "启动标志(0=从动,1=主动)" }
-      - { name: add, offset: 5, width: 1, description: "地址域标志(0=无地址域,1=有地址域)" }
-      - { name: func, bits: [4, 3, 2, 1, 0], description: "功能码" }
+      - { name: dir, offset: 7, width: 1, description: "传输方向 0=下行 1=上行" }
+      - { name: prm, offset: 6, width: 1, description: "启动标志 0=从动 1=主动", default: 1 }
+      - { name: add, offset: 5, width: 1, description: "地址域标志 0=无地址域 1=有地址域" }
+      - { name: ver, bits: [4, 3], description: "协议版本号 (固定0)", default: 0 }
+      - { name: reserved, bits: [2, 1, 0], description: "保留 (固定0)", default: 0 }
 
   - name: user_data
     type: routed_payload
     router: main
     length_from: total_length
     length_adjust: -6  # 减去 start(1) + total_length(2) + control(1) + checksum(1) + end(1) = 6
-    description: "用户数据区"
+    description: "用户数据区 (地址域+AFN+SEQ+DI+数据)"
 
   - name: checksum
     type: sum8
@@ -34,7 +41,7 @@ fields:
     cover:
       - control
       - user_data
-    description: "校验和(控制域+用户数据区模256)"
+    description: "校验和 (控制域+用户数据区)"
 
   - name: end
     type: const

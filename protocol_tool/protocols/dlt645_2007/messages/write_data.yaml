@@ -1,0 +1,68 @@
+# DL/T 645-2007 写数据报文 (control.func=0x14)
+messages:
+  - kind: message
+    id: write_data_request
+    router: main
+    match:
+      control.func: 0x14
+      control.dir: 0
+    direction: request
+    description: "写数据 — 写入电表数据"
+    body:
+      type: struct
+      fields:
+        - name: di
+          type: hex
+          length: 4
+          byte_order: little
+          description: "数据标识 DI0-DI3"
+
+        - name: password
+          type: struct
+          fields:
+            - name: pa
+              type: hex
+              length: 1
+              description: "密码权限等级"
+            - name: p0
+              type: hex
+              length: 1
+              description: "密码字节0"
+            - name: p1
+              type: hex
+              length: 1
+              description: "密码字节1"
+            - name: p2
+              type: hex
+              length: 1
+              description: "密码字节2"
+          description: "4字节密码 (PA P0 P1 P2)"
+
+        - name: operator_code
+          type: bcd
+          length: 4
+          description: "操作者代码 C0C1C2C3"
+
+        - name: payload
+          type: bytes
+          boundary:
+            kind: remaining
+          description: "写入数据载荷"
+
+  - kind: message
+    id: write_data_response
+    router: main
+    match:
+      control.func: 0x14
+      control.dir: 1
+    direction: response
+    description: "写数据 — 应答"
+    body:
+      type: struct
+      fields:
+        - name: status
+          type: enum
+          values:
+            0x00: "成功"
+            0x01: "失败"
+          description: "写入结果"

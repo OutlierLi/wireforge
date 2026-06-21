@@ -59,6 +59,20 @@ class FrameCompiler:
         """Compile a single field YAML dict into a FieldNode."""
         name = item["name"]
         type_ref = item["type"]
+
+        # Resolve domain types to base codec types
+        # e.g. datetime_ymdhms → bcd with params {length: 6, format: "YYMMDDhhmmss"}
+        type_def = self.resolver.resolve_field_type(type_ref)
+        if type_def.get("type") != type_ref:
+            # Domain type: merge domain params as defaults, field-level params override
+            base_type = type_def.get("type", type_ref)
+            item = {
+                **{k: v for k, v in type_def.items() if k != "type"},
+                **item,  # field-level overrides
+                "type": base_type,
+            }
+            type_ref = base_type
+
         fid = item.get("id", f"{prefix}.{name}")
 
         # Build params

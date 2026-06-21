@@ -1,0 +1,423 @@
+# DL/T 645-2007 常用数据标识 (DI) 变体
+# 每个 DI 编码对应一种电表数据项
+# DI 格式: DI3 DI2 DI1 DI0 (4字节, 大端显示)
+#
+# DI0: 数据类型
+# DI1: 功能分组 (00=电能量, 01=最大需量, 02=变量, 03=参变量, 04=负荷记录, 05=冻结数据...)
+# DI2: 数据项序号
+# DI3: 费率/象限等
+
+variants:
+  # ═══════════════════════════════════════════
+  # 电能量 (DI1=00)
+  # ═══════════════════════════════════════════
+
+  # ── 正向有功总电能 0001FF00 ──
+  - kind: variant
+    id: dlt645_2007.forward_active_total_energy
+    router: read_data_response_di
+    match:
+      di: "0001FF00"
+    body:
+      type: struct
+      fields:
+        - name: energy
+          type: energy_4
+          description: "正向有功总电能"
+
+  # ── 正向有功费率1 00010100 ──
+  - kind: variant
+    id: dlt645_2007.forward_active_rate1
+    router: read_data_response_di
+    match:
+      di: "00010100"
+    body:
+      type: struct
+      fields:
+        - name: energy
+          type: energy_4
+          description: "正向有功费率1"
+
+  # ── 正向有功费率2 00010200 ──
+  - kind: variant
+    id: dlt645_2007.forward_active_rate2
+    router: read_data_response_di
+    match:
+      di: "00010200"
+    body:
+      type: struct
+      fields:
+        - name: energy
+          type: energy_4
+          description: "正向有功费率2"
+
+  # ── 正向有功费率3 00010300 ──
+  - kind: variant
+    id: dlt645_2007.forward_active_rate3
+    router: read_data_response_di
+    match:
+      di: "00010300"
+    body:
+      type: struct
+      fields:
+        - name: energy
+          type: energy_4
+          description: "正向有功费率3"
+
+  # ── 正向有功费率4 00010400 ──
+  - kind: variant
+    id: dlt645_2007.forward_active_rate4
+    router: read_data_response_di
+    match:
+      di: "00010400"
+    body:
+      type: struct
+      fields:
+        - name: energy
+          type: energy_4
+          description: "正向有功费率4"
+
+  # ── 反向有功总电能 0002FF00 ──
+  - kind: variant
+    id: dlt645_2007.reverse_active_total_energy
+    router: read_data_response_di
+    match:
+      di: "0002FF00"
+    body:
+      type: struct
+      fields:
+        - name: energy
+          type: energy_4
+          description: "反向有功总电能"
+
+  # ── 正向无功总电能 0003FF00 ──
+  - kind: variant
+    id: dlt645_2007.forward_reactive_total_energy
+    router: read_data_response_di
+    match:
+      di: "0003FF00"
+    body:
+      type: struct
+      fields:
+        - name: energy
+          type: energy_4
+          description: "正向无功总电能"
+
+  # ── 反向无功总电能 0004FF00 ──
+  - kind: variant
+    id: dlt645_2007.reverse_reactive_total_energy
+    router: read_data_response_di
+    match:
+      di: "0004FF00"
+    body:
+      type: struct
+      fields:
+        - name: energy
+          type: energy_4
+          description: "反向无功总电能"
+
+  # ── 正向有功总电能(5字节) 0001FF01 ──
+  - kind: variant
+    id: dlt645_2007.forward_active_total_energy_5
+    router: read_data_response_di
+    match:
+      di: "0001FF01"
+    body:
+      type: struct
+      fields:
+        - name: energy
+          type: energy_5
+          description: "正向有功总电能(5字节)"
+
+  # ═══════════════════════════════════════════
+  # 最大需量 (DI1=01)
+  # ═══════════════════════════════════════════
+
+  # ── 正向有功总最大需量 0101FF00 ──
+  - kind: variant
+    id: dlt645_2007.forward_active_total_demand
+    router: read_data_response_di
+    match:
+      di: "0101FF00"
+    body:
+      type: struct
+      fields:
+        - name: demand
+          type: demand_4
+          description: "正向有功总最大需量"
+
+        - name: demand_time
+          type: datetime_ymdhm
+          description: "最大需量发生时间"
+
+  # ═══════════════════════════════════════════
+  # 变量 (DI1=02)
+  # ═══════════════════════════════════════════
+
+  # ── A相电压 02010100 ──
+  - kind: variant
+    id: dlt645_2007.voltage_phase_a
+    router: read_data_response_di
+    match:
+      di: "02010100"
+    body:
+      type: struct
+      fields:
+        - name: voltage
+          type: voltage_2
+          description: "A相电压"
+
+  # ── B相电压 02010200 ──
+  - kind: variant
+    id: dlt645_2007.voltage_phase_b
+    router: read_data_response_di
+    match:
+      di: "02010200"
+    body:
+      type: struct
+      fields:
+        - name: voltage
+          type: voltage_2
+          description: "B相电压"
+
+  # ── C相电压 02010300 ──
+  - kind: variant
+    id: dlt645_2007.voltage_phase_c
+    router: read_data_response_di
+    match:
+      di: "02010300"
+    body:
+      type: struct
+      fields:
+        - name: voltage
+          type: voltage_2
+          description: "C相电压"
+
+  # ── A相电流 02020100 ──
+  - kind: variant
+    id: dlt645_2007.current_phase_a
+    router: read_data_response_di
+    match:
+      di: "02020100"
+    body:
+      type: struct
+      fields:
+        - name: current
+          type: current_3
+          description: "A相电流"
+
+  # ── B相电流 02020200 ──
+  - kind: variant
+    id: dlt645_2007.current_phase_b
+    router: read_data_response_di
+    match:
+      di: "02020200"
+    body:
+      type: struct
+      fields:
+        - name: current
+          type: current_3
+          description: "B相电流"
+
+  # ── C相电流 02020300 ──
+  - kind: variant
+    id: dlt645_2007.current_phase_c
+    router: read_data_response_di
+    match:
+      di: "02020300"
+    body:
+      type: struct
+      fields:
+        - name: current
+          type: current_3
+          description: "C相电流"
+
+  # ── 总有功功率 02030000 ──
+  - kind: variant
+    id: dlt645_2007.total_active_power
+    router: read_data_response_di
+    match:
+      di: "02030000"
+    body:
+      type: struct
+      fields:
+        - name: power
+          type: power_3
+          description: "总有功功率"
+
+  # ── A相有功功率 02030100 ──
+  - kind: variant
+    id: dlt645_2007.active_power_phase_a
+    router: read_data_response_di
+    match:
+      di: "02030100"
+    body:
+      type: struct
+      fields:
+        - name: power
+          type: power_3
+          description: "A相有功功率"
+
+  # ── 总功率因数 02060000 ──
+  - kind: variant
+    id: dlt645_2007.total_power_factor
+    router: read_data_response_di
+    match:
+      di: "02060000"
+    body:
+      type: struct
+      fields:
+        - name: power_factor
+          type: power_factor_2
+          description: "总功率因数"
+
+  # ═══════════════════════════════════════════
+  # 参变量 (DI1=03)
+  # ═══════════════════════════════════════════
+
+  # ── 频率 03020000 ──
+  - kind: variant
+    id: dlt645_2007.frequency
+    router: read_data_response_di
+    match:
+      di: "03020000"
+    body:
+      type: struct
+      fields:
+        - name: frequency
+          type: frequency_2
+          description: "电网频率"
+
+  # ── 电表通信地址 04000401 ──
+  - kind: variant
+    id: dlt645_2007.meter_address
+    router: read_data_response_di
+    match:
+      di: "04000401"
+    body:
+      type: struct
+      fields:
+        - name: address
+          type: bcd
+          length: 6
+          byte_order: little
+          canonical_format: decimal_string
+          description: "通信地址"
+
+  # ── 电表运行状态字1 04000501 ──
+  - kind: variant
+    id: dlt645_2007.meter_status1
+    router: read_data_response_di
+    match:
+      di: "04000501"
+    body:
+      type: struct
+      fields:
+        - name: status
+          type: hex
+          length: 2
+          description: "电表运行状态字1"
+
+  # ── 当前日期时间 04000101 ──
+  - kind: variant
+    id: dlt645_2007.current_datetime
+    router: read_data_response_di
+    match:
+      di: "04000101"
+    body:
+      type: struct
+      fields:
+        - name: datetime
+          type: datetime_ymdhms
+          description: "当前日期时间 (YYMMDDhhmmss)"
+
+  # ═══════════════════════════════════════════
+  # 冻结数据 (DI1=05)
+  # ═══════════════════════════════════════════
+
+  # ── 日冻结时间 00010000 ──
+  - kind: variant
+    id: dlt645_2007.daily_freeze_time
+    router: read_data_response_di
+    match:
+      di: "00010000"
+    body:
+      type: struct
+      fields:
+        - name: freeze_year
+          type: bcd
+          length: 1
+          description: "年 (后两位)"
+
+        - name: freeze_month
+          type: bcd
+          length: 1
+          description: "月"
+
+        - name: freeze_day
+          type: bcd
+          length: 1
+          description: "日"
+
+        - name: freeze_hour
+          type: bcd
+          length: 1
+          description: "时"
+
+  # ── 月冻结时间 00010001 ──
+  - kind: variant
+    id: dlt645_2007.monthly_freeze_time
+    router: read_data_response_di
+    match:
+      di: "00010001"
+    body:
+      type: struct
+      fields:
+        - name: freeze_year
+          type: bcd
+          length: 1
+        - name: freeze_month
+          type: bcd
+          length: 1
+        - name: freeze_day
+          type: bcd
+          length: 1
+        - name: freeze_hour
+          type: bcd
+          length: 1
+
+  # ── 日冻结正向有功总电能 0501FF00 ──
+  - kind: variant
+    id: dlt645_2007.daily_freeze_forward_active_total
+    router: read_data_response_di
+    match:
+      di: "0501FF00"
+    body:
+      type: struct
+      fields:
+        - name: energy
+          type: energy_4
+          description: "日冻结正向有功总电能"
+
+  # ═══════════════════════════════════════════
+  # 负荷记录 (DI1=04)
+  # ═══════════════════════════════════════════
+
+  # ── 负荷记录块 04060001 ──
+  - kind: variant
+    id: dlt645_2007.load_record_block
+    router: read_data_response_di
+    match:
+      di: "04060001"
+    body:
+      type: struct
+      fields:
+        - name: record_count
+          type: uint8
+          description: "记录条数"
+
+        - name: records
+          type: bytes
+          boundary:
+            kind: remaining
+          description: "负荷记录数据块"

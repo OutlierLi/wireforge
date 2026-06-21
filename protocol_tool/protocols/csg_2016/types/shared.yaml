@@ -1,21 +1,46 @@
-# CSG 2016 共享类型定义
-energy_4:
-  type: bcd_numeric
-  length: 4
-  format: "XXXXXX.XX"
-  unit: "kWh"
-  signed: false
+# CSG 2016 类型注册表
+# 迁移自旧项目 database/protocols/csg_2016/common/type.json
+# 注: 与 DLT645-2007 共享大部分类型, 增加 uint32_be
 
-voltage_2:
-  type: bcd_numeric
-  length: 2
-  format: "XXX.X"
-  unit: "V"
-  signed: false
+# ── 基础整数类型 ──
+uint8:       { type: uint8 }
+uint16_le:   { type: uint16_le }
+uint16_be:   { type: uint16_be }
+uint24_le:   { type: uint24_le }
+uint32_le:   { type: uint32_le }
+uint32_be:   { type: uint32_be }
 
-current_3:
-  type: bcd_numeric
-  length: 3
-  format: "XXX.XXX"
-  unit: "A"
-  signed: true
+# ── 原始字节类型 ──
+hex:         { type: hex }
+bytes:       { type: bytes }
+array:       { type: array }
+struct:      { type: struct }
+ascii:       { type: ascii }
+
+# ── BCD 基础类型 ──
+bcd:           { type: bcd }
+bcd_signed:    { type: bcd, signed: true }
+bcd_datetime:  { type: bcd, length: 6, format: "ssmmhhDDMMYY" }
+bcd_date_ymd:  { type: bcd, length: 3, format: "YYMMDD" }
+bcd_time_hms:  { type: bcd, length: 3, format: "hhmmss" }
+datetime_ymdhm:  { type: bcd, length: 5, format: "YYMMDDhhmm" }
+datetime_ymdhms: { type: bcd, length: 6, format: "YYMMDDhhmmss" }
+count_time_6: { type: bcd, length: 6, format: "XXXXXX.XXXXXX" }
+
+# ── 电能量/需量/测量类型 ──
+energy_4:       { type: bcd_numeric, length: 4, format: "XXXXXX.XX", unit: "kWh", signed: false }
+energy_5:       { type: bcd_numeric, length: 5, format: "XXXXXX.XXXX", unit: "kWh", signed: false }
+demand_4:       { type: bcd_numeric, length: 4, format: "XX.XXXX", unit: "kW", signed: true }
+voltage_2:      { type: bcd_numeric, length: 2, format: "XXX.X", unit: "V", signed: false }
+current_3:      { type: bcd_numeric, length: 3, format: "XXX.XXX", unit: "A", signed: true }
+power_3:        { type: bcd_numeric, length: 3, format: "XX.XXXX", unit: "kW", signed: true }
+power_factor_2: { type: bcd_numeric, length: 2, format: "X.XXX", signed: true }
+angle_2:        { type: bcd_numeric, length: 2, format: "XXX.X", unit: "degree", signed: false }
+frequency_2:    { type: bcd_numeric, length: 2, format: "XX.XX", unit: "Hz", signed: false }
+temperature_2:  { type: bcd_numeric, length: 2, format: "XXX.X", unit: "℃", signed: true }
+percent_2:      { type: bcd_numeric, length: 2, format: "XX.XX", unit: "%", signed: false }
+
+# ── 特殊类型 ──
+bitset: { type: bitset }
+enum:   { type: enum }
+sum8:   { type: sum8 }

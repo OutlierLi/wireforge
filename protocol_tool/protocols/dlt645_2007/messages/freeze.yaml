@@ -1,0 +1,39 @@
+# DL/T 645-2007 冻结命令报文 (control.func=0x16)
+messages:
+  - kind: message
+    id: freeze_request
+    router: main
+    match:
+      control.func: 0x16
+      control.dir: 0
+    direction: request
+    description: "冻结命令 — 冻结电表数据"
+    body:
+      type: struct
+      fields:
+        - name: freeze_type
+          type: hex
+          length: 4
+          byte_order: little
+          description: "冻结类型标识 DI0-DI3"
+
+        - name: freeze_time
+          type: datetime_ymdhm
+          description: "冻结时间 (YYMMDDhhmm)"
+
+  - kind: message
+    id: freeze_response
+    router: main
+    match:
+      control.func: 0x16
+      control.dir: 1
+    direction: response
+    description: "冻结命令 — 应答"
+    body:
+      type: struct
+      fields:
+        - name: status
+          type: enum
+          values:
+            0x00: "成功"
+            0x01: "失败"

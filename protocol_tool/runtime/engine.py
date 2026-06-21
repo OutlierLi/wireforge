@@ -87,6 +87,10 @@ class DecodeEngine:
         self.ir = ir
         self.codecs = codec_registry
 
+        # Share codec registry with StructCodec (so sub-fields use the same registry)
+        from protocol_tool.codecs.struct_codec import StructCodec
+        StructCodec.codec_registry = codec_registry
+
         # Wire up RoutedPayloadCodec with engine reference
         from protocol_tool.codecs.routed import RoutedPayloadCodec
         routed = self.codecs.get("routed_payload")
@@ -97,6 +101,12 @@ class DecodeEngine:
 
     def decode(self, data: bytes) -> DecodeResult:
         """Decode raw bytes into a DecodeResult."""
+        # Re-bind RoutedPayloadCodec to this engine
+        routed = self.codecs.get("routed_payload")
+        from protocol_tool.codecs.routed import RoutedPayloadCodec
+        if isinstance(routed, RoutedPayloadCodec):
+            routed.set_engine(self, self.ir)
+
         from protocol_tool.runtime.reader import DecodeReader
         from protocol_tool.runtime.context import DecodeContext
         from protocol_tool.runtime.stack import ExecutionStack
@@ -139,6 +149,17 @@ class DecodeEngine:
         from protocol_tool.runtime.context import TraceEvent
 
         pos_before = reader.tell()
+
+        # Skip optional field if no bytes remain
+        if field.optional and reader.exhausted():
+            context.add_trace(TraceEvent(
+                node_id=stack.current.node_id,
+                field_name=field.name,
+                field_type=field.type_ref,
+                position=pos_before,
+                message="skipped (optional, no bytes)",
+            ))
+            return
 
         # Check condition
         if field.condition is not None:
@@ -212,12 +233,12 @@ class DecodeEngine:
             context.warning(f"Unknown leaf node: {leaf_id!r}")
             return {"_raw": reader.read_remaining()}
 
-        # Use a sub-stack for the leaf scope
+        # Use a sub-context that can see parent values (needed for conditions like control.add)
         sub_context = DC(
-            values={},
-            trace=context.trace,  # Share trace
-            warnings=context.warnings,  # Share warnings
-            raw_sections=context.raw_sections,  # Share raw sections for checksum
+            values=dict(context.values),  # Inherit parent values for cross-layer field refs
+            trace=context.trace,
+            warnings=context.warnings,
+            raw_sections=context.raw_sections,
         )
 
         for field in leaf.fields:
@@ -287,6 +308,10 @@ class BuildEngine:
         self.ir = ir
         self.codecs = codec_registry
 
+        # Share codec registry with StructCodec
+        from protocol_tool.codecs.struct_codec import StructCodec
+        StructCodec.codec_registry = codec_registry
+
         # Wire up RoutedPayloadCodec
         from protocol_tool.codecs.routed import RoutedPayloadCodec
         routed = self.codecs.get("routed_payload")
@@ -296,6 +321,11 @@ class BuildEngine:
     # -- Public API --
 
     def build(self, values: dict[str, Any], *, message_id: str | None = None) -> BuildResult:
+        # Re-bind RoutedPayloadCodec to this engine
+        routed = self.codecs.get("routed_payload")
+        from protocol_tool.codecs.routed import RoutedPayloadCodec
+        if isinstance(routed, RoutedPayloadCodec):
+            routed.set_engine(self, self.ir)
         """Build a frame from field values.
 
         Parameters
@@ -356,13 +386,18 @@ class BuildEngine:
                 return
 
         # Resolve field value
-        field_value = values.get(field.name, field.default)
-        if field_value is None and not field.optional:
-            raise BuildError(
-                f"Required field {field.name!r} not provided and has no default"
-            )
-        if field_value is None:
-            return  # Skip optional field with no value
+        # Auto-generated fields don't need user input
+        auto_types = {"const", "const_repeat", "sum8", "xor8",
+                      "crc16_modbus", "crc16_ccitt", "crc8", "routed_payload"}
+        if field.type_ref in auto_types or field.optional:
+            field_value = values.get(field.name) if values else None
+            # Still encode even if None — codec auto-generates the value
+        else:
+            field_value = values.get(field.name, field.default)
+            if field_value is None:
+                raise BuildError(
+                    f"Required field {field.name!r} not provided and has no default"
+                )
 
         # Resolve codec
         try:
@@ -378,6 +413,11 @@ class BuildEngine:
             raise BuildError(
                 f"Failed to encode field {field.name!r} (type={field.type_ref}): {exc}"
             ) from exc
+
+        # Save raw bytes for checksum computation
+        raw_bytes = writer.bytes()[pos_before:]
+        if raw_bytes:
+            context.raw_sections[field.name] = raw_bytes
 
         # Record trace
         context.add_trace(TraceEvent(
@@ -396,7 +436,8 @@ class BuildEngine:
         context: BuildContext,
     ) -> None:
         """Encode a leaf node's fields. Called by RoutedPayloadCodec."""
-        sub_context = BuildContext(
+        from protocol_tool.runtime.context import BuildContext as BC
+        sub_context = BC(
             values=values,
             trace=context.trace,
             raw_sections=context.raw_sections,

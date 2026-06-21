@@ -1,6 +1,4 @@
-# DL/T 645-2007 读通信地址报文
-# control.func=0x13 → 读通信地址
-
+# DL/T 645-2007 读通信地址报文 (control.func=0x13)
 messages:
   - kind: message
     id: read_address_request
@@ -9,13 +7,14 @@ messages:
       control.func: 0x13
       control.dir: 0
     direction: request
+    description: "读通信地址 — 请求电表通信地址 (广播, 地址域填 AA AA AA AA AA AA)"
     body:
       type: struct
       fields:
         - name: reserved
           type: hex
           length: 4
-          description: "保留数据(AA AA AA AA)"
+          description: "保留数据 (AA AA AA AA)"
 
   - kind: message
     id: read_address_response
@@ -24,6 +23,7 @@ messages:
       control.func: 0x13
       control.dir: 1
     direction: response
+    description: "读通信地址 — 返回电表通信地址"
     body:
       type: struct
       fields:
@@ -32,4 +32,4 @@ messages:
           length: 6
           byte_order: little
           canonical_format: decimal_string
-          description: "通信地址"
+          description: "通信地址 (6字节BCD)"

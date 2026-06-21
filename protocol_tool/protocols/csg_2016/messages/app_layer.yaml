@@ -1,0 +1,143 @@
+# CSG 2016 用户数据区 — 按地址域分支
+#
+# main router keys=[control.dir, control.add]
+#   [0,0]=下行无地址  [0,1]=下行带地址
+#   [1,0]=上行无地址  [1,1]=上行带地址
+messages:
+  # ── 下行无地址域 (dir=0, add=0) ──
+  - kind: message
+    id: csg_downlink
+    router: main
+    match:
+      control.dir: 0
+      control.add: 0
+    direction: request
+    description: "CSG 下行报文 (无地址域)"
+    body:
+      type: struct
+      fields:
+        - name: afn
+          type: uint8
+          description: "应用功能码 AFN"
+        - name: seq
+          type: uint8
+          description: "帧序列域 SEQ"
+        - name: di
+          type: hex
+          length: 4
+          byte_order: little
+          description: "数据标识编码 DI"
+        - name: data_content
+          type: routed_payload
+          router: afn_router
+          boundary:
+            kind: remaining
+          description: "数据标识内容"
+
+  # ── 下行带地址域 (dir=0, add=1) ──
+  - kind: message
+    id: csg_downlink_addr
+    router: main
+    match:
+      control.dir: 0
+      control.add: 1
+    direction: request
+    description: "CSG 下行报文 (带地址域)"
+    body:
+      type: struct
+      fields:
+        - name: address_area
+          type: struct
+          description: "地址域 A (12字节)"
+          fields:
+            - name: asrc
+              type: bcd
+              length: 6
+              byte_order: little
+              canonical_format: decimal_string
+              description: "源地址"
+            - name: adst
+              type: bcd
+              length: 6
+              byte_order: little
+              canonical_format: decimal_string
+              description: "目的地址"
+        - name: afn
+          type: uint8
+        - name: seq
+          type: uint8
+        - name: di
+          type: hex
+          length: 4
+          byte_order: little
+        - name: data_content
+          type: routed_payload
+          router: afn_router
+          boundary:
+            kind: remaining
+
+  # ── 上行无地址域 (dir=1, add=0) ──
+  - kind: message
+    id: csg_uplink
+    router: main
+    match:
+      control.dir: 1
+      control.add: 0
+    direction: response
+    description: "CSG 上行报文 (无地址域)"
+    body:
+      type: struct
+      fields:
+        - name: afn
+          type: uint8
+        - name: seq
+          type: uint8
+        - name: di
+          type: hex
+          length: 4
+          byte_order: little
+        - name: data_content
+          type: routed_payload
+          router: afn_router
+          boundary:
+            kind: remaining
+
+  # ── 上行带地址域 (dir=1, add=1) ──
+  - kind: message
+    id: csg_uplink_addr
+    router: main
+    match:
+      control.dir: 1
+      control.add: 1
+    direction: response
+    description: "CSG 上行报文 (带地址域)"
+    body:
+      type: struct
+      fields:
+        - name: address_area
+          type: struct
+          description: "地址域 A"
+          fields:
+            - name: asrc
+              type: bcd
+              length: 6
+              byte_order: little
+              canonical_format: decimal_string
+            - name: adst
+              type: bcd
+              length: 6
+              byte_order: little
+              canonical_format: decimal_string
+        - name: afn
+          type: uint8
+        - name: seq
+          type: uint8
+        - name: di
+          type: hex
+          length: 4
+          byte_order: little
+        - name: data_content
+          type: routed_payload
+          router: afn_router
+          boundary:
+            kind: remaining

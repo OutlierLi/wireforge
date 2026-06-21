@@ -18,6 +18,7 @@ class HexCodec(FieldCodec):
     Parameters (from FieldNode.params):
         length: byte length (required)
         separator: character between hex bytes (default " ")
+        byte_order: "little" / "reverse" → reverse bytes to logical order
     """
 
     def decode(
@@ -30,6 +31,10 @@ class HexCodec(FieldCodec):
         if length is None:
             raise ValueError(f"Hex field {field.name!r} requires explicit length")
         raw = reader.read(length)
+        # Byte order: reverse to logical order if little-endian
+        bo = field.params.get("byte_order", "big")
+        if bo in ("little", "little_endian", "reverse"):
+            raw = raw[::-1]
         sep = field.params.get("separator", " ")
         return raw.hex(sep).upper()
 
@@ -41,6 +46,9 @@ class HexCodec(FieldCodec):
         context: BuildContext,
     ) -> None:
         raw = self._to_bytes(value)
+        bo = field.params.get("byte_order", "big")
+        if bo in ("little", "little_endian", "reverse"):
+            raw = raw[::-1]
         writer.write(raw)
 
     @staticmethod

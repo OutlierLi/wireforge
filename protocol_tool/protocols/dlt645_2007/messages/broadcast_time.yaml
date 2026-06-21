@@ -1,0 +1,16 @@
+# DL/T 645-2007 广播校时报文 (control.func=0x08)
+messages:
+  - kind: message
+    id: broadcast_time_request
+    router: main
+    match:
+      control.func: 0x08
+      control.dir: 0
+    direction: request
+    description: "广播校时 — 对电表进行时间校准 (广播命令, 无需应答)"
+    body:
+      type: struct
+      fields:
+        - name: datetime
+          type: datetime_ymdhms
+          description: "当前时间 (YYMMDDhhmmss)"

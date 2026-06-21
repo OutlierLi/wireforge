@@ -1,0 +1,23 @@
+# Compiled IR outputs
+compiled/
+
+# Test logs
+tests/roundtrip_test/logs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

@@ -37,18 +37,22 @@ class Router:
 
         Returns None if fallback is 'raw' or 'preserve_payload' and no route matches.
         Raises RouteError if fallback is 'error' and no route matches.
+        Adds a warning to context when falling back (route unreachable).
         """
         keys: list[Any] = []
         for path in self.node.key_paths:
             try:
                 value = context.get(path)
             except KeyError:
-                # Key not yet parsed — cannot route
                 if self.node.fallback_policy == "error":
                     raise RouteError(
                         f"Router {self.node.id!r}: required key path {path!r} "
                         f"not found in context. Available: {sorted(context.values.keys())}"
                     )
+                context.warning(
+                    f"Router {self.node.id!r}: key path {path!r} not found, "
+                    f"falling back to {self.node.fallback_policy}"
+                )
                 return self._apply_fallback()
 
             keys.append(self._normalize_key(value))
@@ -59,7 +63,12 @@ class Router:
         if target is not None:
             return target
 
-        # No match — apply fallback
+        # No match — emit warning and apply fallback
+        available = sorted(self.node.route_table.keys())[:10]
+        context.warning(
+            f"Router {self.node.id!r}: no route for key {key_str}. "
+            f"Available: {available}... falling back to {self.node.fallback_policy}"
+        )
         return self._apply_fallback(key_str)
 
     def _apply_fallback(self, attempted_key: str | None = None) -> str | None:

@@ -19,12 +19,11 @@ class StructCodec(FieldCodec):
     Instead, it iterates over its sub-fields (stored in field.params["fields"])
     and delegates to the appropriate codec for each.
 
-    This is used for message payloads and variant bodies where fields
-    are grouped logically.
-
     Parameters (from FieldNode.params):
         fields: list of FieldNode dicts that make up the struct
     """
+
+    codec_registry = None  # Set by engine to share the same registry
 
     def decode(
         self,
@@ -97,9 +96,11 @@ def _normalize_fields(raw: list[dict[str, Any]], prefix: str) -> list[FieldNode]
 
 
 def _get_codec(type_ref: str):
-    """Get a codec from a shared registry. Requires engine to have set it up."""
-    import protocol_tool.codecs as codecs_mod
-    # Use the module-level shared registry
+    """Get a codec from the shared registry (set by engine), or fallback."""
+    from protocol_tool.codecs.struct_codec import StructCodec
+    if StructCodec.codec_registry is not None:
+        return StructCodec.codec_registry.get(type_ref)
+    # Fallback: create standalone registry
     if not hasattr(_get_codec, "_registry"):
         from protocol_tool.codecs import create_builtin_registry
         _get_codec._registry = create_builtin_registry()

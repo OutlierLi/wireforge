@@ -1,0 +1,55 @@
+# DL/T 645-2007 错误码定义
+# 迁移自旧项目 database/protocols/dlt645_2007/common/error_codes.json
+
+# ── 标准异常应答字 (1字节, bitmask) ──
+error_codes:
+  0x01: { name: other_error, description: "其他错误" }
+  0x02: { name: no_data, description: "无请求的数据" }
+  0x04: { name: password_error, description: "密码错误/未授权" }
+  0x08: { name: baud_rate_not_supported, description: "通信速率不能更改" }
+  0x10: { name: year_zone_over, description: "年时区数超" }
+  0x20: { name: day_period_over, description: "日时段数超" }
+  0x40: { name: rate_over, description: "费率数超" }
+  0x80: { name: reserved, description: "保留" }
+
+# ── 安全认证异常应答字 (2字节, bitmask) ──
+security_error_codes:
+  0x0001: { name: mac_error, description: "MAC错误" }
+  0x0002: { name: key_state_error, description: "密钥状态错误" }
+  0x0004: { name: random_not_exist, description: "不存在此随机数" }
+  0x0008: { name: esam_no_response, description: "ESAM无响应" }
+  0x0010: { name: auth_timeout, description: "身份认证超时" }
+  0x0020: { name: key_version_error, description: "密钥版本错误" }
+  0x0040: { name: meter_type_error, description: "电能表类型不匹配" }
+  0x0080: { name: command_format_error, description: "命令格式错误" }
+  0x0100: { name: command_exec_error, description: "命令执行错误" }
+
+# ── 跳合闸状态字 ──
+control_status:
+  bit0:  { name: direct_close, description: "直接合闸" }
+  bit1:  { name: allow_close, description: "允许合闸" }
+  bit2:  { name: direct_trip, description: "直接跳闸" }
+  bit3:  { name: delay_trip_timeout, description: "延时跳闸超时" }
+  bit4:  { name: trip_auto_restore, description: "跳闸自动恢复" }
+  bit5:  { name: delay_trip_current, description: "延时跳闸/大电流" }
+  bit8:  { name: power_protection, description: "保电" }
+  bit9:  { name: power_protection_release, description: "保电解除" }
+  bit10: { name: alarm, description: "报警" }
+  bit11: { name: alarm_release, description: "报警解除" }
+
+# ── 通信速率编码 ──
+baud_rate:
+  0x01: { name: bps_600, description: "600bps" }
+  0x02: { name: bps_1200, description: "1200bps" }
+  0x04: { name: bps_2400, description: "2400bps (默认)" }
+  0x08: { name: bps_4800, description: "4800bps" }
+  0x10: { name: bps_9600, description: "9600bps" }
+  0x20: { name: bps_19200, description: "19200bps" }
+
+# ── 密码权限等级 ──
+password_levels:
+  0x00: { name: level_0, description: "最高权限" }
+  0x02: { name: level_2, description: "电表清零/事件清零" }
+  0x04: { name: level_4, description: "写数据/最大需量清零" }
+  0x98: { name: level_98, description: "密文+MAC" }
+  0x99: { name: level_99, description: "明文+MAC" }

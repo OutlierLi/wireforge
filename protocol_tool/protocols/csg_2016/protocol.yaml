@@ -1,7 +1,15 @@
-# CSG 2016 协议包入口和路由声明
+# CSG 2016 协议 — 依据 5-计量自动化终端本地通信模块接口协议(2016版) 表4
+#
+# 两层路由:
+#   main (control.dir) → csg_downlink / csg_uplink
+#     → 解析 AFN+SEQ+DI (通用应用层)
+#     → afn_router (按 AFN 路由) → AFN 分组
+#       → 各组内 di_router (按 DI 路由) → 具体命令
+#
 id: csg_2016
 name: "CSG 2016 Meter Communication Protocol"
 version: "2016"
+description: "南网计量自动化终端本地通信模块接口协议(2016版)"
 
 frame_ref: frame.yaml
 
@@ -14,20 +22,88 @@ routers:
   main:
     kind: frame_router
     keys:
-      - control.func
-    fallback: raw
+      - control.dir
+      - control.add
+    target_kind: message
+    fallback: error
+    description: "按传输方向+地址域标志路由 (0=下行无地址 1=下行带地址 2=上行无地址 3=上行带地址)"
 
-  afn_di_router:
+  afn_router:
     kind: variant_router
     keys:
       - afn
+    target_kind: variant
+    fallback: error
+    description: "按 AFN 路由到功能分组"
+
+  afn00_di_router:
+    kind: variant_router
+    keys:
       - di
-    fallback: raw
+    target_kind: variant
+    fallback: error
+    description: "AFN=00 确认/否认 — 按 DI 路由"
+
+  afn01_di_router:
+    kind: variant_router
+    keys:
+      - di
+    target_kind: variant
+    fallback: error
+    description: "AFN=01 初始化 — 按 DI 路由"
+
+  afn02_di_router:
+    kind: variant_router
+    keys:
+      - di
+    target_kind: variant
+    fallback: error
+    description: "AFN=02 管理任务 — 按 DI 路由"
+
+  afn03_di_router:
+    kind: variant_router
+    keys:
+      - di
+    target_kind: variant
+    fallback: error
+    description: "AFN=03 读参数 — 按 DI 路由"
+
+  afn04_di_router:
+    kind: variant_router
+    keys:
+      - di
+    target_kind: variant
+    fallback: error
+    description: "AFN=04 写参数 — 按 DI 路由"
+
+  afn05_di_router:
+    kind: variant_router
+    keys:
+      - di
+    target_kind: variant
+    fallback: error
+    description: "AFN=05 上报信息 — 按 DI 路由"
+
+  afn06_di_router:
+    kind: variant_router
+    keys:
+      - di
+    target_kind: variant
+    fallback: error
+    description: "AFN=06 请求信息 — 按 DI 路由"
+
+  afn07_di_router:
+    kind: variant_router
+    keys:
+      - di
+    target_kind: variant
+    fallback: error
+    description: "AFN=07 文件传输 — 按 DI 路由"
 
 build:
   default_frame: csg_2016.frame
 
 policies:
-  unknown_message: preserve_payload
-  unknown_variant: raw
+  unknown_message: error
+  unknown_variant: error
   strict_route_uniqueness: true

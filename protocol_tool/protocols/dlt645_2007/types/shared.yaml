@@ -1,10 +1,45 @@
-# DL/T 645-2007 共享类型定义
+# DL/T 645-2007 完整类型注册表
+# 迁移自旧项目 database/protocols/dlt645_2007/common/type.json
+
+# ── 基础整数类型 ──
+uint8:       { type: uint8 }
+uint16_le:   { type: uint16_le }
+uint16_be:   { type: uint16_be }
+uint24_le:   { type: uint24_le }
+uint32_le:   { type: uint32_le }
+uint32_be:   { type: uint32_be }
+
+# ── 原始字节类型 ──
+hex:         { type: hex }
+bytes:       { type: bytes }
+array:       { type: array }
+struct:      { type: struct }
+ascii:       { type: ascii }
+
+# ── BCD 基础类型 ──
+bcd:           { type: bcd }
+bcd_signed:    { type: bcd, signed: true }
+# 6 字节日期时间: ssmmhhDDMMYY
+bcd_datetime:  { type: bcd, length: 6, format: "ssmmhhDDMMYY", description: "秒分时日月年" }
+# 3 字节日期: YYMMDD
+bcd_date_ymd:  { type: bcd, length: 3, format: "YYMMDD", description: "年月日" }
+# 3 字节时间: hhmmss
+bcd_time_hms:  { type: bcd, length: 3, format: "hhmmss", description: "时分秒" }
+# 5 字节日期时间: YYMMDDhhmm
+datetime_ymdhm:  { type: bcd, length: 5, format: "YYMMDDhhmm", description: "年月日时分" }
+# 6 字节日期时间: YYMMDDhhmmss
+datetime_ymdhms: { type: bcd, length: 6, format: "YYMMDDhhmmss", description: "年月日时分秒" }
+# 6 字节计数时间
+count_time_6: { type: bcd, length: 6, format: "XXXXXX.XXXXXX", description: "6字节计数时间" }
+
+# ── 电能量类型 ──
 energy_4:
   type: bcd_numeric
   length: 4
   format: "XXXXXX.XX"
   unit: "kWh"
   signed: false
+  description: "电能量(4字节)"
 
 energy_5:
   type: bcd_numeric
@@ -12,20 +47,25 @@ energy_5:
   format: "XXXXXX.XXXX"
   unit: "kWh"
   signed: false
+  description: "电能量(5字节)"
 
+# ── 需量类型 ──
 demand_4:
   type: bcd_numeric
   length: 4
   format: "XX.XXXX"
   unit: "kW"
   signed: true
+  description: "需量(4字节)"
 
+# ── 电压电流功率类型 ──
 voltage_2:
   type: bcd_numeric
   length: 2
   format: "XXX.X"
   unit: "V"
   signed: false
+  description: "电压(2字节)"
 
 current_3:
   type: bcd_numeric
@@ -33,6 +73,7 @@ current_3:
   format: "XXX.XXX"
   unit: "A"
   signed: true
+  description: "电流(3字节)"
 
 power_3:
   type: bcd_numeric
@@ -40,12 +81,22 @@ power_3:
   format: "XX.XXXX"
   unit: "kW"
   signed: true
+  description: "功率(3字节)"
 
 power_factor_2:
   type: bcd_numeric
   length: 2
   format: "X.XXX"
   signed: true
+  description: "功率因数(2字节)"
+
+angle_2:
+  type: bcd_numeric
+  length: 2
+  format: "XXX.X"
+  unit: "degree"
+  signed: false
+  description: "相角(2字节)"
 
 frequency_2:
   type: bcd_numeric
@@ -53,3 +104,25 @@ frequency_2:
   format: "XX.XX"
   unit: "Hz"
   signed: false
+  description: "频率(2字节)"
+
+temperature_2:
+  type: bcd_numeric
+  length: 2
+  format: "XXX.X"
+  unit: "℃"
+  signed: true
+  description: "温度(2字节)"
+
+percent_2:
+  type: bcd_numeric
+  length: 2
+  format: "XX.XX"
+  unit: "%"
+  signed: false
+  description: "百分比(2字节)"
+
+# ── 特殊类型 ──
+bitset: { type: bitset }
+enum:   { type: enum }
+sum8:   { type: sum8 }

@@ -1,0 +1,23 @@
+# CSG 2016 错误码定义
+# 迁移自旧项目 database/protocols/csg_2016/common/error_codes.json
+
+error_codes:
+  "00": { name: timeout, description: "通信超时" }
+  "01": { name: invalid_di, description: "无效数据标识内容" }
+  "02": { name: length_error, description: "长度错误" }
+  "03": { name: checksum_error, description: "校验错误" }
+  "04": { name: di_not_exist, description: "数据标识编码不存在" }
+  "05": { name: format_error, description: "格式错误" }
+  "06": { name: meter_id_duplicate, description: "表号重复" }
+  "07": { name: meter_id_not_exist, description: "表号不存在" }
+  "08": { name: meter_no_response, description: "电表应用层无应答" }
+  "09": { name: master_busy, description: "主节点忙" }
+  "0A": { name: master_not_support, description: "主节点不支持此命令" }
+  "0B": { name: slave_no_response, description: "从节点不应答" }
+  "0C": { name: slave_not_in_network, description: "从节点不在网内" }
+  "0D": { name: task_slot_insufficient, description: "添加任务时剩余可分配任务数不足" }
+  "0E": { name: task_not_exist, description: "上报任务数据时任务不存在" }
+  "0F": { name: task_id_duplicate, description: "任务ID重复" }
+  "10": { name: module_no_task, description: "查询任务时模块没有此任务" }
+  "11": { name: task_id_not_exist, description: "任务ID不存在" }
+  "FF": { name: other, description: "其他错误" }

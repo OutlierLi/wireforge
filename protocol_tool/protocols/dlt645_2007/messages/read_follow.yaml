@@ -1,0 +1,35 @@
+# DL/T 645-2007 读后续数据报文 (control.func=0x12)
+messages:
+  - kind: message
+    id: read_follow_request
+    router: main
+    match:
+      control.func: 0x12
+      control.dir: 0
+    direction: request
+    description: "读后续数据 — 请求后续数据块"
+    body:
+      type: struct
+      fields:
+        - name: di
+          type: hex
+          length: 4
+          byte_order: little
+          description: "数据标识"
+
+  - kind: message
+    id: read_follow_response
+    router: main
+    match:
+      control.func: 0x12
+      control.dir: 1
+    direction: response
+    description: "读后续数据 — 返回后续数据"
+    body:
+      type: struct
+      fields:
+        - name: follow_data
+          type: bytes
+          boundary:
+            kind: remaining
+          description: "后续数据载荷"

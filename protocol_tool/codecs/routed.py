@@ -14,12 +14,14 @@ from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING
 
-from protocol_tool.codecs.base import FieldCodec
+from protocol_tool.codecs.base import FieldCodec, ByteWriter
+from protocol_tool.runtime.router import RouteError
 
 if TYPE_CHECKING:
     from protocol_tool.ir.nodes import FieldNode
     from protocol_tool.runtime.reader import DecodeReader
     from protocol_tool.runtime.context import DecodeContext, BuildContext
+
 
 
 class RoutedPayloadCodec(FieldCodec):
@@ -130,19 +132,28 @@ class RoutedPayloadCodec(FieldCodec):
                             leaf = self._ir.leaves.get(leaf_id)
 
         if leaf is None:
-            # No route — write raw bytes
+            if message_id:
+                raise RouteError(
+                    f"Build error: message {message_id!r} has no reachable route "
+                    f"in any router. Check build_plans and route_table."
+                )
+            # No message_id — write raw bytes (manual mode)
             if isinstance(value, bytes):
                 payload = value
             elif isinstance(value, dict) and "raw" in value:
                 payload = bytes.fromhex(str(value["raw"]))
-            else:
+            elif value is not None:
                 payload = bytes.fromhex(str(value))
+            else:
+                raise RouteError(
+                    f"Build error: no message_id specified and no raw value provided "
+                    f"for routed_payload field {field.name!r}"
+                )
         else:
-            # Encode leaf fields into a temporary writer
-            from protocol_tool.codecs.base import ByteWriter as BW
-            sub_writer = BW()
+            # Encode leaf fields using context.values (user-provided build values)
+            sub_writer = ByteWriter()
             if self._engine is not None:
-                self._engine._encode_leaf(leaf, value, sub_writer, context)
+                self._engine._encode_leaf(leaf, context.values, sub_writer, context)
             payload = sub_writer.bytes()
 
         # Apply wire transforms (e.g. DLT645 data domain +33H encoding)

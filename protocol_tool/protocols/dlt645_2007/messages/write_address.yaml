@@ -1,0 +1,45 @@
+# DL/T 645-2007 写通信地址报文 (control.func=0x15)
+messages:
+  - kind: message
+    id: write_address_request
+    router: main
+    match:
+      control.func: 0x15
+      control.dir: 0
+    direction: request
+    description: "写通信地址 — 设置电表通信地址"
+    body:
+      type: struct
+      fields:
+        - name: new_address
+          type: bcd
+          length: 6
+          byte_order: little
+          description: "新通信地址 (6字节BCD)"
+
+        - name: password
+          type: hex
+          length: 4
+          description: "密码 (PA P0 P1 P2)"
+
+        - name: operator_code
+          type: bcd
+          length: 4
+          description: "操作者代码"
+
+  - kind: message
+    id: write_address_response
+    router: main
+    match:
+      control.func: 0x15
+      control.dir: 1
+    direction: response
+    description: "写通信地址 — 应答"
+    body:
+      type: struct
+      fields:
+        - name: status
+          type: enum
+          values:
+            0x00: "成功"
+            0x01: "失败"

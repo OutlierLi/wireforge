@@ -218,21 +218,57 @@ def inspect_routes(
 @inspect_app.command("graph")
 def inspect_graph(
     protocol: str = typer.Option(..., "--protocol", "-p", help="Protocol to inspect"),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output SVG path"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output path (.svg or .png)"),
+    dot_only: bool = typer.Option(False, "--dot", help="Output DOT source only (no Graphviz)"),
+    static: bool = typer.Option(False, "--static", help="Static graph from IR (skip live trace)"),
 ):
-    """Generate a route graph for a protocol."""
+    """Generate a route graph visualization showing actual routing paths with hex values.
+
+    By default, builds all messages and runs decode to collect real route traces,
+    then plots each routing decision with concrete key values (e.g. func=0x11, dir=0x01).
+    Use --static for a quick overview without executing builds.
+    """
     try:
         ir = _get_ir(protocol)
-        from protocol_tool.utils.graph import generate_dot
+        from protocol_tool.utils.graph import (
+            generate_dot, render_svg, render_png, collect_routes,
+        )
 
-        dot = generate_dot(ir)
-        typer.echo(dot)
-        if output:
-            output.parent.mkdir(parents=True, exist_ok=True)
-            output.write_text(dot)
-            typer.echo(f"\nGraph written to {output}")
+        if static:
+            routes = None  # generates static graph
+        else:
+            typer.echo(f"  Running builds + decodes to trace routes...")
+            routes = collect_routes(ir)
+            typer.echo(f"  Collected {len(routes)} route entries")
+
+        dot = generate_dot(ir, routes)
+
+        if dot_only:
+            typer.echo(dot)
+            return
+
+        out_path = output or Path(f"compiled/{protocol}_routes.svg")
+        out_path = Path(out_path)
+
+        if str(out_path).endswith(".png"):
+            png_bytes = render_png(dot)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_bytes(png_bytes)
+            typer.echo(f"✓ Route graph → {out_path} ({len(png_bytes)} bytes)")
+        else:
+            svg_bytes = render_svg(dot)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_bytes(svg_bytes)
+            typer.echo(f"✓ Route graph → {out_path} ({len(svg_bytes)} bytes)")
+            typer.echo(f"  Open: open {out_path}")
+    except FileNotFoundError:
+        typer.echo("Error: Graphviz 'dot' not found. Install: brew install graphviz", err=True)
+        typer.echo("Falling back to DOT output:")
+        typer.echo(generate_dot(_get_ir(protocol), None))
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
+        import traceback
+        typer.echo(traceback.format_exc())
         raise typer.Exit(code=1)
 
 
@@ -324,3 +360,12 @@ def _print_trace(result) -> None:
         if msg:
             line += f" | {msg}"
         typer.echo(line)
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    app()
+

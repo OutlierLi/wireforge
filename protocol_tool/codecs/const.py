@@ -46,6 +46,7 @@ class ConstCodec(FieldCodec):
         writer: ByteWriter,
         context: BuildContext,
     ) -> None:
+        # Always use the field's configured value, ignoring user input
         expected = self._resolve_value(field)
         length = self.field_length(field, context) or 1
         writer.write(expected.to_bytes(length, "big"))
@@ -119,7 +120,9 @@ class ConstRepeatCodec(FieldCodec):
         context: BuildContext,
     ) -> None:
         expected = ConstCodec._resolve_value(field)
-        if isinstance(value, int):
+        if value is None or value == 0:
+            count = field.params.get("min", 0)
+        elif isinstance(value, int):
             count = value
         elif isinstance(value, (list, tuple)):
             count = len(value)

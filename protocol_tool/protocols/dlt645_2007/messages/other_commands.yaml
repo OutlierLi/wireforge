@@ -1,0 +1,248 @@
+# DL/T 645-2007 其他控制码报文
+# 迁移自旧项目 runtime_frame.json control_codes
+
+messages:
+  # ── 更改通信速率 (control.func=0x17) ──
+  - kind: message
+    id: change_baudrate_request
+    router: main
+    match:
+      control.func: 0x17
+      control.dir: 0
+    direction: request
+    description: "更改通信速率"
+    body:
+      type: struct
+      fields:
+        - name: baud_rate
+          type: enum
+          values:
+            0x01: "600bps"
+            0x02: "1200bps"
+            0x04: "2400bps"
+            0x08: "4800bps"
+            0x10: "9600bps"
+            0x20: "19200bps"
+          description: "通信速率编码"
+
+  - kind: message
+    id: change_baudrate_response
+    router: main
+    match:
+      control.func: 0x17
+      control.dir: 1
+    direction: response
+    description: "更改通信速率 — 应答"
+    body:
+      type: struct
+      fields:
+        - name: status
+          type: enum
+          values:
+            0x00: "确认"
+            0x01: "否认"
+
+  # ── 修改密码 (control.func=0x18) ──
+  - kind: message
+    id: change_password_request
+    router: main
+    match:
+      control.func: 0x18
+      control.dir: 0
+    direction: request
+    description: "修改密码"
+    body:
+      type: struct
+      fields:
+        - name: password_info
+          type: hex
+          length: 8
+          description: "旧密码+新密码 (各4字节)"
+
+  - kind: message
+    id: change_password_response
+    router: main
+    match:
+      control.func: 0x18
+      control.dir: 1
+    direction: response
+    description: "修改密码 — 应答"
+    body:
+      type: struct
+      fields:
+        - name: new_password
+          type: hex
+          length: 4
+          description: "新密码确认"
+
+  # ── 最大需量清零 (control.func=0x19) ──
+  - kind: message
+    id: clear_demand_request
+    router: main
+    match:
+      control.func: 0x19
+      control.dir: 0
+    direction: request
+    description: "最大需量清零"
+    body:
+      type: struct
+      fields:
+        - name: password
+          type: hex
+          length: 4
+          description: "密码 (PA P0 P1 P2)"
+
+        - name: operator_code
+          type: bcd
+          length: 4
+          description: "操作者代码"
+
+  - kind: message
+    id: clear_demand_response
+    router: main
+    match:
+      control.func: 0x19
+      control.dir: 1
+    direction: response
+    description: "最大需量清零 — 应答"
+    body:
+      type: struct
+      fields:
+        - name: status
+          type: enum
+          values:
+            0x00: "成功"
+            0x01: "失败"
+
+  # ── 电表清零 (control.func=0x1A) ──
+  - kind: message
+    id: clear_meter_request
+    router: main
+    match:
+      control.func: 0x1A
+      control.dir: 0
+    direction: request
+    description: "电表清零"
+    body:
+      type: struct
+      fields:
+        - name: password
+          type: hex
+          length: 4
+
+        - name: operator_code
+          type: bcd
+          length: 4
+
+  - kind: message
+    id: clear_meter_response
+    router: main
+    match:
+      control.func: 0x1A
+      control.dir: 1
+    direction: response
+    description: "电表清零 — 应答"
+    body:
+      type: struct
+      fields:
+        - name: status
+          type: enum
+          values:
+            0x00: "成功"
+            0x01: "失败"
+
+  # ── 事件清零 (control.func=0x1B) ──
+  - kind: message
+    id: clear_event_request
+    router: main
+    match:
+      control.func: 0x1B
+      control.dir: 0
+    direction: request
+    description: "事件清零"
+    body:
+      type: struct
+      fields:
+        - name: event_type
+          type: hex
+          length: 4
+          byte_order: little
+          description: "事件类型标识 DI0-DI3"
+
+        - name: password
+          type: hex
+          length: 4
+
+        - name: operator_code
+          type: bcd
+          length: 4
+
+  - kind: message
+    id: clear_event_response
+    router: main
+    match:
+      control.func: 0x1B
+      control.dir: 1
+    direction: response
+    description: "事件清零 — 应答"
+    body:
+      type: struct
+      fields:
+        - name: status
+          type: enum
+          values:
+            0x00: "成功"
+            0x01: "失败"
+
+  # ── 跳合闸/报警/保电 (control.func=0x1C) ──
+  - kind: message
+    id: relay_control_request
+    router: main
+    match:
+      control.func: 0x1C
+      control.dir: 0
+    direction: request
+    description: "跳合闸、报警、保电控制"
+    body:
+      type: struct
+      fields:
+        - name: control_word
+          type: bitset
+          bits:
+            - { name: direct_close, offset: 0, width: 1, description: "直接合闸" }
+            - { name: allow_close, offset: 1, width: 1, description: "允许合闸" }
+            - { name: direct_trip, offset: 2, width: 1, description: "直接跳闸" }
+            - { name: delay_trip_timeout, offset: 3, width: 1, description: "延时跳闸超时" }
+            - { name: trip_auto_restore, offset: 4, width: 1, description: "跳闸自动恢复" }
+            - { name: delay_trip_current, offset: 5, width: 1, description: "延时跳闸/大电流" }
+            - { name: reserved, bits: [6, 7], description: "保留" }
+            - { name: power_protection, offset: 8, width: 1, description: "保电" }
+            - { name: power_protection_release, offset: 9, width: 1, description: "保电解除" }
+            - { name: alarm, offset: 10, width: 1, description: "报警" }
+            - { name: alarm_release, offset: 11, width: 1, description: "报警解除" }
+          description: "控制字 (2字节)"
+          length: 2
+
+        - name: password
+          type: hex
+          length: 4
+
+        - name: operator_code
+          type: bcd
+          length: 4
+
+  - kind: message
+    id: relay_control_response
+    router: main
+    match:
+      control.func: 0x1C
+      control.dir: 1
+    direction: response
+    description: "跳合闸控制 — 应答"
+    body:
+      type: struct
+      fields:
+        - name: status
+          type: hex
+          length: 2
+          description: "当前跳合闸状态字"

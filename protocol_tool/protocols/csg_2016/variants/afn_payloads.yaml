@@ -1,0 +1,470 @@
+# CSG 2016 两层路由变体 — 依据协议表4
+#
+# 第一层: afn_router [afn] → AFN 分组
+# 第二层: afnXX_di_router [di] → 具体命令
+#
+# DI 逻辑序: DI3 DI2 DI1 DI0
+#   DI3=E8(集中器)  DI2=类型(00-06)  DI1=AFN  DI0=Fn
+# 线缆序(LE): DI0 DI1 DI2 DI3
+
+variants:
+  # ═══════════════════════════════════════════════════════
+  # AFN=00H 确认/否认 → afn00_di_router
+  # ═══════════════════════════════════════════════════════
+  - kind: variant
+    id: csg_2016.afn00_group
+    router: afn_router
+    match:
+      afn: 0x00
+    body:
+      type: struct
+      fields:
+        - name: di_payload
+          type: routed_payload
+          router: afn00_di_router
+          boundary:
+            kind: remaining
+
+  - kind: variant
+    id: csg_2016.afn00_ack
+    router: afn00_di_router
+    match:
+      di: "E8010001"
+    body:
+      type: struct
+      fields:
+        - name: result
+          type: enum
+          values: { 0x00: "确认(ACK)", 0x01: "否认(NAK)" }
+
+  - kind: variant
+    id: csg_2016.afn00_nak
+    router: afn00_di_router
+    match:
+      di: "E8010002"
+    body:
+      type: struct
+      fields:
+        - name: error_code
+          type: uint8
+
+  # ═══════════════════════════════════════════════════════
+  # AFN=01H 初始化 → afn01_di_router
+  # ═══════════════════════════════════════════════════════
+  - kind: variant
+    id: csg_2016.afn01_group
+    router: afn_router
+    match:
+      afn: 0x01
+    body:
+      type: struct
+      fields:
+        - name: di_payload
+          type: routed_payload
+          router: afn01_di_router
+          boundary:
+            kind: remaining
+
+  - kind: variant
+    id: csg_2016.afn01_reset_hardware
+    router: afn01_di_router
+    match:
+      di: "E8020101"
+    body:
+      type: struct
+      fields: []
+
+  - kind: variant
+    id: csg_2016.afn01_init_archive
+    router: afn01_di_router
+    match:
+      di: "E8020102"
+    body:
+      type: struct
+      fields: []
+
+  - kind: variant
+    id: csg_2016.afn01_init_task
+    router: afn01_di_router
+    match:
+      di: "E8020103"
+    body:
+      type: struct
+      fields: []
+
+  # ═══════════════════════════════════════════════════════
+  # AFN=02H 管理任务 → afn02_di_router
+  # ═══════════════════════════════════════════════════════
+  - kind: variant
+    id: csg_2016.afn02_group
+    router: afn_router
+    match:
+      afn: 0x02
+    body:
+      type: struct
+      fields:
+        - name: di_payload
+          type: routed_payload
+          router: afn02_di_router
+          boundary:
+            kind: remaining
+
+  - kind: variant
+    id: csg_2016.afn02_add_task
+    router: afn02_di_router
+    match:
+      di: "E8020201"
+    body:
+      type: struct
+      fields:
+        - name: task_info
+          type: bytes
+          boundary:
+            kind: remaining
+
+  - kind: variant
+    id: csg_2016.afn02_delete_task
+    router: afn02_di_router
+    match:
+      di: "E8020202"
+    body:
+      type: struct
+      fields:
+        - name: task_id
+          type: uint8
+
+  - kind: variant
+    id: csg_2016.afn02_query_remaining
+    router: afn02_di_router
+    match:
+      di: "E8000203"
+    body:
+      type: struct
+      fields:
+        - name: task_count
+          type: uint8
+          optional: true
+
+  - kind: variant
+    id: csg_2016.afn02_query_remaining_resp
+    router: afn02_di_router
+    match:
+      di: "E8040203"
+    body:
+      type: struct
+      fields:
+        - name: task_count
+          type: uint8
+
+  - kind: variant
+    id: csg_2016.afn02_query_task_list
+    router: afn02_di_router
+    match:
+      di: "E8030204"
+    body:
+      type: struct
+      fields:
+        - name: task_list
+          type: bytes
+          boundary:
+            kind: remaining
+
+  - kind: variant
+    id: csg_2016.afn02_query_task_list_resp
+    router: afn02_di_router
+    match:
+      di: "E8040204"
+    body:
+      type: struct
+      fields:
+        - name: task_list
+          type: bytes
+          boundary:
+            kind: remaining
+
+  # ═══════════════════════════════════════════════════════
+  # AFN=03H 读参数 → afn03_di_router
+  # ═══════════════════════════════════════════════════════
+  - kind: variant
+    id: csg_2016.afn03_group
+    router: afn_router
+    match:
+      afn: 0x03
+    body:
+      type: struct
+      fields:
+        - name: di_payload
+          type: routed_payload
+          router: afn03_di_router
+          boundary:
+            kind: remaining
+
+  - kind: variant
+    id: csg_2016.afn03_query_vendor
+    router: afn03_di_router
+    match:
+      di: "E8000301"
+    body:
+      type: struct
+      fields: []
+
+  - kind: variant
+    id: csg_2016.afn03_query_vendor_resp
+    router: afn03_di_router
+    match:
+      di: "E8010301"
+    body:
+      type: struct
+      fields:
+        - name: vendor_code
+          type: ascii
+          length: 2
+        - name: chip_code
+          type: ascii
+          length: 2
+        - name: version_date
+          type: bcd
+          length: 3
+        - name: version
+          type: bcd
+          length: 2
+
+  - kind: variant
+    id: csg_2016.afn03_query_mode
+    router: afn03_di_router
+    match:
+      di: "E8000302"
+    body:
+      type: struct
+      fields: []
+
+  - kind: variant
+    id: csg_2016.afn03_query_master_addr
+    router: afn03_di_router
+    match:
+      di: "E8000303"
+    body:
+      type: struct
+      fields: []
+
+  # ═══════════════════════════════════════════════════════
+  # AFN=04H 写参数 → afn04_di_router
+  # ═══════════════════════════════════════════════════════
+  - kind: variant
+    id: csg_2016.afn04_group
+    router: afn_router
+    match:
+      afn: 0x04
+    body:
+      type: struct
+      fields:
+        - name: di_payload
+          type: routed_payload
+          router: afn04_di_router
+          boundary:
+            kind: remaining
+
+  - kind: variant
+    id: csg_2016.afn04_event_report_ctl
+    router: afn04_di_router
+    match:
+      di: "E8020404"
+    body:
+      type: struct
+      fields:
+        - name: enable
+          type: enum
+          values: { 0x00: "禁止上报", 0x01: "允许上报" }
+
+  - kind: variant
+    id: csg_2016.afn04_active_register
+    router: afn04_di_router
+    match:
+      di: "E8020405"
+    body:
+      type: struct
+      fields: []
+
+  - kind: variant
+    id: csg_2016.afn04_stop_register
+    router: afn04_di_router
+    match:
+      di: "E8020406"
+    body:
+      type: struct
+      fields: []
+
+  # ═══════════════════════════════════════════════════════
+  # AFN=05H 上报信息 → afn05_di_router
+  # ═══════════════════════════════════════════════════════
+  - kind: variant
+    id: csg_2016.afn05_group
+    router: afn_router
+    match:
+      afn: 0x05
+    body:
+      type: struct
+      fields:
+        - name: di_payload
+          type: routed_payload
+          router: afn05_di_router
+          boundary:
+            kind: remaining
+
+  - kind: variant
+    id: csg_2016.afn05_report_task_data
+    router: afn05_di_router
+    match:
+      di: "E8050501"
+    body:
+      type: struct
+      fields:
+        - name: task_data
+          type: bytes
+          boundary:
+            kind: remaining
+
+  - kind: variant
+    id: csg_2016.afn05_report_slave_event
+    router: afn05_di_router
+    match:
+      di: "E8050502"
+    body:
+      type: struct
+      fields:
+        - name: event_data
+          type: bytes
+          boundary:
+            kind: remaining
+
+  - kind: variant
+    id: csg_2016.afn05_report_slave_info
+    router: afn05_di_router
+    match:
+      di: "E8050503"
+    body:
+      type: struct
+      fields:
+        - name: slave_data
+          type: bytes
+          boundary:
+            kind: remaining
+
+  - kind: variant
+    id: csg_2016.afn05_report_register_end
+    router: afn05_di_router
+    match:
+      di: "E8050504"
+    body:
+      type: struct
+      fields: []
+
+  - kind: variant
+    id: csg_2016.afn05_report_task_status
+    router: afn05_di_router
+    match:
+      di: "E8050505"
+    body:
+      type: struct
+      fields:
+        - name: task_status
+          type: uint8
+
+  # ═══════════════════════════════════════════════════════
+  # AFN=06H 请求信息 → afn06_di_router
+  # ═══════════════════════════════════════════════════════
+  - kind: variant
+    id: csg_2016.afn06_group
+    router: afn_router
+    match:
+      afn: 0x06
+    body:
+      type: struct
+      fields:
+        - name: di_payload
+          type: routed_payload
+          router: afn06_di_router
+          boundary:
+            kind: remaining
+
+  - kind: variant
+    id: csg_2016.afn06_request_time
+    router: afn06_di_router
+    match:
+      di: "E8060601"
+    body:
+      type: struct
+      fields: []
+
+  - kind: variant
+    id: csg_2016.afn06_request_time_resp
+    router: afn06_di_router
+    match:
+      di: "E8010601"
+    body:
+      type: struct
+      fields:
+        - name: datetime
+          type: bcd
+          length: 6
+
+  # ═══════════════════════════════════════════════════════
+  # AFN=07H 文件传输 → afn07_di_router
+  # ═══════════════════════════════════════════════════════
+  - kind: variant
+    id: csg_2016.afn07_group
+    router: afn_router
+    match:
+      afn: 0x07
+    body:
+      type: struct
+      fields:
+        - name: di_payload
+          type: routed_payload
+          router: afn07_di_router
+          boundary:
+            kind: remaining
+
+  - kind: variant
+    id: csg_2016.afn07_file_transfer_start
+    router: afn07_di_router
+    match:
+      di: "E8020701"
+    body:
+      type: struct
+      fields:
+        - name: file_info
+          type: bytes
+          boundary:
+            kind: remaining
+
+  - kind: variant
+    id: csg_2016.afn07_file_transfer_data
+    router: afn07_di_router
+    match:
+      di: "E8020702"
+    body:
+      type: struct
+      fields:
+        - name: file_segment
+          type: bytes
+          boundary:
+            kind: remaining
+
+  - kind: variant
+    id: csg_2016.afn07_query_file_info
+    router: afn07_di_router
+    match:
+      di: "E8000703"
+    body:
+      type: struct
+      fields: []
+
+  - kind: variant
+    id: csg_2016.afn07_query_progress
+    router: afn07_di_router
+    match:
+      di: "E8000704"
+    body:
+      type: struct
+      fields: []

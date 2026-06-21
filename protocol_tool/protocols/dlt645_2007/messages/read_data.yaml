@@ -1,7 +1,8 @@
-# DL/T 645-2007 读数据报文
-# control.func=0x11 → 读数据
+# DL/T 645-2007 读数据报文 (control.func=0x11)
+# 迁移自旧项目 runtime_frame.json control_codes
 
 messages:
+  # ── 读数据请求 (主站→电表) ──
   - kind: message
     id: read_data_request
     router: main
@@ -9,6 +10,7 @@ messages:
       control.func: 0x11
       control.dir: 0
     direction: request
+    description: "读数据 — 请求电表数据"
     body:
       type: struct
       fields:
@@ -16,15 +18,9 @@ messages:
           type: hex
           length: 4
           byte_order: little
-          description: "数据标识 DI0-DI3"
+          description: "数据标识 DI0-DI3 (逻辑序 DI3 DI2 DI1 DI0, 线缆序 DI0 DI1 DI2 DI3)"
 
-        - name: di_data
-          type: routed_payload
-          router: read_data_response_di
-          length_from: length
-          length_adjust: -1  # 减去 DI 的长度
-          description: "DI 后续数据"
-
+  # ── 读数据应答 (电表→主站) ──
   - kind: message
     id: read_data_response
     router: main
@@ -32,6 +28,7 @@ messages:
       control.func: 0x11
       control.dir: 1
     direction: response
+    description: "读数据 — 返回请求的数据"
     body:
       type: struct
       fields:
@@ -44,10 +41,8 @@ messages:
         - name: di_data
           type: routed_payload
           router: read_data_response_di
-          selector:
-            field: di
           boundary:
             kind: remaining
           on_unknown:
             kind: raw
-          description: "DI 对应的数据"
+          description: "DI 对应的数据载荷"

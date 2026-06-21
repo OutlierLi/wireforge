@@ -42,10 +42,8 @@ class Resolver:
         if type_name in self.unit.types_data:
             return self.unit.types_data[type_name]
 
-        raise ValueError(
-            f"Unknown type: {type_name!r}. "
-            f"Known types: {sorted(builtins | set(self.unit.types_data.keys()))}"
-        )
+        # Not found in types — it's probably a built-in codec name
+        return {"type": type_name}
 
     def resolve_field_params(self, field_yaml: dict[str, Any]) -> dict[str, Any]:
         """Extract codec parameters from a field YAML definition.
