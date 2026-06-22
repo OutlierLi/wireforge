@@ -261,10 +261,52 @@ def _extract_payload(result) -> dict:
 
 # ── 注册 (命令元数据从 JSON 文件加载) ──────────────────────────────────
 
+# ── Serial ─────────────────────────────────────────────────────────────
+
+def _handle_serial_open(args: dict) -> CmdResult:
+    from serial.api import serial_open
+    r = serial_open(args)
+    d = r.to_dict()
+    return CmdResult(success=r.success, command="serial-open",
+                     structured=d, error=r.error)
+
+
+def _handle_serial_send(args: dict) -> CmdResult:
+    from serial.api import serial_send
+    r = serial_send(args)
+    d = r.to_dict()
+    return CmdResult(success=r.success, command="serial-send",
+                     structured=d, error=r.error)
+
+
+def _handle_serial_close(args: dict) -> CmdResult:
+    from serial.api import serial_close
+    r = serial_close(args)
+    d = r.to_dict()
+    return CmdResult(success=r.success, command="serial-close",
+                     structured=d, error=r.error)
+
+
+def _handle_serial_ports(args: dict) -> CmdResult:
+    from serial.api import serial_ports
+    r = serial_ports(args)
+    d = r.to_dict()
+    return CmdResult(success=r.success, command="serial-ports",
+                     structured=d, error=r.error)
+
+
+# ── 注册 ──────────────────────────────────────────────────────────────
+
 def _register_all():
     import json
     cmds_dir = Path(__file__).resolve().parent / "commands"
-    handler_map = {"build": handle_build, "decode": handle_decode}
+    handler_map = {
+        "build": handle_build, "decode": handle_decode,
+        "serial-open": _handle_serial_open,
+        "serial-send": _handle_serial_send,
+        "serial-close": _handle_serial_close,
+        "serial-ports": _handle_serial_ports,
+    }
     for fpath in sorted(cmds_dir.glob("*.json")):
         data = json.loads(fpath.read_text())
         params = [Param(

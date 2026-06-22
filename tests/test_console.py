@@ -67,7 +67,7 @@ class TestBuildResolve:
 
     def test_resolve_csg(self):
         r = exec_cmd("build", {
-            "proto": "csg", "afn": "0x03", "dir": "downlink",
+            "proto": "csg", "afn": "0x03", "dir": "downlink", "di": "E8000301",
             "resolve": True,
         })
         assert r.success
@@ -117,7 +117,7 @@ class TestBuildEncode:
 
     def test_build_csg_ok(self):
         r = exec_cmd("build", {
-            "proto": "csg", "afn": "0x03", "dir": "downlink",
+            "proto": "csg", "afn": "0x03", "dir": "downlink", "di": "E8000301",
         })
         assert r.success
         assert len(r.frame_hex) > 8
@@ -136,6 +136,12 @@ class TestBuildEncode:
         })
         assert not r.success
         assert "route" in r.error.lower() or "No route" in r.error
+
+    def test_build_ambiguous_route_requires_di(self):
+        r = exec_cmd("build", {"proto": "csg", "afn": "0x04"})
+        assert not r.success
+        assert "di" in r.error.lower()
+        assert "E8020404" in r.error
 
     def test_build_bad_hex_param(self):
         r = exec_cmd("build", {

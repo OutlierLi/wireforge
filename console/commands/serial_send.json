@@ -1,0 +1,11 @@
+{
+  "name": "serial-send",
+  "desc": "发送数据并等待响应",
+  "enabled": true,
+  "timeout": 10000,
+  "params": [
+    {"name": "hex", "type": "str", "required": true, "desc": "十六进制报文"},
+    {"name": "timeout", "type": "int", "required": false, "desc": "响应超时(秒)", "default": 1.0},
+    {"name": "id", "type": "str", "required": false, "desc": "连接标识"}
+  ]
+}

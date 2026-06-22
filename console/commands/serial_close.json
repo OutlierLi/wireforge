@@ -1,0 +1,9 @@
+{
+  "name": "serial-close",
+  "desc": "关闭串口连接",
+  "enabled": true,
+  "timeout": 3000,
+  "params": [
+    {"name": "id", "type": "str", "required": false, "desc": "连接标识"}
+  ]
+}

@@ -101,8 +101,10 @@ def _simplify(obj: Any) -> Any:
     if isinstance(obj, bool):
         return obj
     if isinstance(obj, int) and not isinstance(obj, bool):
-        # 显示为十六进制
-        return f"0x{obj:02X}"
+        # 小整数用十六进制 (协议字段), 大整数保持十进制 (baudrate, bytes, seq 等)
+        if 0 <= obj <= 255:
+            return f"0x{obj:02X}"
+        return obj
     return obj
 
 
@@ -132,4 +134,20 @@ def log_console(command: str,
         lines.append(f"  [ERROR] {error}")
 
     with open(_LOG_DIR / "console.log", "a", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n\n")
+
+
+# ── Serial 日志 ───────────────────────────────────────────────────────
+
+def log_serial(operation: str, port: str = "", data: dict[str, Any] | None = None,
+               success: bool = True, error: str = "") -> None:
+    """记录串口操作: open, close, send, recv。"""
+    _ensure()
+    tag = "[SERIAL]" if success else "[SERIAL][ERROR]"
+    lines = [f"{tag} {_ts()}  op={operation}  port={port}"]
+    if data:
+        lines.append(f"  data: {json.dumps(_simplify(data), ensure_ascii=False)}")
+    if error:
+        lines.append(f"  error: {error}")
+    with open(_LOG_DIR / "serial.log", "a", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n\n")

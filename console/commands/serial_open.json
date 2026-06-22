@@ -1,0 +1,14 @@
+{
+  "name": "serial-open",
+  "desc": "打开串口连接",
+  "enabled": true,
+  "timeout": 5000,
+  "params": [
+    {"name": "port", "type": "str", "required": true, "desc": "串口号，如 /dev/ttyUSB0, COM3, mock://loop"},
+    {"name": "baudrate", "type": "int", "required": false, "desc": "波特率", "default": 9600},
+    {"name": "bytesize", "type": "int", "required": false, "desc": "数据位", "default": 8},
+    {"name": "parity", "type": "choice", "required": false, "desc": "校验位", "values": ["N", "O", "E"], "default": "N"},
+    {"name": "stopbits", "type": "int", "required": false, "desc": "停止位", "default": 1},
+    {"name": "id", "type": "str", "required": false, "desc": "连接标识"}
+  ]
+}
