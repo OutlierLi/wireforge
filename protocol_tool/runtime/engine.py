@@ -287,9 +287,10 @@ class DecodeEngine:
             context.warning(f"Unknown leaf node: {leaf_id!r}")
             return {"_raw": reader.read_remaining()}
 
-        # Use a sub-context that can see parent values (needed for conditions like control.add)
+        # Inherit parent values for cross-layer field refs (e.g. control.add)
+        parent_keys = set(context.values.keys())
         sub_context = DC(
-            values=dict(context.values),  # Inherit parent values for cross-layer field refs
+            values=dict(context.values),
             trace=context.trace,
             warnings=context.warnings,
             raw_sections=context.raw_sections,
@@ -298,11 +299,15 @@ class DecodeEngine:
         for field in leaf.fields:
             self._decode_field(field, reader, sub_context, ExecutionStack())
 
-        # Merge leaf values into parent context (namespaced)
+        # Only merge NEW values added by this leaf (not inherited frame fields)
         result: dict[str, Any] = {}
         for key, val in sub_context.values.items():
-            context.set(f"{leaf.name}.{key}", val)
-            result[key] = val
+            if key not in parent_keys:
+                context.set(f"{leaf.name}.{key}", val)
+                result[key] = val
+            else:
+                # Still namespace it for the parent, but don't include in result
+                context.set(f"{leaf.name}.{key}", val)
         return result
 
     # -- Helpers --
