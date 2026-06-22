@@ -197,5 +197,7 @@ class TestDecode:
             "hex": "FE FE FE FE 68 AA AA AA AA AA AA 68 13 00 DF 16",
         })
         assert r.success
-        assert "values" in r.output
-        assert len(r.output["values"]) > 0
+        assert r.structured is not None
+        assert "frame" in r.structured
+        assert "wire" in r.structured
+        assert len(r.structured["wire"].get("fields", [])) > 0

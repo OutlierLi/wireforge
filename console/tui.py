@@ -287,16 +287,26 @@ class WireForgeApp(App):
                     self.write_output(f"path: {result.path}")
                 if result.frame_hex:
                     self.write_output(result.frame_hex)
-                if result.output:
+                if result.structured:
+                    _write_structured(self, result.structured)
+                elif result.output:
                     _write(self, result.output, "")
             else:
                 self.write_output(f"error: {result.error}")
                 if result.path:
                     self.write_output(f"path: {result.path}")
+                if result.structured:
+                    _write_structured(self, result.structured)
                 schema = (result.output or {}).get("input_schema", [])
                 if schema:
-                    names = [f["name"] for f in schema]
-                    self.write_output(f"required: {', '.join(names)}")
+                    self.write_output("input_schema:")
+                    for f in schema:
+                        req = "*" if f.get("required") else ""
+                        vls = f" ({', '.join(str(v) for v in f['values'])})" if f.get("values") else ""
+                        self.write_output(f"  {req}{f['name']}: {f['type']}{vls}")
+                derived = (result.output or {}).get("derived_fields", {})
+                if derived:
+                    self.write_output(f"derived (auto): {list(derived.keys())}")
         elif text in ("help", "h"):
             self.write_output("commands:")
             self.write_output("  /build --proto dlt645 --func 0x11")
@@ -304,6 +314,39 @@ class WireForgeApp(App):
             self.write_output('  /decode --proto dlt645 --hex "FE FE 68 ... 16"')
         else:
             self.write_output("commands start with / — type 'help' for list")
+
+
+def _write_structured(app: WireForgeApp, s: dict):
+    """渲染结构化 wireforge.result/v1 JSON 到 TUI。"""
+    # frame
+    frame = s.get("frame", {})
+    if frame:
+        app.write_output("frame:")
+        for k, v in frame.items():
+            app.write_output(f"  {k}: {v}")
+
+    # payload
+    payload = s.get("payload", {})
+    if payload:
+        app.write_output("payload:")
+        _write(app, payload, "  ")
+
+    # wire.fields
+    fields = s.get("wire", {}).get("fields", [])
+    if fields:
+        app.write_output("wire.fields:")
+        for f in fields:
+            off = f["offset"]
+            app.write_output(f"  [{off[0]:>4},{off[1]:>4}) {f.get('path','?'):30s} {f.get('wire_hex',''):30s} → {f.get('value')}")
+
+    # diagnostics
+    diag = s.get("diagnostics", {})
+    warns = diag.get("warnings", [])
+    errs = diag.get("errors", [])
+    for w in warns:
+        app.write_output(f"  warn: {w}")
+    for e in errs:
+        app.write_output(f"  error: {e}")
 
 
 def _write(app: WireForgeApp, obj, pfx: str):

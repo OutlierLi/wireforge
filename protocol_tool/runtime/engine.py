@@ -476,6 +476,21 @@ class BuildEngine:
             if not candidates:
                 return False
 
+            # 如果有多条候选路径且 info 中缺少歧义消除键，要求用户提供
+            if len(candidates) > 1:
+                missing_keys = []
+                for path in rnode.key_paths:
+                    short = path.split(".", 1)[-1]
+                    if short not in info:
+                        missing_keys.append(short)
+                if missing_keys:
+                    options = [cid for cid, _ in candidates[:5]]
+                    raise ValueError(
+                        f"Router {router_id!r}: multiple routes match. "
+                        f"Provide {'/'.join(missing_keys)} to disambiguate. "
+                        f"Available: {options}"
+                    )
+
             for key_str, target_id in candidates:
                 leaf = self.ir.leaves.get(target_id)
                 if not leaf:
