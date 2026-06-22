@@ -14,112 +14,246 @@ sys.path.insert(0, str(_project_root))
 
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, Container
-from textual.widgets import Input, Static, RichLog
+from textual.widgets import Input, Static, TextArea
 from textual.binding import Binding
 
 from console.api import exec_cmd
 
 
+# ── 参数解析 ──────────────────────────────────────────────────────────
+
+def parse_options(tokens: list[str]) -> dict[str, str | list[str]]:
+    """解析 --key value 和 --key=value 格式的参数。
+
+    /decode --proto dlt645 --hex "FE FE 68 ... 16"
+    → {"proto": "dlt645", "hex": "FE FE 68 ... 16"}
+    """
+    result: dict[str, str | list[str]] = {}
+    index = 0
+
+    while index < len(tokens):
+        token = tokens[index]
+        if not token.startswith("--"):
+            raise ValueError(f"unexpected argument: {token}")
+
+        item = token[2:]
+
+        if "=" in item:
+            key, value = item.split("=", 1)
+            index += 1
+        elif index + 1 < len(tokens) and not tokens[index + 1].startswith("--"):
+            key = item
+            value = tokens[index + 1]
+            index += 2
+        else:
+            key = item
+            value = "true"
+            index += 1
+
+        if key in result:
+            old = result[key]
+            result[key] = old + [value] if isinstance(old, list) else [old, value]
+        else:
+            result[key] = value
+
+    return result
+
+
+# ── 历史输入框 ────────────────────────────────────────────────────────
+
 class CmdInput(Input):
-    """方向键上调历史记录的输入框。光标在首字符时 ↑ 调出上一条命令。"""
+    """支持完整 ↑↓ 命令历史，并在回到最新位置时恢复原始输入。"""
 
-    _history: list[str] = []
-    _hindex: int = -1
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._history: list[str] = []
+        self._hindex: int = -1
+        self._draft: str = ""
 
-    def add_history(self, cmd: str):
-        if not self._history or self._history[-1] != cmd:
-            self._history.append(cmd)
+    def add_history(self, command: str) -> None:
+        command = command.strip()
+        if command and (not self._history or self._history[-1] != command):
+            self._history.append(command)
         self._hindex = -1
+        self._draft = ""
 
-    def _on_key(self, event):
-        if event.key == "up" and self.cursor_position == 0 and self._history:
+    def _set_history_value(self) -> None:
+        self.value = self._history[self._hindex]
+        self.cursor_position = len(self.value)
+
+    def _on_key(self, event) -> None:
+        if event.key == "up":
+            if not self._history:
+                return super()._on_key(event)
+
             if self._hindex == -1:
+                self._draft = self.value
                 self._hindex = len(self._history) - 1
-            elif self._hindex > 0:
-                self._hindex -= 1
-            self.value = self._history[self._hindex]
-            self.cursor_position = len(self.value)
+            else:
+                self._hindex = max(0, self._hindex - 1)
+
+            self._set_history_value()
             event.prevent_default()
             event.stop()
             return
-        elif event.key == "down" and self.cursor_position == len(self.value) and self._hindex != -1:
+
+        if event.key == "down":
+            if self._hindex == -1:
+                return super()._on_key(event)
+
             if self._hindex < len(self._history) - 1:
                 self._hindex += 1
-                self.value = self._history[self._hindex]
+                self._set_history_value()
             else:
                 self._hindex = -1
-                self.value = ""
-            self.cursor_position = len(self.value)
+                self.value = self._draft
+                self.cursor_position = len(self.value)
+
             event.prevent_default()
             event.stop()
             return
-        self._hindex = -1
+
+        if event.key not in {
+            "left", "right", "home", "end",
+            "shift", "ctrl", "alt",
+        }:
+            self._hindex = -1
+
         return super()._on_key(event)
 
+
+# ── App ───────────────────────────────────────────────────────────────
 
 class WireForgeApp(App):
     """WireForge TUI — /build /decode /help /exit"""
 
     CSS = """
-    Screen { background: #0d1117; layout: vertical; }
+    Screen {
+        background: #0b0f14;
+        color: #c9d1d9;
+        layout: vertical;
+    }
+
+    #topbar {
+        height: 3;
+        padding: 0 2;
+        background: #161b22;
+        color: #f0f6fc;
+        border-bottom: solid #30363d;
+        content-align: left middle;
+        text-style: bold;
+    }
+
+    #output-panel {
+        height: 1fr;
+        margin: 1 1 0 1;
+        background: #0d1117;
+        border: round #30363d;
+    }
+
+    #output-title {
+        height: 1;
+        padding: 0 1;
+        background: #161b22;
+        color: #8b949e;
+    }
 
     #output {
-        background: #0d1117;
-        border: none;
         height: 1fr;
-        overflow-y: auto;
+        background: #0d1117;
+        color: #c9d1d9;
+        border: none;
         padding: 0 1;
+    }
+
+    #output .text-area--selection {
+        background: #264f78;
     }
 
     #input-area {
-        background: #161b22;
-        border-top: solid #30363d;
-        padding: 0 1;
         height: 3;
+        margin: 1;
+        padding: 0 1;
+        background: #161b22;
+        border: round #238636;
     }
 
     #prompt {
-        color: #3fb950;
         width: 3;
+        color: #3fb950;
         content-align: center middle;
+        text-style: bold;
     }
 
     #cmd-input {
-        background: #161b22;
-        color: #c9d1d9;
-        border: none;
         width: 1fr;
+        color: #f0f6fc;
+        background: #161b22;
+        border: none;
     }
 
     #cmd-input:focus { border: none; }
 
     #hint {
-        background: #0d1117;
-        color: #484f58;
         height: 1;
-        padding: 0 1;
-        content-align: left middle;
+        padding: 0 2;
+        background: #161b22;
+        color: #8b949e;
     }
     """
 
     BINDINGS = [
-        Binding("ctrl+c", "quit", "退出", show=False),
+        Binding("ctrl+q", "quit", "退出", show=False),
+        Binding("ctrl+l", "clear_output", "清屏", show=False),
     ]
 
     def compose(self) -> ComposeResult:
-        yield RichLog(id="output", markup=True, wrap=True, highlight=True)
+        yield Static(
+            " WIREFORGE  /  Protocol Console                         READY ",
+            id="topbar",
+        )
 
-        with Container(id="input-area"):
-            with Horizontal():
-                yield Static(" ▸ ", id="prompt")
-                yield CmdInput(placeholder="输入命令...", id="cmd-input")
+        with Vertical(id="output-panel"):
+            yield Static(
+                " OUTPUT  · Click to select  · Ctrl+C copy  · Tab returns to command",
+                id="output-title",
+            )
+            output = TextArea("", id="output")
+            output.read_only = True
+            output.soft_wrap = True
+            output.show_line_numbers = False
+            yield output
 
-        yield Static(" /build /decode /help  |  ↑↓ 历史  |  Ctrl+C 退出", id="hint")
+        with Horizontal(id="input-area"):
+            yield Static(" ▸ ", id="prompt")
+            yield CmdInput(
+                placeholder="/build /decode /help",
+                id="cmd-input",
+            )
+
+        yield Static(
+            " ↑↓ 历史  ·  Tab 切换输出区  ·  Ctrl+L 清屏  ·  Ctrl+Q 退出",
+            id="hint",
+        )
 
     def on_mount(self):
-        out = self.query_one("#output", RichLog)
-        out.write("[#6e7681]WireForge — /build /decode /help[/]")
+        self.write_output("WIREFORGE  —  /build /decode /help")
         self.query_one("#cmd-input", CmdInput).focus()
+
+    # ── 输出 ──
+
+    def write_output(self, text: str) -> None:
+        output = self.query_one("#output", TextArea)
+        follow_tail = output.scroll_y >= output.max_scroll_y - 1
+        prefix = "\n" if output.text else ""
+        output.insert(prefix + text.rstrip(), output.document.end)
+        if follow_tail:
+            output.scroll_end(animate=False)
+
+    def action_clear_output(self):
+        self.query_one("#output", TextArea).clear()
+
+    # ── 输入 ──
 
     def on_input_submitted(self, event: Input.Submitted):
         text = event.value.strip()
@@ -131,62 +265,61 @@ class WireForgeApp(App):
         if not text:
             return
 
-        out = self.query_one("#output", RichLog)
-        out.write(f"[#6e7681]❯ {text}[/]")
+        self.write_output(f"❯ {text}")
 
         if text.startswith("/"):
-            parts = shlex.split(text)
+            try:
+                parts = shlex.split(text)
+            except ValueError:
+                parts = text.split()
+
             cmd = parts[0].lstrip("/")
-            args_list = parts[1:]
-            args_dict = {}
-            for a in args_list:
-                if a.startswith("--"):
-                    key = a.lstrip("-")
-                    if "=" in key:
-                        k, v = key.split("=", 1)
-                        args_dict[k] = v
-                    else:
-                        args_dict[key] = "true"
+            try:
+                args_dict = parse_options(parts[1:])
+            except ValueError as e:
+                self.write_output(f"error: {e}")
+                return
 
             result = exec_cmd(cmd, args_dict)
 
             if result.success:
                 if result.path:
-                    out.write(f"[italic #58a6ff]{result.path}[/]")
+                    self.write_output(f"path: {result.path}")
                 if result.frame_hex:
-                    out.write(f"[bold #3fb950]{result.frame_hex}[/]")
+                    self.write_output(result.frame_hex)
                 if result.output:
-                    _write(out, result.output, "")
+                    _write(self, result.output, "")
             else:
-                out.write(f"[bold #f85149]error: {result.error}[/]")
+                self.write_output(f"error: {result.error}")
                 if result.path:
-                    out.write(f"[#6e7681 italic]{result.path}[/]")
+                    self.write_output(f"path: {result.path}")
                 schema = (result.output or {}).get("input_schema", [])
                 if schema:
                     names = [f["name"] for f in schema]
-                    out.write(f"[#d2991d]required: {', '.join(names)}[/]")
+                    self.write_output(f"required: {', '.join(names)}")
         elif text in ("help", "h"):
-            out.write("[#6e7681]commands:[/]")
-            out.write("  /build --proto dlt645 --func 0x11")
-            out.write("  /decode --proto dlt645 --hex FE FE 68 ... 16")
+            self.write_output("commands:")
+            self.write_output("  /build --proto dlt645 --func 0x11")
+            self.write_output("  /build --proto dlt645 --func 0x11 --di 00010000 --dir uplink --resolve")
+            self.write_output('  /decode --proto dlt645 --hex "FE FE 68 ... 16"')
         else:
-            out.write("[#6e7681]commands start with / — type 'help' for list[/]")
+            self.write_output("commands start with / — type 'help' for list")
 
 
-def _write(out: RichLog, obj, pfx: str):
+def _write(app: WireForgeApp, obj, pfx: str):
     if isinstance(obj, dict):
         for k, v in obj.items():
             if isinstance(v, (dict, list)):
-                out.write(f"[#c9d1d9]{pfx}{k}:[/]")
-                _write(out, v, pfx + "  ")
+                app.write_output(f"{pfx}{k}:")
+                _write(app, v, pfx + "  ")
             else:
-                out.write(f"[#6e7681]{pfx}{k}:[/] [#c9d1d9]{v}[/]")
+                app.write_output(f"{pfx}{k}: {v}")
     elif isinstance(obj, list):
         for item in obj:
             if isinstance(item, dict):
-                _write(out, item, pfx)
+                _write(app, item, pfx)
             else:
-                out.write(f"[#c9d1d9]{pfx}- {item}[/]")
+                app.write_output(f"{pfx}- {item}")
 
 
 def run():
