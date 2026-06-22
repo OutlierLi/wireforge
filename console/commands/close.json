@@ -1,0 +1,7 @@
+{
+  "name": "close",
+  "desc": "关闭串口连接",
+  "enabled": true,
+  "timeout": 3000,
+  "params": []
+}

@@ -1,5 +1,5 @@
 {
-  "name": "serial-ports",
+  "name": "ports",
   "desc": "列出可用串口",
   "enabled": true,
   "timeout": 3000,

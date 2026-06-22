@@ -317,36 +317,32 @@ class WireForgeApp(App):
 
 
 def _write_structured(app: WireForgeApp, s: dict):
-    """渲染结构化 wireforge.result/v1 JSON 到 TUI。"""
-    # frame
-    frame = s.get("frame", {})
-    if frame:
-        app.write_output("frame:")
-        for k, v in frame.items():
-            app.write_output(f"  {k}: {v}")
-
-    # payload
-    payload = s.get("payload", {})
-    if payload:
-        app.write_output("payload:")
-        _write(app, payload, "  ")
-
-    # wire.fields
-    fields = s.get("wire", {}).get("fields", [])
-    if fields:
-        app.write_output("wire.fields:")
-        for f in fields:
-            off = f["offset"]
-            app.write_output(f"  [{off[0]:>4},{off[1]:>4}) {f.get('path','?'):30s} {f.get('wire_hex',''):30s} → {f.get('value')}")
-
-    # diagnostics
-    diag = s.get("diagnostics", {})
-    warns = diag.get("warnings", [])
-    errs = diag.get("errors", [])
-    for w in warns:
-        app.write_output(f"  warn: {w}")
-    for e in errs:
-        app.write_output(f"  error: {e}")
+    """渲染结构化 JSON 到 TUI。"""
+    # wireforge.result/v1 format
+    if s.get("schema_version", "").startswith("wireforge"):
+        frame = s.get("frame", {})
+        if frame:
+            app.write_output("frame:")
+            for k, v in frame.items():
+                app.write_output(f"  {k}: {v}")
+        payload = s.get("payload", {})
+        if payload:
+            app.write_output("payload:")
+            _write(app, payload, "  ")
+        fields = s.get("wire", {}).get("fields", [])
+        if fields:
+            app.write_output("wire.fields:")
+            for f in fields:
+                off = f["offset"]
+                app.write_output(f"  [{off[0]:>4},{off[1]:>4}) {f.get('path','?'):30s} {f.get('wire_hex',''):30s} → {f.get('value')}")
+        diag = s.get("diagnostics", {})
+        for w in diag.get("warnings", []):
+            app.write_output(f"  warn: {w}")
+        for e in diag.get("errors", []):
+            app.write_output(f"  error: {e}")
+    else:
+        # 通用 JSON 显示 (serial result 等)
+        _write(app, s, "")
 
 
 def _write(app: WireForgeApp, obj, pfx: str):

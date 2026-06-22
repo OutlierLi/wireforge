@@ -302,10 +302,10 @@ def _register_all():
     cmds_dir = Path(__file__).resolve().parent / "commands"
     handler_map = {
         "build": handle_build, "decode": handle_decode,
-        "serial-open": _handle_serial_open,
-        "serial-send": _handle_serial_send,
-        "serial-close": _handle_serial_close,
-        "serial-ports": _handle_serial_ports,
+        "connect": _handle_serial_open,
+        "send": _handle_serial_send,
+        "close": _handle_serial_close,
+        "ports": _handle_serial_ports,
     }
     for fpath in sorted(cmds_dir.glob("*.json")):
         data = json.loads(fpath.read_text())
