@@ -1,7 +1,7 @@
 {
   "name": "ports",
   "desc": "列出可用串口",
-  "enabled": true,
-  "timeout": 3000,
-  "params": []
+  "module": "console.handlers.serial",
+  "handler": "ports",
+  "enabled": true
 }

@@ -282,31 +282,26 @@ class WireForgeApp(App):
 
             result = exec_cmd(cmd, args_dict)
 
-            if result.success:
-                if result.path:
-                    self.write_output(f"path: {result.path}")
-                if result.frame_hex:
-                    self.write_output(result.frame_hex)
-                if result.structured:
-                    _write_structured(self, result.structured)
-                elif result.output:
-                    _write(self, result.output, "")
+            if result.get("success"):
+                data = result.get("data", {})
+                if data.get("path"):
+                    self.write_output(f"path: {data['path']}")
+                if data.get("frame"):
+                    self.write_output(data["frame"])
+                if data:
+                    _write(self, data, "")
             else:
-                self.write_output(f"error: {result.error}")
-                if result.path:
-                    self.write_output(f"path: {result.path}")
-                if result.structured:
-                    _write_structured(self, result.structured)
-                schema = (result.output or {}).get("input_schema", [])
-                if schema:
-                    self.write_output("input_schema:")
-                    for f in schema:
-                        req = "*" if f.get("required") else ""
-                        vls = f" ({', '.join(str(v) for v in f['values'])})" if f.get("values") else ""
-                        self.write_output(f"  {req}{f['name']}: {f['type']}{vls}")
-                derived = (result.output or {}).get("derived_fields", {})
-                if derived:
-                    self.write_output(f"derived (auto): {list(derived.keys())}")
+                self.write_output(f"error: {result.get('error', 'unknown')}")
+                detail = result.get("detail", {})
+                missing = detail.get("missing", [])
+                if missing:
+                    self.write_output("missing:")
+                    for m in missing:
+                        example = f' (e.g. {m.get("example")})' if m.get("example") else ""
+                        self.write_output(f"  --{m['key']}: {m.get('type','')}{example}")
+                hint = detail.get("hint", "")
+                if hint:
+                    self.write_output(hint)
         elif text in ("help", "h"):
             self.write_output("commands:")
             self.write_output("  /build --proto dlt645 --func 0x11")

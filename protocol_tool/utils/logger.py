@@ -112,27 +112,16 @@ def _simplify(obj: Any) -> Any:
 
 def log_console(command: str,
                 args: dict[str, Any] | None = None,
-                output: dict[str, Any] | None = None,
-                path: str | None = None,
-                frame_hex: str = "",
-                success: bool = True,
-                error: str = "") -> None:
-    """记录控制台命令调用。"""
+                result: dict[str, Any] | None = None) -> None:
+    """记录控制台命令调用 — 请求 + 响应 JSON。"""
     _ensure()
+    success = result.get("success", False) if result else False
     tag = "[CONSOLE]" if success else "[CONSOLE][ERROR]"
     lines = [f"{tag} {_ts()}  cmd={command}"]
-
     if args:
-        lines.append(f"  args: {json.dumps(_simplify(args), ensure_ascii=False)}")
-    if path:
-        lines.append(f"  [PATH] {path}")
-    if frame_hex:
-        lines.append(f"  [FRAME] {frame_hex}")
-    if output:
-        lines.append(f"  [OUTPUT] {json.dumps(_simplify(output), ensure_ascii=False)}")
-    if error:
-        lines.append(f"  [ERROR] {error}")
-
+        lines.append(f"  > {json.dumps(_simplify(args), ensure_ascii=False)}")
+    if result:
+        lines.append(f"  < {json.dumps(_simplify(result), ensure_ascii=False)}")
     with open(_LOG_DIR / "console.log", "a", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n\n")
 

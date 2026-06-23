@@ -1,10 +1,8 @@
-"""WireForge 命令行接口 — 命令定义 + 处理器 + 公共 API。
-
-用法:
-    from console.api import exec_cmd, list_cmds
-    result = exec_cmd("build", {"proto": "dlt645", "func": "0x11"})
-"""
-
+"""WireForge 命令行接口 — 命令注册表 + 分发 API。"""
+from pathlib import Path
+from console.command import registry
 from console.api import exec_cmd, list_cmds, get_cmd
-from console.handler import CmdResult
-from console.command import registry, Command, Param
+
+# 启动时加载所有命令 JSON
+_cmds_dir = Path(__file__).resolve().parent / "commands"
+registry.load_dir(str(_cmds_dir))

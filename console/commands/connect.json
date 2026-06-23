@@ -1,12 +1,7 @@
 {
   "name": "connect",
   "desc": "打开串口连接",
-  "enabled": true,
-  "timeout": 5000,
-  "params": [
-    {"name": "port", "type": "str", "required": true, "desc": "串口号"},
-    {"name": "baudrate", "type": "int", "required": false, "desc": "波特率", "default": 9600},
-    {"name": "bytesize", "type": "int", "required": false, "desc": "数据位", "default": 8},
-    {"name": "parity", "type": "choice", "required": false, "desc": "校验位", "values": ["N","O","E"], "default": "N"}
-  ]
+  "module": "console.handlers.serial",
+  "handler": "open",
+  "enabled": true
 }
