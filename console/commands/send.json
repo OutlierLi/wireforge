@@ -1,7 +1,0 @@
-{
-  "name": "send",
-  "desc": "发送串口数据",
-  "module": "console.handlers.serial",
-  "handler": "send",
-  "enabled": true
-}

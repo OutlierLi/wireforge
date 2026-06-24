@@ -115,7 +115,7 @@ def log_console(command: str,
                 result: dict[str, Any] | None = None) -> None:
     """记录控制台命令调用 — 请求 + 响应 JSON。"""
     _ensure()
-    success = result.get("success", False) if result else False
+    success = bool(result and (result.get("success", False) or result.get("status") == "success"))
     tag = "[CONSOLE]" if success else "[CONSOLE][ERROR]"
     lines = [f"{tag} {_ts()}  cmd={command}"]
     if args:

@@ -1,7 +1,0 @@
-{
-  "name": "connect",
-  "desc": "打开串口连接",
-  "module": "console.handlers.serial",
-  "handler": "open",
-  "enabled": true
-}

@@ -1,7 +1,0 @@
-{
-  "name": "decode",
-  "desc": "解析协议报文",
-  "module": "console.handlers.decode",
-  "handler": "handle",
-  "enabled": true
-}

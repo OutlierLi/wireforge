@@ -28,12 +28,13 @@ class Command:
     module: str = ""    # "serial.api"
     handler: str = ""   # "serial_open"
     enabled: bool = True
+    params: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
             "name": self.name, "desc": self.desc,
             "module": self.module, "handler": self.handler,
-            "enabled": self.enabled,
+            "enabled": self.enabled, "params": self.params,
         }
 
 
@@ -44,18 +45,19 @@ class Registry:
         self._commands: dict[str, Command] = {}
         self._handler_cache: dict[str, Callable] = {}
 
-    def load_dir(self, path: str):
-        """扫描目录下所有 .json 文件并注册。"""
-        for fpath in sorted(Path(path).glob("*.json")):
-            data = json.loads(fpath.read_text())
+    def load_file(self, path: str):
+        """从单个 JSON 文件加载所有命令 (key=命令名, value=定义)。"""
+        data = json.loads(Path(path).read_text())
+        for name, entry in data.items():
             cmd = Command(
-                name=data["name"],
-                desc=data.get("desc", ""),
-                module=data.get("module", ""),
-                handler=data.get("handler", ""),
-                enabled=data.get("enabled", True),
+                name=name,
+                desc=entry.get("desc", ""),
+                module=entry.get("module", ""),
+                handler=entry.get("handler", ""),
+                enabled=entry.get("enabled", True),
+                params=entry.get("params", {}),
             )
-            self._commands[cmd.name] = cmd
+            self._commands[name] = cmd
 
     def get(self, name: str) -> Command | None:
         return self._commands.get(name)

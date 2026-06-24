@@ -1,7 +1,0 @@
-{
-  "name": "close",
-  "desc": "关闭串口连接",
-  "module": "console.handlers.serial",
-  "handler": "close",
-  "enabled": true
-}

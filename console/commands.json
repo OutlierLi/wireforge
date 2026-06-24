@@ -1,0 +1,147 @@
+{
+  "build": {
+    "desc": "构造协议报文 (Resolve → Encode)",
+    "module": "console.handlers.build",
+    "handler": "handle",
+    "enabled": true,
+    "params": {
+      "proto": {
+        "type": "choice",
+        "required": true,
+        "desc": "协议类型",
+        "examples": ["dlt645", "csg"]
+      },
+      "func": {
+        "type": "hex",
+        "required": false,
+        "desc": "功能码 (DLT645)",
+        "examples": ["0x11", "0x13"]
+      },
+      "afn": {
+        "type": "hex",
+        "required": false,
+        "desc": "应用功能码 (CSG)",
+        "examples": ["0x00", "0x03"]
+      },
+      "di": {
+        "type": "str",
+        "required": false,
+        "desc": "数据标识DI",
+        "examples": ["00010000", "E8020701"]
+      },
+      "dir": {
+        "type": "choice",
+        "required": false,
+        "desc": "传输方向",
+        "examples": ["downlink", "uplink"],
+        "default": "downlink"
+      },
+      "resolve": {
+        "type": "bool",
+        "required": false,
+        "desc": "仅解析目标返回input_schema，不构造帧"
+      },
+      "*": {
+        "type": "dynamic",
+        "required": false,
+        "desc": "业务字段由resolve后动态决定"
+      }
+    }
+  },
+
+  "decode": {
+    "desc": "解析协议报文",
+    "module": "console.handlers.decode",
+    "handler": "handle",
+    "enabled": true,
+    "params": {
+      "proto": {
+        "type": "choice",
+        "required": true,
+        "desc": "协议类型",
+        "examples": ["dlt645", "csg"]
+      },
+      "hex": {
+        "type": "str",
+        "required": true,
+        "desc": "十六进制报文字节流",
+        "examples": ["FE FE 68 ... 16", "68 0C 00 40 03 01 01 03 00 E8 30 16"]
+      }
+    }
+  },
+
+  "connect": {
+    "desc": "打开串口连接",
+    "module": "console.handlers.serial",
+    "handler": "open",
+    "enabled": true,
+    "params": {
+      "port": {
+        "type": "str",
+        "required": true,
+        "desc": "串口号",
+        "examples": ["mock://loop", "virtual://demo", "/dev/ttyUSB0", "COM3"],
+        "note": "mock=内存回环, virtual=跨进程总线, 其他=物理串口"
+      },
+      "baudrate": {
+        "type": "int",
+        "required": false,
+        "desc": "波特率",
+        "examples": [9600, 115200],
+        "default": 9600
+      },
+      "bytesize": {
+        "type": "int",
+        "required": false,
+        "desc": "数据位",
+        "examples": [8],
+        "default": 8
+      },
+      "parity": {
+        "type": "choice",
+        "required": false,
+        "desc": "校验位",
+        "examples": ["N", "E", "O"],
+        "default": "N"
+      }
+    }
+  },
+
+  "send": {
+    "desc": "发送串口数据并等待响应",
+    "module": "console.handlers.serial",
+    "handler": "send",
+    "enabled": true,
+    "params": {
+      "hex": {
+        "type": "str",
+        "required": true,
+        "desc": "十六进制报文",
+        "examples": ["68 0C 00 40 03 01 01 03 00 E8 30 16"]
+      },
+      "timeout": {
+        "type": "int",
+        "required": false,
+        "desc": "响应超时(秒)",
+        "examples": [1],
+        "default": 1
+      }
+    }
+  },
+
+  "close": {
+    "desc": "关闭串口连接",
+    "module": "console.handlers.serial",
+    "handler": "close",
+    "enabled": true,
+    "params": {}
+  },
+
+  "ports": {
+    "desc": "列出可用串口及连接状态",
+    "module": "console.handlers.serial",
+    "handler": "ports",
+    "enabled": true,
+    "params": {}
+  }
+}

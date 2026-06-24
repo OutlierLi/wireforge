@@ -138,8 +138,8 @@ class SerialTransport:
         else:
             try:
                 import serial
-                self._port = serial.serial_for_url(
-                    port, baudrate=self.settings.baudrate,
+                self._port = serial.Serial(
+                    port=port, baudrate=self.settings.baudrate,
                     bytesize=self.settings.bytesize,
                     parity=self.settings.parity,
                     stopbits=self.settings.stopbits,
@@ -147,6 +147,10 @@ class SerialTransport:
                 )
             except ImportError:
                 raise RuntimeError("pyserial not installed. pip install pyserial")
+            except serial.SerialException as e:
+                raise RuntimeError(str(e)) from e
+            except ValueError as e:
+                raise RuntimeError(f"invalid serial params: {e}") from e
 
     def close(self):
         if self._port:

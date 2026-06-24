@@ -1,7 +1,0 @@
-{
-  "name": "build",
-  "desc": "构造协议报文",
-  "module": "console.handlers.build",
-  "handler": "handle",
-  "enabled": true
-}

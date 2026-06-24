@@ -10,23 +10,26 @@ from pathlib import Path
 _project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_project_root))
 
-from console.api import exec_cmd, list_cmds, get_cmd
+from console.api import complete_cmd, exec_cmd, exec_text, list_cmds, get_cmd
+from console.runtime import parse_command_text
 
 
 # ── helpers ───────────────────────────────────────────────────────────
 
 def _ok(r, msg=""):
-    assert r["success"], f"expected success: {msg} | got: {r.get('error')}"
+    assert r["status"] == "success", f"expected success: {msg} | got: {r.get('status')} {r.get('error','')}"
 
 
 def _fail(r, msg=""):
-    assert not r["success"], f"expected fail: {msg} | got: {r}"
+    assert r["status"] != "success", f"expected fail: {msg} | got: {r}"
 
 
 def _missing(r, key, msg=""):
     _fail(r, msg)
-    detail = r.get("detail", {})
-    missing = detail.get("missing", [])
+    # protocol-tui.v1: need_input 状态时缺少的字段在 input_schema 中
+    schema = r.get("input_schema", [])
+    detail_missing = r.get("detail", {}).get("missing", [])
+    missing = schema or detail_missing
     keys = [m["key"] for m in missing]
     assert key in keys, f"expected missing '{key}' in {keys}: {msg}"
 
@@ -63,6 +66,38 @@ class TestCommandRegistry:
     def test_get_cmd(self):
         assert get_cmd("build") is not None
         assert get_cmd("nonexistent") is None
+
+    def test_command_metadata_includes_params(self):
+        cmd = get_cmd("build")
+        assert cmd is not None
+        assert "params" in cmd
+        assert "proto" in cmd["params"]
+
+
+class TestCommandRuntimeContract:
+    def test_parse_command_text(self):
+        cmd, args = parse_command_text("/build --protocol=csg --afn 0x03 --resolve")
+        assert cmd == "build"
+        assert args["proto"] == "csg"
+        assert args["afn"] == "0x03"
+        assert args["resolve"] is True
+
+    def test_exec_text_uses_same_runtime(self):
+        r = exec_text("/build --protocol=dlt645 --func=0x11 --di=00010000 --dir=downlink")
+        _ok(r)
+        _has_frame(r)
+
+    def test_complete_commands(self):
+        r = complete_cmd(prefix="/b")
+        _ok(r)
+        values = [c["value"] for c in r["data"]["completions"]]
+        assert "/build" in values
+
+    def test_complete_arguments(self):
+        r = complete_cmd(prefix="--pr", command="build")
+        _ok(r)
+        values = [c["value"] for c in r["data"]["completions"]]
+        assert "--proto" in values
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -153,9 +188,9 @@ class TestBuildFailMissingParam:
             "proto": "dlt645", "func": "0x11", "di": "00010000", "dir": "uplink",
         })
         _fail(r)
-        detail = r.get("detail", {})
-        missing = detail.get("missing", [])
-        keys = [m["key"] for m in missing]
+        # need_input 状态时字段在 input_schema 中
+        schema = r.get("input_schema", r.get("detail", {}).get("missing", []))
+        keys = [m["key"] for m in schema]
         assert "freeze_year" in keys, f"should require freeze_year, got: {keys}"
 
 
@@ -232,7 +267,7 @@ class TestDecodeFail:
         # 校验和不匹配时可能成功也可能失败，取决于引擎实现
         # 但不应 crash
         assert isinstance(r, dict)
-        assert "success" in r
+        assert "status" in r
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -318,7 +353,7 @@ class TestCrossProtocol:
                     "di": "00010000",
                     "resolve": True,
                 })
-                if not r["success"] and "route" in r.get("error", "").lower():
+                if r["status"] != "success" and "route" in r.get("error", "").lower():
                     continue  # 该方向无对应路由
                 _ok(r, f"645 func=0x{func:02X} dir={d}")
 

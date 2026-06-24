@@ -1,7 +1,0 @@
-{
-  "name": "ports",
-  "desc": "列出可用串口",
-  "module": "console.handlers.serial",
-  "handler": "ports",
-  "enabled": true
-}
