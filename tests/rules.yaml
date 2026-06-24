@@ -1,0 +1,63 @@
+# WireForge 自动应答规则示例
+# 加载: /auto_rule load --file tests/rules.yaml
+
+rules:
+  - id: auto_reply_login
+    enabled: true
+    trigger:
+      source: serial:default
+      event: frame_received
+    condition:
+      type: regex
+      pattern: "^68.*91.*16$"
+    actions:
+      - command: /send
+        args:
+          hex: "68 0D 00 80 00 01 01 00 01 E8 00 6B 16"
+      - command: /log
+        args:
+          message: "auto reply to login request"
+    execution:
+      mode: sequential
+      cooldown_ms: 500
+      on_error: skip
+
+  - id: dlt645_read_address
+    enabled: true
+    trigger:
+      source: serial:default
+      event: frame_received
+    condition:
+      type: regex
+      pattern: "^68.*13.*16$"
+    actions:
+      - command: /send
+        args:
+          hex: "FE FE FE FE 68 01 00 00 00 00 00 68 93 06 01 00 00 00 00 00 9D 16"
+      - command: /log
+        args:
+          message: "auto reply to read address"
+    execution:
+      mode: sequential
+      cooldown_ms: 0
+      on_error: skip
+
+  - id: csg_query_vendor_ack
+    enabled: false
+    trigger:
+      source: serial:default
+      event: frame_received
+    condition:
+      type: regex
+      pattern: "^68.*03.*00 E8.*16$"
+    actions:
+      - command: /send
+        args:
+          hex: "68 15 00 80 03 01 01 03 01 E8 AB CD 30 31 25 06 21 10 20 C8 16"
+      - command: /log
+        args:
+          message: "auto reply vendor info"
+    execution:
+      mode: sequential
+      cooldown_ms: 1000
+      on_error: skip

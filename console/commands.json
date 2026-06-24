@@ -9,31 +9,46 @@
         "type": "choice",
         "required": true,
         "desc": "协议类型",
-        "examples": ["dlt645", "csg"]
+        "examples": [
+          "dlt645",
+          "csg"
+        ]
       },
       "func": {
         "type": "hex",
         "required": false,
         "desc": "功能码 (DLT645)",
-        "examples": ["0x11", "0x13"]
+        "examples": [
+          "0x11",
+          "0x13"
+        ]
       },
       "afn": {
         "type": "hex",
         "required": false,
         "desc": "应用功能码 (CSG)",
-        "examples": ["0x00", "0x03"]
+        "examples": [
+          "0x00",
+          "0x03"
+        ]
       },
       "di": {
         "type": "str",
         "required": false,
         "desc": "数据标识DI",
-        "examples": ["00010000", "E8020701"]
+        "examples": [
+          "00010000",
+          "E8020701"
+        ]
       },
       "dir": {
         "type": "choice",
         "required": false,
         "desc": "传输方向",
-        "examples": ["downlink", "uplink"],
+        "examples": [
+          "downlink",
+          "uplink"
+        ],
         "default": "downlink"
       },
       "resolve": {
@@ -48,7 +63,6 @@
       }
     }
   },
-
   "decode": {
     "desc": "解析协议报文",
     "module": "console.handlers.decode",
@@ -59,17 +73,22 @@
         "type": "choice",
         "required": true,
         "desc": "协议类型",
-        "examples": ["dlt645", "csg"]
+        "examples": [
+          "dlt645",
+          "csg"
+        ]
       },
       "hex": {
         "type": "str",
         "required": true,
         "desc": "十六进制报文字节流",
-        "examples": ["FE FE 68 ... 16", "68 0C 00 40 03 01 01 03 00 E8 30 16"]
+        "examples": [
+          "FE FE 68 ... 16",
+          "68 0C 00 40 03 01 01 03 00 E8 30 16"
+        ]
       }
     }
   },
-
   "connect": {
     "desc": "打开串口连接",
     "module": "console.handlers.serial",
@@ -80,33 +99,46 @@
         "type": "str",
         "required": true,
         "desc": "串口号",
-        "examples": ["mock://loop", "virtual://demo", "/dev/ttyUSB0", "COM3"],
+        "examples": [
+          "mock://loop",
+          "virtual://demo",
+          "/dev/ttyUSB0",
+          "COM3"
+        ],
         "note": "mock=内存回环, virtual=跨进程总线, 其他=物理串口"
       },
       "baudrate": {
         "type": "int",
         "required": false,
         "desc": "波特率",
-        "examples": [9600, 115200],
+        "examples": [
+          9600,
+          115200
+        ],
         "default": 9600
       },
       "bytesize": {
         "type": "int",
         "required": false,
         "desc": "数据位",
-        "examples": [8],
+        "examples": [
+          8
+        ],
         "default": 8
       },
       "parity": {
         "type": "choice",
         "required": false,
         "desc": "校验位",
-        "examples": ["N", "E", "O"],
+        "examples": [
+          "N",
+          "E",
+          "O"
+        ],
         "default": "N"
       }
     }
   },
-
   "send": {
     "desc": "发送串口数据并等待响应",
     "module": "console.handlers.serial",
@@ -117,18 +149,21 @@
         "type": "str",
         "required": true,
         "desc": "十六进制报文",
-        "examples": ["68 0C 00 40 03 01 01 03 00 E8 30 16"]
+        "examples": [
+          "68 0C 00 40 03 01 01 03 00 E8 30 16"
+        ]
       },
       "timeout": {
         "type": "int",
         "required": false,
         "desc": "响应超时(秒)",
-        "examples": [1],
+        "examples": [
+          1
+        ],
         "default": 1
       }
     }
   },
-
   "close": {
     "desc": "关闭串口连接",
     "module": "console.handlers.serial",
@@ -136,12 +171,63 @@
     "enabled": true,
     "params": {}
   },
-
   "ports": {
     "desc": "列出可用串口及连接状态",
     "module": "console.handlers.serial",
     "handler": "ports",
     "enabled": true,
     "params": {}
+  },
+  "auto_rule": {
+    "desc": "自动应答规则 (add/list/show/enable/disable/delete/test/load/history)",
+    "module": "console.handlers.auto_rule",
+    "handler": "handle",
+    "enabled": true,
+    "params": {
+      "sub": {
+        "type": "choice",
+        "required": true,
+        "desc": "子命令",
+        "examples": [
+          "add",
+          "list",
+          "load",
+          "test",
+          "show",
+          "enable",
+          "disable",
+          "delete",
+          "history"
+        ]
+      },
+      "id": {
+        "type": "str",
+        "desc": "规则ID"
+      },
+      "name": {
+        "type": "str",
+        "desc": "规则名称"
+      },
+      "hex": {
+        "type": "str",
+        "desc": "测试用十六进制报文"
+      },
+      "file": {
+        "type": "str",
+        "desc": "YAML规则文件路径"
+      },
+      "match": {
+        "type": "str",
+        "desc": "正则匹配模式 (regex)"
+      },
+      "source": {
+        "type": "str",
+        "desc": "触发源 serial:default"
+      },
+      "then": {
+        "type": "str",
+        "desc": "匹配后执行的命令"
+      }
+    }
   }
 }
