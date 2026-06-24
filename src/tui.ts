@@ -1,10 +1,13 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
-import * as readline from "node:readline";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 
 const SCHEMA = "protocol-tui.v1";
+const HISTORY_LIMIT = 200;
+const HISTORY_FILE = join(process.cwd(), ".wireforge_history");
 
 type Status =
   | "success"
@@ -60,7 +63,9 @@ type SemanticToken =
   | "route_candidate"
   | "text"
   | "subtle"
-  | "accent";
+  | "accent"
+  | "command_bar"
+  | "result_title";
 
 type OutputLine = {
   text: string;
@@ -72,6 +77,13 @@ type FormState = {
   fields: InputField[];
   index: number;
   args: Record<string, string>;
+};
+
+type InputKey = {
+  name?: string;
+  ctrl?: boolean;
+  meta?: boolean;
+  sequence?: string;
 };
 
 const reset = "\x1b[0m";
@@ -88,6 +100,8 @@ const color: Record<SemanticToken, string> = {
   text: "\x1b[37m",
   subtle: "\x1b[90m",
   accent: "\x1b[36m",
+  command_bar: "\x1b[1;37m\x1b[48;5;238m",
+  result_title: "\x1b[1;37m",
 };
 
 function paint(text: string, token: SemanticToken = "text"): string {
@@ -164,6 +178,7 @@ class Screen {
   private cursor = 0;
   private prompt = ">";
   private status = "READY";
+  private scrollOffset = 0;
 
   setInput(value: string, cursor: number): void {
     this.input = value;
@@ -181,6 +196,7 @@ class Screen {
   clear(): void {
     this.lines = [];
     this.lastCopyText = "";
+    this.scrollOffset = 0;
   }
 
   copyText(): string {
@@ -188,46 +204,66 @@ class Screen {
   }
 
   add(text: string, token: SemanticToken = "text"): void {
-    if (!text) return;
     for (const line of text.split(/\r?\n/)) {
       this.lines.push({ text: line, token });
     }
     this.lines = this.lines.slice(-1000);
   }
 
+  scrollBy(delta: number): void {
+    if (this.lines.length === 0) {
+      this.scrollOffset = 0;
+      return;
+    }
+    this.scrollOffset = Math.max(0, this.scrollOffset + delta);
+  }
+
+  scrollToBottom(): void {
+    this.scrollOffset = 0;
+  }
+
   addCommand(text: string): void {
-    this.add(`> ${text}`, "command");
+    if (this.lines.length > 0) this.add("", "text");
+    this.add(`› ${text}`, "command_bar");
+    this.add("", "text");
   }
 
   renderResponse(response: WireResponse): void {
     if (response.status === "success") {
       this.renderSuccess(response.data ?? {});
+      this.add("", "text");
       return;
     }
     if (response.status === "need_input") {
-      this.add("need input", "warning");
+      this.add("● need input", "result_title");
+      this.add("└  fill required fields", "subtle");
       for (const field of response.input_schema ?? []) {
         const key = field.key ?? field.name ?? "";
         const type = field.type ?? "str";
         const desc = field.desc ?? field.description ?? "";
-        this.add(`  --${key}: ${type}${desc ? `  ${desc}` : ""}`, "field_name");
+        this.add(`   --${key}: ${type}${desc ? `  ${desc}` : ""}`, "field_name");
       }
       if (response.hint) this.add(response.hint, "subtle");
+      this.add("", "text");
       return;
     }
     if (response.status === "need_disambiguation") {
-      this.add(`need disambiguation ${response.key ?? ""}`.trimEnd(), "warning");
+      this.add(`● need disambiguation ${response.key ?? ""}`.trimEnd(), "result_title");
       for (const candidate of response.candidates ?? []) {
-        this.add(`  ${candidate.label ?? candidate.value}`, "route_candidate");
+        this.add(`└  ${candidate.label ?? candidate.value}`, "route_candidate");
       }
+      this.add("", "text");
       return;
     }
     if (response.status === "session_closed") {
-      this.add(`session closed ${response.interaction_id ?? ""}`.trimEnd(), "subtle");
+      this.add(`● session closed ${response.interaction_id ?? ""}`.trimEnd(), "subtle");
+      this.add("", "text");
       return;
     }
-    this.add(`${response.status}: ${response.error ?? response.status}`, "error");
-    if (response.path) this.add(response.path, "route_selected");
+    this.add(`● ${response.status}`, "error");
+    this.add(`└  ${response.error ?? response.status}`, "error");
+    if (response.path) this.add(`   ${response.path}`, "route_selected");
+    this.add("", "text");
   }
 
   draw(): void {
@@ -243,11 +279,15 @@ class Screen {
       out.push(...this.welcomeLines(cols, outputHeight));
     } else {
       const wrapped = this.wrapVisibleLines(cols - 2);
-      const visible = wrapped.slice(-Math.max(outputHeight, 1));
+      const maxOffset = Math.max(wrapped.length - outputHeight, 0);
+      this.scrollOffset = Math.min(this.scrollOffset, maxOffset);
+      const end = Math.max(wrapped.length - this.scrollOffset, 0);
+      const start = Math.max(end - outputHeight, 0);
+      const visible = wrapped.slice(start, end);
       for (let i = 0; i < outputHeight; i += 1) {
         const line = visible[i];
         if (line) {
-          out.push(` ${paint(pad(line.text, cols - 2), line.token)} `);
+          out.push(this.renderOutputLine(line, cols));
         } else {
           out.push(" ".repeat(cols));
         }
@@ -263,12 +303,13 @@ class Screen {
 
   private renderSuccess(data: Record<string, unknown>): void {
     const copyLines: string[] = [];
+    this.add("● success", "result_title");
     if (typeof data.path === "string") {
-      this.add(data.path, "route_selected");
+      this.add(`└  path: ${data.path}`, "route_selected");
       copyLines.push(data.path);
     }
     if (typeof data.frame === "string") {
-      this.add(data.frame, "frame_byte");
+      this.add(`   frame: ${data.frame}`, "frame_byte");
       copyLines.push(data.frame);
     }
     for (const [key, value] of Object.entries(data)) {
@@ -281,13 +322,13 @@ class Screen {
   private renderValue(key: string, value: unknown, depth: number, copyLines: string[]): void {
     const indent = "  ".repeat(depth);
     if (Array.isArray(value)) {
-      this.add(`${indent}${key}:`, "field_name");
+      this.add(`   ${indent}${key}:`, "field_name");
       copyLines.push(`${indent}${key}:`);
       for (const item of value) this.renderValue("-", item, depth + 1, copyLines);
       return;
     }
     if (value && typeof value === "object") {
-      this.add(`${indent}${key}:`, "field_name");
+      this.add(`   ${indent}${key}:`, "field_name");
       copyLines.push(`${indent}${key}:`);
       for (const [childKey, childValue] of Object.entries(value as Record<string, unknown>)) {
         this.renderValue(childKey, childValue, depth + 1, copyLines);
@@ -295,12 +336,20 @@ class Screen {
       return;
     }
     const line = `${indent}${key}: ${String(value)}`;
-    this.add(line, key === "protocol" ? "field_name" : "field_value");
+    this.add(`   ${line}`, key === "protocol" ? "field_name" : "field_value");
     copyLines.push(line);
   }
 
+  private renderOutputLine(line: OutputLine, cols: number): string {
+    if (line.token === "command_bar") {
+      return paint(pad(line.text, cols), "command_bar");
+    }
+    return ` ${paint(pad(line.text, cols - 2), line.token)} `;
+  }
+
   private statusLine(cols: number): string {
-    const status = `${this.status.toLowerCase()}  Ctrl+L clear  Ctrl+Q exit  local: /copy`;
+    const scroll = this.scrollOffset > 0 ? `  scroll +${this.scrollOffset}` : "";
+    const status = `${this.status.toLowerCase()}${scroll}  PgUp/PgDn output  Ctrl+L clear  Ctrl+Q exit  local: /copy`;
     return paint(status.padStart(cols), "subtle");
   }
 
@@ -403,8 +452,10 @@ class TuiApp {
   private historyIndex = -1;
   private draft = "";
   private form: FormState | undefined;
+  private inputBuffer = "";
 
   constructor() {
+    this.history = loadHistory();
     this.backend = new NdjsonBackend((text) => {
       this.screen.add(text, "subtle");
       this.draw();
@@ -412,15 +463,14 @@ class TuiApp {
   }
 
   async run(): Promise<void> {
-    readline.emitKeypressEvents(stdin);
     if (stdin.isTTY) stdin.setRawMode(true);
-    stdout.write("\x1b[2J");
+    stdout.write("\x1b[?1049h\x1b[?1000h\x1b[?1006h\x1b[2J");
     this.draw();
 
-    const onKey = (_chunk: string, key: readline.Key) => {
-      void this.handleKey(key);
+    const onData = (chunk: Buffer | string) => {
+      void this.handleInputData(chunk.toString());
     };
-    stdin.on("keypress", onKey);
+    stdin.on("data", onData);
 
     await new Promise<void>((resolve) => {
       const exit = () => resolve();
@@ -428,22 +478,114 @@ class TuiApp {
       this.onceExit = exit;
     });
 
-    stdin.off("keypress", onKey);
+    stdin.off("data", onData);
     if (stdin.isTTY) stdin.setRawMode(false);
     stdin.pause();
     this.backend.close();
-    stdout.write("\x1b[?25h\x1b[2J\x1b[H");
+    stdout.write("\x1b[?1006l\x1b[?1000l\x1b[?25h\x1b[?1049l");
   }
 
   private onceExit: (() => void) | undefined;
 
-  private async handleKey(key: readline.Key): Promise<void> {
+  private async handleInputData(chunk: string): Promise<void> {
+    this.inputBuffer += chunk;
+    while (this.inputBuffer.length > 0) {
+      const consumed = await this.consumeInputBuffer();
+      if (!consumed) break;
+    }
+  }
+
+  private async consumeInputBuffer(): Promise<boolean> {
+    const mouse = /^\x1b\[<(\d+);(\d+);(\d+)([mM])/.exec(this.inputBuffer);
+    if (mouse) {
+      this.inputBuffer = this.inputBuffer.slice(mouse[0].length);
+      this.handleMouseButton(Number(mouse[1]));
+      return true;
+    }
+    if (this.inputBuffer.startsWith("\x1b[<")) {
+      if (!/[mM]/.test(this.inputBuffer) && this.inputBuffer.length < 24) return false;
+      this.inputBuffer = this.inputBuffer.slice(1);
+      return true;
+    }
+
+    const sequenceKey = this.readKnownSequence();
+    if (sequenceKey) {
+      this.inputBuffer = this.inputBuffer.slice(sequenceKey.sequence?.length ?? 0);
+      await this.handleKey(sequenceKey);
+      return true;
+    }
+
+    const first = Array.from(this.inputBuffer)[0] ?? "";
+    if (!first) return false;
+    this.inputBuffer = this.inputBuffer.slice(first.length);
+
+    const code = first.codePointAt(0) ?? 0;
+    if (first === "\x03") {
+      await this.handleKey({ name: "c", ctrl: true, sequence: first });
+    } else if (first === "\x11") {
+      await this.handleKey({ name: "q", ctrl: true, sequence: first });
+    } else if (first === "\x0c") {
+      await this.handleKey({ name: "l", ctrl: true, sequence: first });
+    } else if (first === "\r" || first === "\n") {
+      await this.handleKey({ name: "return", sequence: first });
+    } else if (first === "\x7f" || first === "\b") {
+      await this.handleKey({ name: "backspace", sequence: first });
+    } else if (first === "\x1b") {
+      // Drop unknown escape sequences. In particular, never let mouse fragments
+      // become editable text.
+    } else if (code >= 0x20 && code !== 0x7f) {
+      await this.handleKey({ sequence: first });
+    }
+    return true;
+  }
+
+  private readKnownSequence(): InputKey | undefined {
+    const known: Array<[string, InputKey]> = [
+      ["\x1b[A", { name: "up", sequence: "\x1b[A" }],
+      ["\x1b[B", { name: "down", sequence: "\x1b[B" }],
+      ["\x1b[C", { name: "right", sequence: "\x1b[C" }],
+      ["\x1b[D", { name: "left", sequence: "\x1b[D" }],
+      ["\x1b[H", { name: "home", sequence: "\x1b[H" }],
+      ["\x1b[F", { name: "end", sequence: "\x1b[F" }],
+      ["\x1b[1~", { name: "home", sequence: "\x1b[1~" }],
+      ["\x1b[4~", { name: "end", sequence: "\x1b[4~" }],
+      ["\x1b[3~", { name: "delete", sequence: "\x1b[3~" }],
+      ["\x1b[5~", { name: "pageup", sequence: "\x1b[5~" }],
+      ["\x1b[6~", { name: "pagedown", sequence: "\x1b[6~" }],
+    ];
+    for (const [sequence, key] of known) {
+      if (this.inputBuffer.startsWith(sequence)) return key;
+    }
+    return undefined;
+  }
+
+  private handleMouseButton(button: number): void {
+    if (button === 64) {
+      this.screen.scrollBy(3);
+      this.draw();
+    } else if (button === 65) {
+      this.screen.scrollBy(-3);
+      this.draw();
+    }
+  }
+
+  private async handleKey(key: InputKey): Promise<void> {
     if (key.ctrl && (key.name === "c" || key.name === "q")) {
       this.onceExit?.();
       return;
     }
     if (key.ctrl && key.name === "l") {
       this.screen.clear();
+      this.draw();
+      return;
+    }
+    if (key.name === "pageup") {
+      this.screen.scrollBy(this.outputPageSize());
+      this.draw();
+      return;
+    }
+    if (key.name === "pagedown") {
+      this.screen.scrollBy(-this.outputPageSize());
       this.draw();
       return;
     }
@@ -472,13 +614,13 @@ class TuiApp {
         this.cursor = Math.max(0, this.cursor - 1);
         break;
       case "right":
-        this.cursor = Math.min(this.input.length, this.cursor + 1);
+        this.cursor = Math.min(Array.from(this.input).length, this.cursor + 1);
         break;
       case "home":
         this.cursor = 0;
         break;
       case "end":
-        this.cursor = this.input.length;
+        this.cursor = Array.from(this.input).length;
         break;
       case "up":
         this.historyUp();
@@ -500,6 +642,10 @@ class TuiApp {
     this.draw();
   }
 
+  private outputPageSize(): number {
+    return Math.max((stdout.rows || 30) - 6, 1);
+  }
+
   private async submit(): Promise<void> {
     const text = this.input.trim();
     this.input = "";
@@ -519,21 +665,25 @@ class TuiApp {
       this.onceExit?.();
       return;
     }
+    this.historyPush(text);
+    this.screen.scrollToBottom();
+    this.screen.addCommand(text);
+
     if (text === "/help" || text === "help") {
       this.screen.add("commands: /build /decode /connect /send /ports /close", "text");
       this.screen.add("local: /copy /exit", "subtle");
+      this.screen.add("", "text");
       this.draw();
       return;
     }
     if (text === "/copy") {
       const ok = await copyToClipboard(this.screen.copyText());
       this.screen.add(ok ? "copied last result block" : "nothing copied", ok ? "success" : "warning");
+      this.screen.add("", "text");
       this.draw();
       return;
     }
 
-    this.historyPush(text);
-    this.screen.addCommand(text);
     await this.executeCommand(text);
   }
 
@@ -615,9 +765,12 @@ class TuiApp {
   }
 
   private historyPush(text: string): void {
-    if (!this.history.length || this.history[this.history.length - 1] !== text) {
-      this.history.push(text);
-    }
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    this.history = this.history.filter((item) => item !== trimmed);
+    this.history.push(trimmed);
+    this.history = this.history.slice(-HISTORY_LIMIT);
+    saveHistory(this.history);
   }
 
   private historyUp(): void {
@@ -629,7 +782,7 @@ class TuiApp {
       this.historyIndex = Math.max(0, this.historyIndex - 1);
     }
     this.input = this.history[this.historyIndex] ?? "";
-    this.cursor = this.input.length;
+    this.cursor = Array.from(this.input).length;
   }
 
   private historyDown(): void {
@@ -641,7 +794,7 @@ class TuiApp {
       this.historyIndex = -1;
       this.input = this.draft;
     }
-    this.cursor = this.input.length;
+    this.cursor = Array.from(this.input).length;
   }
 
   private draw(): void {
@@ -764,10 +917,31 @@ function wrapPlain(text: string, width: number): string[] {
   return lines;
 }
 
+function loadHistory(): string[] {
+  try {
+    if (!existsSync(HISTORY_FILE)) return [];
+    return readFileSync(HISTORY_FILE, "utf8")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(-HISTORY_LIMIT);
+  } catch {
+    return [];
+  }
+}
+
+function saveHistory(history: string[]): void {
+  try {
+    writeFileSync(HISTORY_FILE, `${history.slice(-HISTORY_LIMIT).join("\n")}\n`, "utf8");
+  } catch {
+    // History is a convenience feature; command execution must not depend on it.
+  }
+}
+
 if (stdin.isTTY && stdout.isTTY) {
   new TuiApp().run().catch((error) => {
     if (stdin.isTTY) stdin.setRawMode(false);
-    stdout.write(`\x1b[?25h\x1b[2J\x1b[H${paint("fatal", "error")}: ${error instanceof Error ? error.message : String(error)}\n`);
+    stdout.write(`\x1b[?1006l\x1b[?1000l\x1b[?25h\x1b[?1049l${paint("fatal", "error")}: ${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;
   });
 } else {
