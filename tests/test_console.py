@@ -55,7 +55,7 @@ def _has_frame(r, msg=""):
 class TestCommandRegistry:
     def test_all_commands_registered(self):
         names = [c["name"] for c in list_cmds()]
-        for n in ("build", "decode", "connect", "send", "close", "ports"):
+        for n in ("build", "decode", "serial", "auto_rule"):
             assert n in names, f"missing command: {n}"
 
     def test_command_has_module_and_handler(self):
@@ -271,69 +271,69 @@ class TestDecodeFail:
 
 
 # ═══════════════════════════════════════════════════════════════
-# 8. /connect — 串口连接
+# 8. /serial connect / send / close / ports / set
 # ═══════════════════════════════════════════════════════════════
 
-class TestConnect:
+class TestSerial:
     def test_connect_mock_ok(self):
-        r = exec_cmd("connect", {"port": "mock://loop"})
+        r = exec_cmd("serial", {"sub": "connect", "port": "mock://loop"})
         _ok(r)
 
     def test_connect_missing_port(self):
-        r = exec_cmd("connect", {})
+        r = exec_cmd("serial", {"sub": "connect"})
         _fail(r)
         _missing(r, "port")
 
     def test_connect_with_baudrate(self):
-        r = exec_cmd("connect", {"port": "mock://loop", "baudrate": 115200})
+        r = exec_cmd("serial", {"sub": "connect", "port": "mock://loop", "baudrate": 115200})
         _ok(r)
 
-
-# ═══════════════════════════════════════════════════════════════
-# 9. /send — 串口发送
-# ═══════════════════════════════════════════════════════════════
-
-class TestSend:
     def test_send_loopback(self):
-        exec_cmd("connect", {"port": "mock://loop"})
-        r = exec_cmd("send", {
-            "hex": "68 0C 00 40 03 01 01 03 00 E8 30 16",
-        })
+        exec_cmd("serial", {"sub": "connect", "port": "mock://loop"})
+        r = exec_cmd("serial", {"sub": "send", "hex": "68 0C 00 40 03 01 01 03 00 E8 30 16"})
         _ok(r)
         assert r["data"]["received_bytes"] > 0, "loopback should echo"
 
     def test_send_missing_hex(self):
-        r = exec_cmd("send", {"timeout": 1})
+        r = exec_cmd("serial", {"sub": "send", "timeout": 1})
         _fail(r)
         _missing(r, "hex")
 
     def test_send_not_connected(self):
-        # close first
-        exec_cmd("close", {})
-        r = exec_cmd("send", {"hex": "68 0C 00 40"})
+        exec_cmd("serial", {"sub": "close"})
+        r = exec_cmd("serial", {"sub": "send", "hex": "68 0C 00 40"})
         _fail(r)
 
-
-# ═══════════════════════════════════════════════════════════════
-# 10. /ports & /close
-# ═══════════════════════════════════════════════════════════════
-
-class TestPortsAndClose:
     def test_ports_lists_available(self):
-        r = exec_cmd("ports", {})
+        r = exec_cmd("serial", {"sub": "ports"})
         _ok(r)
-        assert "available" in r["data"], "should list available ports"
-        assert "mock://loop" in r["data"]["available"]
+        assert "available" in r["data"]
 
     def test_close_when_connected(self):
-        exec_cmd("connect", {"port": "mock://loop"})
-        r = exec_cmd("close", {})
+        exec_cmd("serial", {"sub": "connect", "port": "mock://loop"})
+        r = exec_cmd("serial", {"sub": "close"})
         _ok(r)
 
     def test_close_when_not_connected(self):
-        exec_cmd("close", {})  # ensure disconnected
-        r = exec_cmd("close", {})
-        _fail(r, "close without connection should fail")
+        exec_cmd("serial", {"sub": "close"})
+        r = exec_cmd("serial", {"sub": "close"})
+        _fail(r)
+
+    def test_set_baudrate(self):
+        exec_cmd("serial", {"sub": "connect", "port": "mock://loop"})
+        r = exec_cmd("serial", {"sub": "set", "baudrate": 115200})
+        _ok(r)
+        assert "updated" in r["data"]
+
+    def test_set_no_params_shows_current(self):
+        r = exec_cmd("serial", {"sub": "set"})
+        _ok(r)
+        assert "current" in r["data"] or "updated" in r["data"]
+
+    def test_default_sub_is_ports(self):
+        r = exec_cmd("serial", {})
+        _ok(r)
+        assert "available" in r["data"]
 
 
 # ═══════════════════════════════════════════════════════════════

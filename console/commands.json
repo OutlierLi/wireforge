@@ -89,95 +89,6 @@
       }
     }
   },
-  "connect": {
-    "desc": "打开串口连接",
-    "module": "console.handlers.serial",
-    "handler": "open",
-    "enabled": true,
-    "params": {
-      "port": {
-        "type": "str",
-        "required": true,
-        "desc": "串口号",
-        "examples": [
-          "mock://loop",
-          "virtual://demo",
-          "/dev/ttyUSB0",
-          "COM3"
-        ],
-        "note": "mock=内存回环, virtual=跨进程总线, 其他=物理串口"
-      },
-      "baudrate": {
-        "type": "int",
-        "required": false,
-        "desc": "波特率",
-        "examples": [
-          9600,
-          115200
-        ],
-        "default": 9600
-      },
-      "bytesize": {
-        "type": "int",
-        "required": false,
-        "desc": "数据位",
-        "examples": [
-          8
-        ],
-        "default": 8
-      },
-      "parity": {
-        "type": "choice",
-        "required": false,
-        "desc": "校验位",
-        "examples": [
-          "N",
-          "E",
-          "O"
-        ],
-        "default": "N"
-      }
-    }
-  },
-  "send": {
-    "desc": "发送串口数据并等待响应",
-    "module": "console.handlers.serial",
-    "handler": "send",
-    "enabled": true,
-    "params": {
-      "hex": {
-        "type": "str",
-        "required": true,
-        "desc": "十六进制报文",
-        "examples": [
-          "68 0C 00 40 03 01 01 03 00 E8 30 16"
-        ]
-      },
-      "timeout": {
-        "type": "int",
-        "required": false,
-        "desc": "响应超时(秒)",
-        "examples": [
-          1
-        ],
-        "default": 1
-      }
-    }
-  },
-  "close": {
-    "desc": "关闭串口连接",
-    "module": "console.handlers.serial",
-    "handler": "close",
-    "enabled": true,
-    "params": {}
-  },
-  "ports": {
-    "desc": "列出可用串口及连接状态",
-    "module": "console.handlers.serial",
-    "handler": "ports",
-    "enabled": true,
-    "params": {}
-  },
   "auto_rule": {
     "desc": "自动应答规则 (add/list/show/enable/disable/delete/test/load/history)",
     "module": "console.handlers.auto_rule",
@@ -227,6 +138,71 @@
       "then": {
         "type": "str",
         "desc": "匹配后执行的命令"
+      }
+    }
+  },
+  "serial": {
+    "desc": "串口管理 (connect/open/close/send/set/disconnect/ports)",
+    "module": "console.handlers.serial_cmd",
+    "handler": "handle",
+    "enabled": true,
+    "params": {
+      "sub": {
+        "type": "choice",
+        "required": false,
+        "desc": "子命令",
+        "examples": [
+          "connect",
+          "open",
+          "close",
+          "send",
+          "set",
+          "disconnect",
+          "ports"
+        ]
+      },
+      "port": {
+        "type": "str",
+        "desc": "串口号",
+        "examples": [
+          "mock://loop",
+          "virtual://demo",
+          "/dev/ttyUSB0",
+          "COM3"
+        ],
+        "note": "mock=内存回环, virtual=跨进程总线, 其他=物理串口"
+      },
+      "baudrate": {
+        "type": "int",
+        "desc": "波特率",
+        "examples": [
+          9600,
+          115200
+        ]
+      },
+      "parity": {
+        "type": "choice",
+        "desc": "校验位",
+        "examples": [
+          "N",
+          "E",
+          "O"
+        ]
+      },
+      "bytesize": {
+        "type": "int",
+        "desc": "数据位",
+        "examples": [
+          8
+        ]
+      },
+      "hex": {
+        "type": "str",
+        "desc": "发送数据(十六进制)"
+      },
+      "timeout": {
+        "type": "int",
+        "desc": "超时(秒)"
       }
     }
   }
