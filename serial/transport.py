@@ -132,6 +132,8 @@ class SerialTransport:
         port = self.settings.port
         if port == "mock://loop":
             self._port = _MockLoopPort()
+        elif port.startswith("mock://"):
+            raise RuntimeError("unknown mock port. Supported mock port: mock://loop")
         elif port.startswith("virtual://"):
             name = port.replace("virtual://", "").strip("/")
             self._port = _VirtualBusPort(name or "default")
@@ -145,12 +147,12 @@ class SerialTransport:
                     stopbits=self.settings.stopbits,
                     timeout=self.settings.timeout,
                 )
-            except ImportError:
+            except (ImportError, AttributeError):
                 raise RuntimeError("pyserial not installed. pip install pyserial")
-            except serial.SerialException as e:
-                raise RuntimeError(str(e)) from e
             except ValueError as e:
                 raise RuntimeError(f"invalid serial params: {e}") from e
+            except Exception as e:
+                raise RuntimeError(str(e)) from e
 
     def close(self):
         if self._port:

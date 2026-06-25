@@ -79,11 +79,31 @@ type FormState = {
   args: Record<string, string>;
 };
 
+type ConnectionItem = {
+  name: string;
+  state: string;
+  port: string;
+  baudrate: string;
+  lastError: string;
+};
+
 type InputKey = {
   name?: string;
   ctrl?: boolean;
   meta?: boolean;
   sequence?: string;
+};
+
+type SelectionPoint = {
+  row: number;
+  col: number;
+};
+
+type Selection = {
+  start: SelectionPoint;
+  end: SelectionPoint;
+  active: boolean;
+  dragged: boolean;
 };
 
 const reset = "\x1b[0m";
@@ -179,7 +199,11 @@ class Screen {
   private prompt = ">";
   private status = "READY";
   private activeConnection = "default";
+  private connections: ConnectionItem[] = [];
   private scrollOffset = 0;
+  private visibleOutputRows: string[] = [];
+  private outputTopRow = 2;
+  private selection: Selection | undefined;
 
   setInput(value: string, cursor: number): void {
     this.input = value;
@@ -202,6 +226,8 @@ class Screen {
     this.lines = [];
     this.lastCopyText = "";
     this.scrollOffset = 0;
+    this.visibleOutputRows = [];
+    this.selection = undefined;
   }
 
   copyText(): string {
@@ -274,14 +300,18 @@ class Screen {
   draw(): void {
     const cols = Math.max(stdout.columns || 100, 60);
     const rows = Math.max(stdout.rows || 30, 18);
-    const chromeHeight = 4;
+    const chromeHeight = 5;
     const outputHeight = rows - chromeHeight;
 
     const out: string[] = [];
     out.push("\x1b[?25l\x1b[H");
+    out.push(this.connectionBar(cols));
+    this.outputTopRow = 2;
 
     if (this.lines.length === 0) {
-      out.push(...this.welcomeLines(cols, outputHeight));
+      const welcome = this.welcomeLines(cols, outputHeight);
+      this.visibleOutputRows = welcome.map((line) => stripAnsi(line));
+      out.push(...welcome);
     } else {
       const wrapped = this.wrapVisibleLines(cols - 2);
       const maxOffset = Math.max(wrapped.length - outputHeight, 0);
@@ -289,11 +319,14 @@ class Screen {
       const end = Math.max(wrapped.length - this.scrollOffset, 0);
       const start = Math.max(end - outputHeight, 0);
       const visible = wrapped.slice(start, end);
+      this.visibleOutputRows = [];
       for (let i = 0; i < outputHeight; i += 1) {
         const line = visible[i];
         if (line) {
-          out.push(this.renderOutputLine(line, cols));
+          this.visibleOutputRows.push(this.outputPlainLine(line, cols));
+          out.push(this.renderOutputLine(line, cols, this.outputTopRow + i));
         } else {
+          this.visibleOutputRows.push("");
           out.push(" ".repeat(cols));
         }
       }
@@ -310,6 +343,7 @@ class Screen {
     const copyLines: string[] = [];
     if (typeof data.active === "string") this.setActiveConnection(data.active);
     else if (typeof data.name === "string" && data.status === "active") this.setActiveConnection(data.name);
+    this.ingestConnectionData(data);
     this.add("● success", "result_title");
     if (Array.isArray(data.connections)) {
       this.renderConnections(data, copyLines);
@@ -329,6 +363,46 @@ class Screen {
       this.renderValue(key, value, 0, copyLines);
     }
     this.lastCopyText = copyLines.join("\n");
+  }
+
+  private ingestConnectionData(data: Record<string, unknown>): void {
+    if (Array.isArray(data.connections)) {
+      this.connections = this.parseConnections(data.connections);
+      return;
+    }
+    if (typeof data.name !== "string" && typeof data.id !== "string") return;
+    const name = String(data.name ?? data.id);
+    const state = String(data.status ?? "connected");
+    const next: ConnectionItem = {
+      name,
+      state,
+      port: String(data.port ?? ""),
+      baudrate: String(data.baudrate ?? ""),
+      lastError: "",
+    };
+    const existing = this.connections.findIndex((item) => item.name === name);
+    if (state === "closed") {
+      if (existing >= 0) this.connections[existing] = { ...this.connections[existing], state: "disconnected" };
+      return;
+    }
+    if (existing >= 0) this.connections[existing] = { ...this.connections[existing], ...next };
+    else this.connections.push(next);
+  }
+
+  private parseConnections(items: unknown[]): ConnectionItem[] {
+    const parsed: ConnectionItem[] = [];
+    for (const item of items) {
+      if (!item || typeof item !== "object") continue;
+      const conn = item as Record<string, unknown>;
+      parsed.push({
+        name: String(conn.name ?? conn.id ?? ""),
+        state: String(conn.state ?? "unknown"),
+        port: String(conn.port ?? ""),
+        baudrate: String(conn.baudrate ?? ""),
+        lastError: conn.last_error ? String(conn.last_error) : "",
+      });
+    }
+    return parsed.filter((item) => item.name);
   }
 
   private renderConnections(data: Record<string, unknown>, copyLines: string[]): void {
@@ -374,17 +448,140 @@ class Screen {
     copyLines.push(line);
   }
 
-  private renderOutputLine(line: OutputLine, cols: number): string {
-    if (line.token === "command_bar") {
-      return paint(pad(line.text, cols), "command_bar");
+  beginSelection(screenRow: number, screenCol: number): boolean {
+    const row = this.outputIndexForScreenRow(screenRow);
+    if (row < 0 || row >= this.visibleOutputRows.length) return false;
+    const col = this.clampSelectionCol(row, screenCol - 1);
+    this.selection = { start: { row, col }, end: { row, col }, active: true, dragged: false };
+    this.lastCopyText = "";
+    return true;
+  }
+
+  updateSelection(screenRow: number, screenCol: number): boolean {
+    if (!this.selection || !this.selection.active) return false;
+    const row = Math.max(0, Math.min(this.outputIndexForScreenRow(screenRow), this.visibleOutputRows.length - 1));
+    const col = this.clampSelectionCol(row, screenCol - 1);
+    if (row !== this.selection.start.row || col !== this.selection.start.col) this.selection.dragged = true;
+    this.selection.end = { row, col };
+    this.updateCopyFromSelection();
+    return true;
+  }
+
+  endSelection(screenRow: number, screenCol: number): boolean {
+    if (!this.selection || !this.selection.active) return false;
+    this.updateSelection(screenRow, screenCol);
+    if (!this.selection.dragged || !this.lastCopyText) {
+      this.selection = undefined;
+      this.lastCopyText = "";
+      return true;
     }
-    return ` ${paint(pad(line.text, cols - 2), line.token)} `;
+    this.selection.active = false;
+    return true;
+  }
+
+  clearSelection(): boolean {
+    if (!this.selection) return false;
+    this.selection = undefined;
+    this.lastCopyText = "";
+    return true;
+  }
+
+  private outputIndexForScreenRow(screenRow: number): number {
+    return screenRow - this.outputTopRow;
+  }
+
+  private selectionRangeForScreenRow(screenRow: number): { start: number; end: number } | undefined {
+    if (!this.selection) return undefined;
+    const row = this.outputIndexForScreenRow(screenRow);
+    const { start, end } = this.normalizedSelection();
+    if (row < start.row || row > end.row) return undefined;
+    const lineWidth = visibleLength(this.visibleOutputRows[row] ?? "");
+    if (start.row === end.row) return { start: start.col, end: end.col };
+    if (row === start.row) return { start: start.col, end: lineWidth };
+    if (row === end.row) return { start: 0, end: end.col };
+    return { start: 0, end: lineWidth };
+  }
+
+  private updateCopyFromSelection(): void {
+    if (!this.selection) return;
+    const { start, end } = this.normalizedSelection();
+    const selected: string[] = [];
+    for (let row = start.row; row <= end.row; row += 1) {
+      const line = this.visibleOutputRows[row] ?? "";
+      const lineWidth = visibleLength(line);
+      let from = 0;
+      let to = lineWidth;
+      if (start.row === end.row) {
+        from = start.col;
+        to = end.col;
+      } else if (row === start.row) {
+        from = start.col;
+      } else if (row === end.row) {
+        to = end.col;
+      }
+      selected.push(sliceCells(line, from, to).trimEnd());
+    }
+    this.lastCopyText = selected.join("\n").trimEnd();
+  }
+
+  private normalizedSelection(): { start: SelectionPoint; end: SelectionPoint } {
+    const selection = this.selection;
+    if (!selection) return { start: { row: 0, col: 0 }, end: { row: 0, col: 0 } };
+    const a = selection.start;
+    const b = selection.end;
+    if (a.row < b.row || (a.row === b.row && a.col <= b.col)) return { start: a, end: b };
+    return { start: b, end: a };
+  }
+
+  private clampSelectionCol(row: number, col: number): number {
+    const width = visibleLength(this.visibleOutputRows[row] ?? "");
+    return Math.max(0, Math.min(col, width));
+  }
+
+  private outputPlainLine(line: OutputLine, cols: number): string {
+    if (line.token === "command_bar") return pad(line.text, cols);
+    return ` ${pad(line.text, cols - 2)} `;
+  }
+
+  private renderOutputLine(line: OutputLine, cols: number, screenRow: number): string {
+    const range = this.selectionRangeForScreenRow(screenRow);
+    if (line.token === "command_bar") {
+      return this.renderSelectablePlain(this.outputPlainLine(line, cols), "command_bar", range);
+    }
+    return this.renderSelectablePlain(this.outputPlainLine(line, cols), line.token, range);
+  }
+
+  private renderSelectablePlain(text: string, token: SemanticToken, range?: { start: number; end: number }): string {
+    if (!range || range.start === range.end) return paint(text, token);
+    const before = sliceCells(text, 0, range.start);
+    const selected = sliceCells(text, range.start, range.end);
+    const after = sliceCells(text, range.end, visibleLength(text));
+    return `${paint(before, token)}\x1b[7m${selected}\x1b[0m${paint(after, token)}`;
   }
 
   private statusLine(cols: number): string {
     const scroll = this.scrollOffset > 0 ? `  scroll +${this.scrollOffset}` : "";
-    const status = `${this.status.toLowerCase()}  conn: ${this.activeConnection}${scroll}  PgUp/PgDn output  Ctrl+L clear  Ctrl+Q exit  local: /copy`;
+    const status = `${this.status.toLowerCase()}  connection: ${this.activeConnection}${scroll}  wheel/PgUp/PgDn output  drag select copies  ↑↓ history  Ctrl+L clear  Ctrl+Q exit`;
     return paint(status.padStart(cols), "subtle");
+  }
+
+  private connectionBar(cols: number): string {
+    const items = this.connections.length > 0
+      ? this.connections
+      : [{ name: this.activeConnection, state: "unknown", port: "", baudrate: "", lastError: "" }];
+    const chunks: string[] = [];
+    for (let i = 0; i < Math.min(items.length, 9); i += 1) {
+      const item = items[i];
+      const active = item.name === this.activeConnection;
+      const stateMark = item.state === "connected" ? "on" : item.state || "off";
+      const port = item.port ? ` ${item.port}` : "";
+      const rate = item.baudrate ? ` ${item.baudrate}` : "";
+      const label = `[${active ? "active: " : ""}${item.name} | ${stateMark}${port}${rate}]`;
+      chunks.push(label);
+    }
+    chunks.push("[new: /serial connect --name ...]");
+    const text = fit(`Connections: ${chunks.join(" ")}`, cols);
+    return paint(pad(text, cols), "command_bar");
   }
 
   private welcomeLines(cols: number, height: number): string[] {
@@ -498,7 +695,7 @@ class TuiApp {
 
   async run(): Promise<void> {
     if (stdin.isTTY) stdin.setRawMode(true);
-    stdout.write("\x1b[?1049h\x1b[?1000h\x1b[?1006h\x1b[2J");
+    stdout.write("\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?1007l\x1b[?2004h\x1b[2J");
     this.draw();
 
     const onData = (chunk: Buffer | string) => {
@@ -516,7 +713,7 @@ class TuiApp {
     if (stdin.isTTY) stdin.setRawMode(false);
     stdin.pause();
     this.backend.close();
-    stdout.write("\x1b[?1006l\x1b[?1000l\x1b[?25h\x1b[?1049l");
+    stdout.write("\x1b[?2004l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?1007h\x1b[?25h\x1b[?1049l");
   }
 
   private onceExit: (() => void) | undefined;
@@ -530,10 +727,20 @@ class TuiApp {
   }
 
   private async consumeInputBuffer(): Promise<boolean> {
+    if (this.inputBuffer.startsWith("\x1b[200~")) {
+      const end = this.inputBuffer.indexOf("\x1b[201~");
+      if (end < 0) return false;
+      const pasted = this.inputBuffer.slice("\x1b[200~".length, end);
+      this.inputBuffer = this.inputBuffer.slice(end + "\x1b[201~".length);
+      this.insertText(pasted.replace(/\r?\n/g, " "));
+      this.draw();
+      return true;
+    }
+
     const mouse = /^\x1b\[<(\d+);(\d+);(\d+)([mM])/.exec(this.inputBuffer);
     if (mouse) {
       this.inputBuffer = this.inputBuffer.slice(mouse[0].length);
-      this.handleMouseButton(Number(mouse[1]));
+      await this.handleMouse(Number(mouse[1]), Number(mouse[2]), Number(mouse[3]), mouse[4]);
       return true;
     }
     if (this.inputBuffer.startsWith("\x1b[<")) {
@@ -546,6 +753,15 @@ class TuiApp {
     if (sequenceKey) {
       this.inputBuffer = this.inputBuffer.slice(sequenceKey.sequence?.length ?? 0);
       await this.handleKey(sequenceKey);
+      return true;
+    }
+
+    const csi = /^\x1b\[([0-9;]*)([A-Za-z~])/.exec(this.inputBuffer);
+    if (csi) {
+      this.inputBuffer = this.inputBuffer.slice(csi[0].length);
+      if (csi[2] === "u" && (csi[1].startsWith("99;") || csi[1].startsWith("67;"))) {
+        await this.copyCurrentSelection();
+      }
       return true;
     }
 
@@ -593,18 +809,38 @@ class TuiApp {
     return undefined;
   }
 
-  private handleMouseButton(button: number): void {
+  private async handleMouse(button: number, col: number, row: number, eventType: string): Promise<void> {
     if (button === 64) {
       this.screen.scrollBy(3);
       this.draw();
     } else if (button === 65) {
       this.screen.scrollBy(-3);
       this.draw();
+    } else if (eventType === "m") {
+      if (this.screen.endSelection(row, col)) {
+        const text = this.screen.copyText();
+        if (text) {
+          await copyToClipboard(text);
+          this.screen.clearSelection();
+        }
+        this.draw();
+      }
+    } else if ((button & 3) === 0) {
+      const changed = (button & 32) === 32
+        ? this.screen.updateSelection(row, col)
+        : this.screen.beginSelection(row, col);
+      if (changed) this.draw();
+    } else if ((button & 3) === 3) {
+      if (this.screen.clearSelection()) this.draw();
     }
   }
 
   private async handleKey(key: InputKey): Promise<void> {
-    if (key.ctrl && (key.name === "c" || key.name === "q")) {
+    if (key.ctrl && key.name === "c") {
+      await this.copyCurrentSelection();
+      return;
+    }
+    if (key.ctrl && key.name === "q") {
       this.onceExit?.();
       return;
     }
@@ -664,12 +900,7 @@ class TuiApp {
         break;
       default:
         if (key.sequence && !key.ctrl && !key.meta && key.sequence >= " ") {
-          const chars = Array.from(this.input);
-          const inserted = Array.from(key.sequence);
-          chars.splice(this.cursor, 0, ...inserted);
-          this.input = chars.join("");
-          this.cursor += inserted.length;
-          this.historyIndex = -1;
+          this.insertText(key.sequence);
         }
         break;
     }
@@ -678,6 +909,25 @@ class TuiApp {
 
   private outputPageSize(): number {
     return Math.max((stdout.rows || 30) - 6, 1);
+  }
+
+  private insertText(text: string): void {
+    if (!text) return;
+    const chars = Array.from(this.input);
+    const inserted = Array.from(text);
+    chars.splice(this.cursor, 0, ...inserted);
+    this.input = chars.join("");
+    this.cursor += inserted.length;
+    this.historyIndex = -1;
+  }
+
+  private async copyCurrentSelection(): Promise<void> {
+    const text = this.screen.copyText();
+    if (text) {
+      await copyToClipboard(text);
+      this.screen.clearSelection();
+      this.draw();
+    }
   }
 
   private async submit(): Promise<void> {
@@ -912,6 +1162,23 @@ function center(text: string, width: number, token: SemanticToken = "text"): str
 
 function visibleLength(text: string): number {
   return Array.from(text).reduce((sum, ch) => sum + charWidth(ch), 0);
+}
+
+function stripAnsi(text: string): string {
+  return text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+}
+
+function sliceCells(text: string, start: number, end: number): string {
+  let col = 0;
+  let out = "";
+  for (const ch of Array.from(text)) {
+    const width = charWidth(ch);
+    const next = col + width;
+    if (next > start && col < end) out += ch;
+    if (next >= end) break;
+    col = next;
+  }
+  return out;
 }
 
 function charWidth(ch: string): number {
