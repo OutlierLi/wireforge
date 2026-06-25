@@ -1,6 +1,6 @@
 {
   "build": {
-    "desc": "构造协议报文 (Resolve → Encode)",
+    "desc": "Build protocol frame from target info. Sub-commands: --resolve (show input schema)",
     "module": "console.handlers.build",
     "handler": "handle",
     "enabled": true,
@@ -61,10 +61,14 @@
         "required": false,
         "desc": "业务字段由resolve后动态决定"
       }
+    },
+    "sub_commands": {
+      "--resolve": "Resolve target only, return input_schema without building frame",
+      "--describe": "Alias for --resolve"
     }
   },
   "decode": {
-    "desc": "解析协议报文",
+    "desc": "Decode raw hex frame to structured fields and route path",
     "module": "console.handlers.decode",
     "handler": "handle",
     "enabled": true,
@@ -90,7 +94,7 @@
     }
   },
   "auto_rule": {
-    "desc": "自动应答规则 (add/list/show/enable/disable/delete/test/load/history)",
+    "desc": "Auto-reply rule engine. Sub: add, list, show, enable, disable, delete, test, load, history",
     "module": "console.handlers.auto_rule",
     "handler": "handle",
     "enabled": true,
@@ -139,10 +143,21 @@
         "type": "str",
         "desc": "匹配后执行的命令"
       }
+    },
+    "sub_commands": {
+      "add": "Add a new rule with match condition and actions",
+      "list": "List all registered rules",
+      "show": "Show full details of a rule by id",
+      "enable": "Enable a disabled rule",
+      "disable": "Disable a rule without deleting",
+      "delete": "Permanently remove a rule",
+      "test": "Test a rule against a hex frame (dry-run)",
+      "load": "Load rules from YAML file",
+      "history": "Show rule match history, optionally filtered by id"
     }
   },
   "serial": {
-    "desc": "串口管理 (connect/open/close/send/set/disconnect/ports)",
+    "desc": "Serial port management. Sub: connect, open, close, send, set, disconnect, ports",
     "module": "console.handlers.serial_cmd",
     "handler": "handle",
     "enabled": true,
@@ -178,7 +193,8 @@
         "examples": [
           9600,
           115200
-        ]
+        ],
+        "note": "set 修改后需 /serial open 生效，不能热修改已打开的串口"
       },
       "parity": {
         "type": "choice",
@@ -187,14 +203,16 @@
           "N",
           "E",
           "O"
-        ]
+        ],
+        "note": "set 修改后需 /serial open 生效"
       },
       "bytesize": {
         "type": "int",
         "desc": "数据位",
         "examples": [
           8
-        ]
+        ],
+        "note": "set 修改后需 /serial open 生效"
       },
       "hex": {
         "type": "str",
@@ -204,6 +222,15 @@
         "type": "int",
         "desc": "超时(秒)"
       }
+    },
+    "sub_commands": {
+      "connect": "First-time connection with port/baudrate/parity params",
+      "open": "Re-open last connection without re-specifying params",
+      "close": "Close current serial connection",
+      "send": "Send hex frame and wait for response",
+      "set": "Change serial params (takes effect on next open)",
+      "disconnect": "Alias for close",
+      "ports": "List available serial ports and connection status"
     }
   }
 }

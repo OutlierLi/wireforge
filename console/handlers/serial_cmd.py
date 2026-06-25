@@ -87,7 +87,10 @@ def _set(args: dict) -> dict:
         return ok({"current": _last_settings, "hint": "use --baudrate 115200 --parity E to change"})
 
     _last_settings.update(new_params)
-    return ok({"updated": new_params, "hint": "changes take effect on next /serial open"})
+    return ok({
+        "updated": new_params,
+        "hint": "参数已缓存。串口参数由 OS 驱动在 open 时初始化，已打开的串口无法热修改。请执行 /serial open 使新参数生效。",
+    })
 
 
 def _disconnect(args: dict) -> dict:

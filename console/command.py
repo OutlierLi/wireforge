@@ -29,13 +29,17 @@ class Command:
     handler: str = ""   # "serial_open"
     enabled: bool = True
     params: dict[str, Any] = field(default_factory=dict)
+    sub_commands: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "name": self.name, "desc": self.desc,
             "module": self.module, "handler": self.handler,
             "enabled": self.enabled, "params": self.params,
         }
+        if self.sub_commands:
+            d["sub_commands"] = self.sub_commands
+        return d
 
 
 class Registry:
@@ -56,6 +60,7 @@ class Registry:
                 handler=entry.get("handler", ""),
                 enabled=entry.get("enabled", True),
                 params=entry.get("params", {}),
+                sub_commands=entry.get("sub_commands", {}),
             )
             self._commands[name] = cmd
 
