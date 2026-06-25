@@ -222,6 +222,98 @@ except Exception as e:
     print(f"  ✗ FAILED: {e}")
 
 
+# 5. /build --from-frame 集成测试
+def test_build_from_frame():
+    """通过 NDJSON 测试 --from-frame decode → rebuild → --set 完整流程。"""
+    global failures
+    print(f"\n{'='*60}")
+    print(f"  5/5 /build --from-frame 集成测试")
+    print(f"{'='*60}")
+
+    from console.api import exec_cmd
+    from console.variable_store import store
+
+    # 645 读数据应答帧
+    hex_645 = "FE FE FE FE 68 01 00 00 00 00 00 68 91 08 33 33 34 33 59 39 54 53 70 16"
+    # CSG 查询厂商帧
+    hex_csg = "68 0C 00 40 03 01 01 03 00 E8 30 16"
+    # 645 读地址帧
+    hex_addr = "FE FE FE FE 68 AA AA AA AA AA AA 68 13 00 DF 16"
+
+    checks = 0
+    passed = 0
+
+    # 1. from-frame 重建相同帧 (645)
+    r = exec_cmd("build", {"from_frame": hex_645})
+    assert r["status"] == "success", f"645 rebuild: {r.get('error','')}"
+    assert r["data"]["frame"] == hex_645, f"frame mismatch"
+    passed += 1; checks += 1
+    print(f"  ✓ 645 rebuild identical")
+
+    # 2. from-frame 重建相同帧 (CSG)
+    r = exec_cmd("build", {"from_frame": hex_csg})
+    assert r["status"] == "success"
+    assert r["data"]["frame"] == hex_csg
+    passed += 1; checks += 1
+    print(f"  ✓ CSG rebuild identical")
+
+    # 3. from-frame --set 修改字段
+    r = exec_cmd("build", {"from_frame": hex_645, "set": "freeze_year=27"})
+    assert r["status"] == "success"
+    assert r["data"]["frame"] != hex_645, "should differ after --set"
+    passed += 1; checks += 1
+    print(f"  ✓ --set freeze_year=27 changed frame")
+
+    # 4. from-frame --resolve
+    r = exec_cmd("build", {"from_frame": hex_645, "resolve": True})
+    assert r["status"] == "success"
+    assert "decoded_values" in r["data"]
+    assert r["data"]["decoded_values"]["freeze_month"] == "06"
+    passed += 1; checks += 1
+    print(f"  ✓ --resolve returns decoded_values")
+
+    # 5. from-frame 读地址帧
+    r = exec_cmd("build", {"from_frame": hex_addr})
+    assert r["status"] == "success"
+    assert r["data"]["frame"] == hex_addr
+    passed += 1; checks += 1
+    print(f"  ✓ read-address frame")
+
+    # 6. from-frame 显式协议
+    r = exec_cmd("build", {"from_frame": hex_645, "proto": "dlt645"})
+    assert r["status"] == "success"
+    passed += 1; checks += 1
+    print(f"  ✓ explicit proto")
+
+    # 7. from-frame 非法 hex
+    r = exec_cmd("build", {"from_frame": "ZZ ZZ"})
+    assert r["status"] != "success"
+    passed += 1; checks += 1
+    print(f"  ✓ invalid hex rejected")
+
+    # 8. from-frame + var 联动：解码后存为变量再修改
+    store.clear()
+    r = exec_cmd("build", {"from_frame": hex_645})
+    frame_val = r["data"]["frame"]
+    # 存为变量
+    exec_cmd("var", {"sub": "set", "_": ["saved_frame"], "value": frame_val, "type": "hex"})
+    # 用 from-frame + --set 修改
+    r2 = exec_cmd("build", {"from_frame": frame_val, "set": "freeze_month=12"})
+    assert r2["status"] == "success"
+    assert r2["data"]["frame"] != frame_val, "should differ"
+    passed += 1; checks += 1
+    print(f"  ✓ var → from-frame → --set chain")
+
+    store.clear()
+    print(f"  ✓ {passed}/{checks} checks passed")
+
+try:
+    test_build_from_frame()
+except Exception as e:
+    failures += 1
+    print(f"  ✗ FAILED: {e}")
+
+
 print(f"\n{'='*60}")
 if failures:
     print(f"  {failures} step(s) FAILED")

@@ -828,7 +828,105 @@ class TestPrint:
 
 
 # ═══════════════════════════════════════════════════════════════
-# 14. 跨协议路径测试
+# 14. /build --from-frame — 从报文重建
+# ═══════════════════════════════════════════════════════════════
+
+class TestBuildFromFrame:
+    """覆盖: /build --from-frame — decode → rebuild (identical)
+                   --from-frame --set — decode → modify → rebuild
+                   --from-frame --resolve — decode → show schema"""
+
+    def test_from_frame_rebuild_identical_645(self):
+        """解码 645 帧后重建，应得到相同帧"""
+        hex_frame = "FE FE FE FE 68 01 00 00 00 00 00 68 91 08 33 33 34 33 59 39 54 53 70 16"
+        r = exec_cmd("build", {"from_frame": hex_frame})
+        _ok(r, "from-frame 645 rebuild")
+        assert r["data"]["frame"] == hex_frame, f"expected identical frame, got {r['data']['frame']}"
+        assert "from_frame" in r["data"]
+
+    def test_from_frame_rebuild_identical_csg(self):
+        """解码 CSG 帧后重建，应得到相同帧"""
+        hex_frame = "68 0C 00 40 03 01 01 03 00 E8 30 16"
+        r = exec_cmd("build", {"from_frame": hex_frame})
+        _ok(r, "from-frame CSG rebuild")
+        assert r["data"]["frame"] == hex_frame
+
+    def test_from_frame_with_set_modify(self):
+        """--from-frame --set 修改字段后重建"""
+        hex_frame = "FE FE FE FE 68 01 00 00 00 00 00 68 91 08 33 33 34 33 59 39 54 53 70 16"
+        r = exec_cmd("build", {"from_frame": hex_frame, "set": "freeze_year=27"})
+        _ok(r, "from-frame --set")
+        # 修改了 freeze_year，帧应该不同
+        assert r["data"]["frame"] != hex_frame, "frame should differ after --set"
+        # 验证仍是有效帧
+        _has_frame(r)
+
+    def test_from_frame_with_set_multiple(self):
+        """--from-frame --set 多个字段"""
+        hex_frame = "FE FE FE FE 68 01 00 00 00 00 00 68 91 08 33 33 34 33 59 39 54 53 70 16"
+        # 只测试单个字段（TUI shell 对多个 --set 的处理不同）
+        r = exec_cmd("build", {"from_frame": hex_frame, "set": "freeze_day=25"})
+        _ok(r, "from-frame --set single field")
+        assert r["data"]["frame"] != hex_frame
+
+    def test_from_frame_resolve(self):
+        """--from-frame --resolve 返回 schema + 解码值"""
+        hex_frame = "FE FE FE FE 68 01 00 00 00 00 00 68 91 08 33 33 34 33 59 39 54 53 70 16"
+        r = exec_cmd("build", {"from_frame": hex_frame, "resolve": True})
+        _ok(r, "from-frame --resolve")
+        assert "input_schema" in r["data"]
+        assert "decoded_values" in r["data"]
+        assert r["data"]["decoded_values"]["freeze_year"] == "26"
+
+    def test_from_frame_resolve_shows_set_overrides(self):
+        """--from-frame --resolve --set 显示覆盖值"""
+        hex_frame = "FE FE FE FE 68 01 00 00 00 00 00 68 91 08 33 33 34 33 59 39 54 53 70 16"
+        r = exec_cmd("build", {"from_frame": hex_frame, "resolve": True, "set": "freeze_month=12"})
+        _ok(r)
+        assert r["data"]["set_overrides"] == {"freeze_month": 12}
+
+    def test_from_frame_read_address(self):
+        """--from-frame 处理 645 读地址帧"""
+        hex_frame = "FE FE FE FE 68 AA AA AA AA AA AA 68 13 00 DF 16"
+        r = exec_cmd("build", {"from_frame": hex_frame})
+        _ok(r, "from-frame read address")
+        assert r["data"]["frame"] == hex_frame
+
+    def test_from_frame_with_explicit_proto(self):
+        """--from-frame --proto 显式指定协议"""
+        hex_frame = "FE FE FE FE 68 01 00 00 00 00 00 68 91 08 33 33 34 33 59 39 54 53 70 16"
+        r = exec_cmd("build", {"from_frame": hex_frame, "proto": "dlt645"})
+        _ok(r, "from-frame with explicit proto")
+        _has_frame(r)
+
+    def test_from_frame_auto_detect_protocol(self):
+        """--from-frame 不指定 proto 时自动检测"""
+        hex_frame = "FE FE FE FE 68 01 00 00 00 00 00 68 91 08 33 33 34 33 59 39 54 53 70 16"
+        r = exec_cmd("build", {"from_frame": hex_frame})
+        _ok(r, "auto-detect protocol")
+        assert "dlt645" in r["data"]["protocol"]
+
+    def test_from_frame_invalid_hex(self):
+        """--from-frame 非法 hex"""
+        r = exec_cmd("build", {"from_frame": "ZZ ZZ"})
+        _fail(r, "invalid hex")
+
+    def test_from_frame_empty_hex(self):
+        """--from-frame 空 hex"""
+        r = exec_cmd("build", {"from_frame": ""})
+        _fail(r, "empty hex")
+
+    def test_from_frame_cross_proto_fails(self):
+        """--from-frame 645帧 指定 proto=csg 应失败"""
+        r = exec_cmd("build", {
+            "proto": "csg",
+            "from_frame": "FE FE FE FE 68 01 00 00 00 00 00 68 91 08 33 33 34 33 59 39 54 53 70 16",
+        })
+        _fail(r, "cross-protocol mismatch")
+
+
+# ═══════════════════════════════════════════════════════════════
+# 15. 跨协议路径测试
 # ═══════════════════════════════════════════════════════════════
 
 class TestCrossProtocol:

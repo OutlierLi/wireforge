@@ -210,6 +210,11 @@ def _collect_input_fields(ir, leaf, leaf_id) -> list[InputField]:
     return fields
 
 
+def _normalize_di(di: str) -> str:
+    """规范化 DI：移除空格/分隔符，统一为大写无空格。"""
+    return di.replace(" ", "").replace("-", "").replace(":", "").upper()
+
+
 def _collect_frame_defaults(ir, proto: str, info: dict) -> dict[str, Any]:
     """收集帧级默认值。"""
     defaults: dict[str, Any] = {"preamble": 4, "address": "000000000001"}
@@ -218,6 +223,98 @@ def _collect_frame_defaults(ir, proto: str, info: dict) -> dict[str, Any]:
         if dv == 0:
             defaults["address"] = "AAAAAAAAAAAA"
     return defaults
+
+
+# ── From-Frame Decode ──────────────────────────────────────────────────
+
+def decode_frame(hex_text: str, proto: str | None = None) -> dict[str, Any]:
+    """从 hex 帧解码出协议、路由和字段值。
+
+    返回: {protocol, path, message_id, values, target_info, frame_hex}
+    用于 --from-frame 流程：解码后修改字段再重写 build。
+    """
+    from protocol_tool.ir.nodes import ProtocolIR
+    from protocol_tool.codecs import create_builtin_registry
+    from protocol_tool.runtime.engine import DecodeEngine
+
+    cleaned = hex_text.strip().replace(" ", "").replace("\n", "")
+    if not cleaned:
+        raise ValueError("empty hex frame")
+
+    # 自动检测协议或使用指定协议
+    if proto:
+        proto_full = _proto(proto)
+        _ensure_ir(proto_full)
+        ir = ProtocolIR.from_json_file(str(ROOT / "compiled" / f"{proto_full}.ir.json"))
+        engine = DecodeEngine(ir, create_builtin_registry())
+        try:
+            result = engine.decode(bytes.fromhex(cleaned))
+        except Exception:
+            raise ValueError(f"decode failed for protocol {proto_full}")
+    else:
+        # 自动尝试
+        for candidate in ("dlt645_2007", "csg_2016"):
+            try:
+                _ensure_ir(candidate)
+                ir = ProtocolIR.from_json_file(str(ROOT / "compiled" / f"{candidate}.ir.json"))
+                engine = DecodeEngine(ir, create_builtin_registry())
+                result = engine.decode(bytes.fromhex(cleaned))
+                proto_full = candidate
+                break
+            except Exception:
+                continue
+        else:
+            raise ValueError("auto-detect failed: frame not recognized as dlt645 or csg")
+
+    # 从解码值提取 target_info
+    values = result.values
+    target_info: dict[str, Any] = {"proto": proto_full}
+
+    control = values.get("control", {})
+    if isinstance(control, dict):
+        if "func" in control:
+            target_info["func"] = f"0x{int(control['func']):02X}"
+        if "dir" in control:
+            dv = control["dir"]
+            target_info["dir"] = "downlink" if dv == 0 else "uplink"
+
+    if "afn" in values and not isinstance(values["afn"], dict):
+        target_info["afn"] = f"0x{int(values['afn']):02X}"
+    if "di" in values and not isinstance(values["di"], dict):
+        target_info["di"] = _normalize_di(str(values["di"]))
+
+    # DI/AFN 可能在嵌套的 payload 中（如 read_data_response.di / csg_downlink.afn）
+    for key, val in values.items():
+        if isinstance(val, dict):
+            continue
+        # DI: key 以 .di 结尾
+        if key.endswith(".di") and "di" not in target_info:
+            target_info["di"] = _normalize_di(str(val))
+        # AFN: key 以 .afn 结尾
+        if key.endswith(".afn") and "afn" not in target_info:
+            target_info["afn"] = f"0x{int(val):02X}"
+        # func: key 以 .func 结尾，且 control.func 还未提取到时
+        if key.endswith(".func") and "func" not in target_info:
+            target_info["func"] = f"0x{int(val):02X}"
+
+    # 提取 message_id 从路径: "...→dlt645_2007.read_data_response" → "read_data_response"
+    message_id = ""
+    parts = result.path_str.split("→")
+    if parts:
+        last = parts[-1].strip()
+        if "." in last:
+            message_id = last.rsplit(".", 1)[-1]
+        else:
+            message_id = last
+
+    return {
+        "protocol": proto_full,
+        "path": result.path_str,
+        "message_id": message_id,
+        "values": values,
+        "target_info": target_info,
+        "frame_hex": result.raw_hex,
+    }
 
 
 # ── Encode ────────────────────────────────────────────────────────────

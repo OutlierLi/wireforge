@@ -56,6 +56,23 @@
         "required": false,
         "desc": "仅解析目标返回input_schema，不构造帧"
       },
+      "from_frame": {
+        "type": "str",
+        "required": false,
+        "desc": "从已有hex报文解码后修改字段再重建",
+        "examples": [
+          "FE FE 68 ... 16"
+        ]
+      },
+      "set": {
+        "type": "str",
+        "required": false,
+        "desc": "设置/覆盖字段值，与 --from-frame 配合使用",
+        "examples": [
+          "di=00020000",
+          "freeze_year=26"
+        ]
+      },
       "*": {
         "type": "dynamic",
         "required": false,
