@@ -2,10 +2,16 @@
 
 所有前端 (CLI / TUI / Web) 通过此层调用业务模块。
 runtime 管理多轮交互状态，返回 protocol-tui.v1 契约响应。
+
+变量引用解析：
+- 执行命令前解析 args 中的 ${name} / ${object.field} 引用。
+- 完整引用保留变量类型，模板引用结果统一为 string。
+- 命令成功后自动写入 last_result / last_* 结果变量。
 """
 
 from __future__ import annotations
 
+import re
 import shlex, uuid
 from typing import Any
 
@@ -16,6 +22,9 @@ from console.protocol import (
     response_invalid_argument, response_no_route, response_execution_error,
     response_session_closed,
 )
+
+# 变量引用模式: ${name} 或 ${name.field.sub}
+_VAR_REF_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\}")
 
 
 class Runtime:
@@ -28,6 +37,10 @@ class Runtime:
         """执行命令。返回 protocol-tui.v1 响应。"""
         command = command.lstrip("/")
         args = _normalize_args(args)
+
+        # 解析变量引用 ${name} / ${object.field}
+        args = self._resolve_var_refs(args)
+
         fn = registry.resolve(command)
         if not fn:
             return response_no_route(f"unknown command: {command}")
@@ -35,7 +48,11 @@ class Runtime:
         try:
             result = fn(args)
         except Exception as e:
+            self._set_error_result(command, str(e))
             return response_execution_error(str(e))
+
+        # 自动写入结果变量
+        self._set_result_vars(command, result)
 
         # 将业务模块的 dict 映射为协议响应
         return self._map_result(command, args, result)
@@ -60,6 +77,8 @@ class Runtime:
         command-runtime 只解析通用 shell 风格参数，不解释协议语义。
         """
         command, parsed_args = parse_command_text(text)
+        # 解析文本中的变量引用（parse_command_text 后 args 值可能包含 ${...}）
+        parsed_args = self._resolve_var_refs(parsed_args)
         merged = {**parsed_args, **(args or {})}
         return self.execute(command, merged)
 
@@ -101,6 +120,132 @@ class Runtime:
                         completions.append(item)
 
         return response_success({"completions": completions})
+
+    # ── 变量引用解析 ─────────────────────────────────────────────────
+
+    def _resolve_var_refs(self, args: dict[str, Any]) -> dict[str, Any]:
+        """解析 args 中的 ${name} / ${object.field} 引用。"""
+        from console.variable_store import store as var_store
+
+        resolved: dict[str, Any] = {}
+        for key, value in args.items():
+            if isinstance(value, str):
+                resolved[key] = self._resolve_value(value, var_store)
+            elif isinstance(value, list):
+                resolved[key] = [
+                    self._resolve_value(v, var_store) if isinstance(v, str) else v
+                    for v in value
+                ]
+            else:
+                resolved[key] = value
+        return resolved
+
+    @staticmethod
+    def _resolve_value(text: str, var_store) -> Any:
+        """解析单个字符串值中的变量引用。
+
+        - 完整引用 "${name}": 保留变量类型
+        - 模板引用 "prefix-${name}.yaml": 结果统一为 string
+        """
+        refs = _VAR_REF_RE.findall(text)
+        if not refs:
+            return text
+
+        # 完整引用：整个值就是一个 ${...}
+        m = _VAR_REF_RE.fullmatch(text)
+        if m:
+            try:
+                entry = var_store.get(m.group(1))
+                return entry["value"]
+            except Exception:
+                return text  # 变量不存在时保持原文本
+
+        # 模板引用：逐个替换为字符串
+        result = text
+        for ref_path in refs:
+            try:
+                val = var_store.get_value(ref_path)
+                if isinstance(val, (dict, list)):
+                    import json
+                    val = json.dumps(val, ensure_ascii=False)
+                result = result.replace(f"${{{ref_path}}}", str(val))
+            except Exception:
+                pass  # 变量不存在时保持原文本
+        return result
+
+    # ── 结果变量 ────────────────────────────────────────────────────
+
+    def _set_result_vars(self, command: str, result: dict):
+        """命令成功后自动写入结果变量（仅 build/decode/serial）。"""
+        from console.variable_store import store as var_store
+
+        if not result.get("success"):
+            return
+
+        data = result.get("data", {})
+
+        # 命令特定的结果变量
+        if command == "build":
+            frame = data.get("frame", "")
+            if frame:
+                try:
+                    var_store.set("last_frame", frame, "hex", source={
+                        "kind": "auto", "command": "build",
+                    })
+                except Exception:
+                    pass
+            try:
+                var_store.set("last_build", data, "json", source={
+                    "kind": "auto", "command": "build",
+                })
+            except Exception:
+                pass
+            try:
+                var_store.set("last_result", data, "json", source={
+                    "kind": "auto", "command": "build",
+                })
+            except Exception:
+                pass
+
+        elif command == "decode":
+            try:
+                var_store.set("last_decode", data, "json", source={
+                    "kind": "auto", "command": "decode",
+                })
+            except Exception:
+                pass
+            try:
+                var_store.set("last_result", data, "json", source={
+                    "kind": "auto", "command": "decode",
+                })
+            except Exception:
+                pass
+
+        elif command in ("serial",):
+            try:
+                var_store.set("last_send", data, "json", source={
+                    "kind": "auto", "command": command,
+                })
+            except Exception:
+                pass
+            try:
+                var_store.set("last_result", data, "json", source={
+                    "kind": "auto", "command": command,
+                })
+            except Exception:
+                pass
+
+    def _set_error_result(self, command: str, error: str):
+        """命令失败时写入 last_error。"""
+        from console.variable_store import store as var_store
+
+        try:
+            var_store.set("last_error", {
+                "command": command,
+                "error": error,
+            }, "json", source={"kind": "auto", "command": command})
+        except Exception:
+            pass
 
     # ── 映射 ──
 

@@ -250,6 +250,80 @@
       }
     }
   },
+  "var": {
+    "desc": "Variable management. Sub: set, get, show, delete, clear, export, import",
+    "module": "console.handlers.var",
+    "handler": "handle",
+    "enabled": true,
+    "params": {
+      "sub": {
+        "type": "choice",
+        "required": true,
+        "desc": "子命令",
+        "examples": [
+          "set",
+          "get",
+          "show",
+          "delete",
+          "clear",
+          "export",
+          "import"
+        ]
+      },
+      "name": {
+        "type": "str",
+        "desc": "变量名 (set/get/delete)"
+      },
+      "value": {
+        "type": "str",
+        "required": false,
+        "desc": "变量值 (set)"
+      },
+      "type": {
+        "type": "choice",
+        "required": false,
+        "desc": "变量类型 (set)",
+        "examples": [
+          "string",
+          "integer",
+          "decimal",
+          "boolean",
+          "hex",
+          "json"
+        ],
+        "default": "string"
+      },
+      "file": {
+        "type": "str",
+        "required": false,
+        "desc": "YAML文件路径 (export/import)"
+      },
+      "mode": {
+        "type": "choice",
+        "required": false,
+        "desc": "导入模式 (import)",
+        "examples": [
+          "merge",
+          "replace"
+        ],
+        "default": "merge"
+      },
+      "json": {
+        "type": "bool",
+        "required": false,
+        "desc": "以JSON格式输出 (show)"
+      }
+    },
+    "sub_commands": {
+      "set": "Set a variable: /var set <name> --value=<value> [--type=<type>]",
+      "get": "Get a variable value: /var get <name>",
+      "show": "Show all variables (table or --json)",
+      "delete": "Delete a variable: /var delete <name>",
+      "clear": "Clear all variables",
+      "export": "Export variables to YAML: /var export --file=<path.yaml>",
+      "import": "Import variables from YAML: /var import --file=<path.yaml> [--mode=merge|replace]"
+    }
+  },
   "upg": {
     "desc": "Firmware upgrade via CSG AFN=07 file transfer",
     "module": "console.handlers.upg",

@@ -395,7 +395,329 @@ class TestHelp:
 
 
 # ═══════════════════════════════════════════════════════════════
-# 12. 跨协议路径测试
+# 12. /var — 变量系统
+# ═══════════════════════════════════════════════════════════════
+
+class TestVarSet:
+    """覆盖: /var set — 所有类型 + 非法参数"""
+
+    def test_set_string_default(self):
+        r = exec_cmd("var", {"sub": "set", "_": ["proto"], "value": "csg"})
+        _ok(r, "set string")
+        assert r["data"]["variable"]["type"] == "string"
+        assert r["data"]["variable"]["value"] == "csg"
+
+    def test_set_integer(self):
+        r = exec_cmd("var", {"sub": "set", "_": ["retry"], "value": "3", "type": "integer"})
+        _ok(r, "set integer")
+        assert r["data"]["variable"]["value"] == 3
+
+    def test_set_decimal(self):
+        r = exec_cmd("var", {"sub": "set", "_": ["current"], "value": "10.5", "type": "decimal"})
+        _ok(r, "set decimal")
+        assert r["data"]["variable"]["value"] == "10.5"
+
+    def test_set_boolean_true(self):
+        r = exec_cmd("var", {"sub": "set", "_": ["flag"], "value": "true", "type": "boolean"})
+        _ok(r, "set boolean true")
+        assert r["data"]["variable"]["value"] is True
+
+    def test_set_boolean_false(self):
+        r = exec_cmd("var", {"sub": "set", "_": ["flag"], "value": "false", "type": "boolean"})
+        _ok(r, "set boolean false")
+        assert r["data"]["variable"]["value"] is False
+
+    def test_set_hex(self):
+        r = exec_cmd("var", {"sub": "set", "_": ["frame"], "value": "68 01 02 03 04 16", "type": "hex"})
+        _ok(r, "set hex")
+        assert r["data"]["variable"]["value"] == "68 01 02 03 04 16"
+
+    def test_set_hex_with_separators(self):
+        """HEX 支持多种分隔符并规范化"""
+        r = exec_cmd("var", {"sub": "set", "_": ["raw"], "value": "68-01:02 03 04", "type": "hex"})
+        _ok(r, "set hex separators")
+        assert r["data"]["variable"]["value"] == "68 01 02 03 04"
+
+    def test_set_json_object(self):
+        r = exec_cmd("var", {"sub": "set", "_": ["payload"], "value": '{"phase":"A"}', "type": "json"})
+        _ok(r, "set json object")
+        assert r["data"]["variable"]["value"] == {"phase": "A"}
+
+    def test_set_json_array(self):
+        r = exec_cmd("var", {"sub": "set", "_": ["addrs"], "value": '["a","b"]', "type": "json"})
+        _ok(r, "set json array")
+        assert r["data"]["variable"]["value"] == ["a", "b"]
+
+    def test_set_overwrite(self):
+        exec_cmd("var", {"sub": "set", "_": ["x"], "value": "old"})
+        r = exec_cmd("var", {"sub": "set", "_": ["x"], "value": "new"})
+        _ok(r, "overwrite")
+        assert r["data"]["variable"]["value"] == "new"
+
+    def test_set_invalid_name_numeric_start(self):
+        r = exec_cmd("var", {"sub": "set", "_": ["1abc"], "value": "x"})
+        _fail(r, "invalid name")
+
+    def test_set_invalid_name_with_dot(self):
+        r = exec_cmd("var", {"sub": "set", "_": ["a.b"], "value": "x"})
+        _fail(r, "invalid name with dot")
+
+    def test_set_invalid_decimal_value(self):
+        r = exec_cmd("var", {"sub": "set", "_": ["x"], "value": "abc", "type": "decimal"})
+        _fail(r, "invalid decimal")
+
+    def test_set_invalid_hex_value(self):
+        r = exec_cmd("var", {"sub": "set", "_": ["x"], "value": "ZZ ZZ", "type": "hex"})
+        _fail(r, "invalid hex")
+
+    def test_set_invalid_hex_odd_length(self):
+        r = exec_cmd("var", {"sub": "set", "_": ["x"], "value": "68 0", "type": "hex"})
+        _fail(r, "hex odd length")
+
+    def test_set_missing_value(self):
+        r = exec_cmd("var", {"sub": "set", "_": ["x"]})
+        _fail(r, "missing value")
+
+    def test_set_missing_name(self):
+        r = exec_cmd("var", {"sub": "set", "value": "csg"})
+        _fail(r, "missing name")
+
+
+class TestVarGet:
+    """覆盖: /var get — 根变量 + 嵌套路径 + 不存在"""
+
+    def test_get_root(self):
+        exec_cmd("var", {"sub": "set", "_": ["proto"], "value": "csg"})
+        r = exec_cmd("var", {"sub": "get", "_": ["proto"]})
+        _ok(r, "get root")
+        assert r["data"]["value"] == "csg"
+
+    def test_get_nested_path(self):
+        exec_cmd("var", {"sub": "set", "_": ["info"], "value": '{"phase":"A","current":"10.5"}', "type": "json"})
+        r = exec_cmd("var", {"sub": "get", "_": ["info.phase"]})
+        _ok(r, "get nested")
+        assert r["data"]["value"] == "A"
+
+    def test_get_nonexistent(self):
+        r = exec_cmd("var", {"sub": "get", "_": ["nonexistent"]})
+        _fail(r, "get nonexistent")
+
+    def test_get_nonexistent_path(self):
+        exec_cmd("var", {"sub": "set", "_": ["info"], "value": '{"x":1}', "type": "json"})
+        r = exec_cmd("var", {"sub": "get", "_": ["info.missing"]})
+        _fail(r, "get nonexistent path")
+
+
+class TestVarShow:
+    """覆盖: /var show — 表格 + JSON + 空"""
+
+    def test_show_table_format(self):
+        exec_cmd("var", {"sub": "clear"})
+        exec_cmd("var", {"sub": "set", "_": ["a"], "value": "1"})
+        exec_cmd("var", {"sub": "set", "_": ["b"], "value": "2"})
+        r = exec_cmd("var", {"sub": "show"})
+        _ok(r, "show table")
+        rows = r["data"]["variables"]
+        assert isinstance(rows, list)
+        # Each row has name, type, value fields
+        for row in rows:
+            assert "name" in row
+            assert "type" in row
+
+    def test_show_json_format(self):
+        r = exec_cmd("var", {"sub": "show", "json": True})
+        _ok(r, "show json")
+        assert isinstance(r["data"]["variables"], dict)
+
+    def test_show_empty(self):
+        exec_cmd("var", {"sub": "clear"})
+        r = exec_cmd("var", {"sub": "show"})
+        _ok(r, "show empty")
+        assert r["data"]["count"] == 0
+
+
+class TestVarDelete:
+    """覆盖: /var delete — 存在 + 不存在"""
+
+    def test_delete_existing(self):
+        exec_cmd("var", {"sub": "set", "_": ["tmp"], "value": "x"})
+        r = exec_cmd("var", {"sub": "delete", "_": ["tmp"]})
+        _ok(r, "delete existing")
+        # 验证已删除
+        r2 = exec_cmd("var", {"sub": "get", "_": ["tmp"]})
+        _fail(r2, "should be gone")
+
+    def test_delete_nonexistent(self):
+        r = exec_cmd("var", {"sub": "delete", "_": ["no_such_var"]})
+        _fail(r, "delete nonexistent")
+
+
+class TestVarClear:
+    """覆盖: /var clear"""
+
+    def test_clear_non_empty(self):
+        exec_cmd("var", {"sub": "set", "_": ["x"], "value": "1"})
+        exec_cmd("var", {"sub": "set", "_": ["y"], "value": "2"})
+        r = exec_cmd("var", {"sub": "clear"})
+        _ok(r, "clear")
+        r2 = exec_cmd("var", {"sub": "show"})
+        assert r2["data"]["count"] == 0
+
+    def test_clear_empty(self):
+        exec_cmd("var", {"sub": "clear"})
+        r = exec_cmd("var", {"sub": "clear"})
+        _ok(r, "clear empty")
+
+
+class TestVarExport:
+    """覆盖: /var export — 成功 + 缺文件"""
+
+    def test_export_with_data(self):
+        exec_cmd("var", {"sub": "clear"})
+        exec_cmd("var", {"sub": "set", "_": ["proto"], "value": "csg"})
+        r = exec_cmd("var", {"sub": "export", "file": "/tmp/wf_test_export.yaml"})
+        _ok(r, "export")
+        assert r["data"]["count"] > 0
+        import os
+        assert os.path.exists("/tmp/wf_test_export.yaml")
+
+    def test_export_empty(self):
+        exec_cmd("var", {"sub": "clear"})
+        r = exec_cmd("var", {"sub": "export", "file": "/tmp/wf_test_empty.yaml"})
+        _ok(r, "export empty")
+        assert r["data"]["count"] == 0
+
+    def test_export_missing_file(self):
+        r = exec_cmd("var", {"sub": "export"})
+        _fail(r, "export missing file")
+
+
+class TestVarImport:
+    """覆盖: /var import — merge + replace + 缺文件"""
+
+    def test_import_merge(self):
+        # 先准备内存变量和导出文件
+        exec_cmd("var", {"sub": "clear"})
+        exec_cmd("var", {"sub": "set", "_": ["a"], "value": "1"})
+        exec_cmd("var", {"sub": "export", "file": "/tmp/wf_test_import.yaml"})
+        exec_cmd("var", {"sub": "set", "_": ["b"], "value": "2"})
+        # merge: YAML 中的 a 覆盖，内存中的 b 保留
+        r = exec_cmd("var", {"sub": "import", "file": "/tmp/wf_test_import.yaml", "mode": "merge"})
+        _ok(r, "import merge")
+        # 验证 b 还在
+        r2 = exec_cmd("var", {"sub": "get", "_": ["b"]})
+        _ok(r2, "b should remain after merge")
+
+    def test_import_replace(self):
+        exec_cmd("var", {"sub": "clear"})
+        exec_cmd("var", {"sub": "set", "_": ["x"], "value": "old"})
+        r = exec_cmd("var", {"sub": "import", "file": "/tmp/wf_test_import.yaml", "mode": "replace"})
+        _ok(r, "import replace")
+        # 验证 x 被清除（文件中只有 a）
+        r2 = exec_cmd("var", {"sub": "get", "_": ["x"]})
+        _fail(r2, "x should be gone after replace")
+
+    def test_import_missing_file(self):
+        r = exec_cmd("var", {"sub": "import", "file": "/tmp/no_such_file.yaml"})
+        _fail(r, "import missing file")
+
+    def test_import_invalid_mode(self):
+        r = exec_cmd("var", {"sub": "import", "file": "/tmp/wf_test_import.yaml", "mode": "bad_mode"})
+        _fail(r, "import invalid mode")
+
+
+class TestVarVariableRefs:
+    """覆盖: 变量引用解析 — ${name} / ${object.field}"""
+
+    def test_full_reference(self):
+        exec_cmd("var", {"sub": "clear"})
+        exec_cmd("var", {"sub": "set", "_": ["proto"], "value": "csg"})
+        # 使用 exec_text 触发变量引用解析
+        r = exec_text("/var get proto")
+        _ok(r, "get via text")
+        assert r["data"]["value"] == "csg"
+
+    def test_auto_last_result_after_build(self):
+        """build 命令成功后自动设置 last_result / last_build / last_frame"""
+        exec_cmd("var", {"sub": "clear"})
+        r = exec_cmd("build", {"proto": "dlt645", "func": "0x11", "di": "00010000", "dir": "downlink"})
+        _ok(r, "build")
+        r2 = exec_cmd("var", {"sub": "get", "_": ["last_build"]})
+        _ok(r2, "last_build should exist")
+        r3 = exec_cmd("var", {"sub": "get", "_": ["last_frame"]})
+        _ok(r3, "last_frame should exist")
+
+    def test_unknown_ref_preserved(self):
+        """不存在的变量引用保持原样"""
+        # exec_text 内部解析引用：${no_such_var} 无匹配时保持原文本
+        from console.runtime import runtime
+        args = {"value": "${no_such_var_xyz}"}
+        resolved = runtime._resolve_var_refs(args)
+        assert resolved["value"] == "${no_such_var_xyz}"
+        print("  ✓ unknown ref preserved")
+
+    def test_template_reference(self):
+        """模板引用: 字符串拼接"""
+        exec_cmd("var", {"sub": "set", "_": ["afn"], "value": "03"})
+        from console.runtime import runtime
+        args = {"value": "report-${afn}.yaml"}
+        resolved = runtime._resolve_var_refs(args)
+        assert resolved["value"] == "report-03.yaml"
+        print("  ✓ template reference resolved")
+
+
+class TestVarIntegration:
+    """端到端集成: /var → /build 引用"""
+
+    def test_var_to_build_via_ref(self):
+        exec_cmd("var", {"sub": "clear"})
+        exec_cmd("var", {"sub": "set", "_": ["proto"], "value": "dlt645"})
+        exec_cmd("var", {"sub": "set", "_": ["func_val"], "value": "0x11"})
+        exec_cmd("var", {"sub": "set", "_": ["di_val"], "value": "00010000"})
+        # 通过变量引用构造
+        from console.runtime import runtime
+        args = {"proto": "${proto}", "func": "${func_val}", "di": "${di_val}", "dir": "downlink"}
+        resolved = runtime._resolve_var_refs(args)
+        assert resolved["proto"] == "dlt645"
+        assert resolved["func"] == "0x11"
+        r = exec_cmd("build", resolved)
+        _ok(r, "build from var refs")
+        _has_frame(r)
+        print("  ✓ var → build integration")
+
+    def test_command_registered(self):
+        names = [c["name"] for c in list_cmds()]
+        assert "var" in names, "/var not registered"
+
+    def test_help_var(self):
+        r = exec_cmd("help", {"target": "/var"})
+        _ok(r)
+        assert r["data"]["command"] == "/var"
+        sub_names = [s["name"] for s in r["data"].get("sub_commands", [])]
+        assert "/var set" in sub_names
+        assert "/var get" in sub_names
+        assert "/var show" in sub_names
+
+    def test_help_var_sub(self):
+        r = exec_cmd("help", {"target": "/var import"})
+        _ok(r)
+        assert "import" in r["data"]["command"]
+
+    def test_cleanup_after_tests(self):
+        """清理测试产生的临时文件"""
+        import os
+        for f in ["/tmp/wf_test_export.yaml", "/tmp/wf_test_empty.yaml",
+                  "/tmp/wf_test_import.yaml", "/tmp/test_vars.yaml",
+                  "/tmp/wireforge_test_vars.yaml", "/tmp/test_var_cmd.yaml"]:
+            try:
+                os.remove(f)
+            except OSError:
+                pass
+        exec_cmd("var", {"sub": "clear"})
+
+
+# ═══════════════════════════════════════════════════════════════
+# 13. 跨协议路径测试
 # ═══════════════════════════════════════════════════════════════
 
 class TestCrossProtocol:
