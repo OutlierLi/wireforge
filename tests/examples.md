@@ -44,8 +44,8 @@
 /decode --proto dlt645 --hex FEFEFEFE68AAAAAAAAAAAA681300DF16
 @expect success
 
-### DLT645 read data request
-/decode --proto dlt645 --hex FEFEFEFE680100000000000068110433333433B316
+### DLT645 read data response
+/decode --proto dlt645 --hex FEFEFEFE6801000000000068910833333433593954537016
 @expect success
 
 ### CSG query vendor

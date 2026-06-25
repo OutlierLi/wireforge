@@ -17,8 +17,6 @@ def _parse_examples(path: str) -> list[tuple[str, str]]:
         line = line.strip()
         if not line or line.startswith("#") or line.startswith("##"):
             continue
-        if line.startswith("@"):
-            continue
         if line.startswith("/"):
             # 下一行是 @expect 标记
             cases.append((line, ""))
@@ -26,6 +24,8 @@ def _parse_examples(path: str) -> list[tuple[str, str]]:
             cases[-1] = (cases[-1][0], "success")
         elif line.startswith("@expect fail") and cases:
             cases[-1] = (cases[-1][0], "fail")
+        elif line.startswith("@"):
+            continue
     return [(c, e) for c, e in cases if c and e]
 
 

@@ -85,6 +85,17 @@ class TestUpgParams:
         assert "not connected" in r.get("error", "").lower()
         Path(tmp).unlink()
 
+    def test_no_named_serial_connection(self):
+        with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+            f.write(b"\x00" * 100)
+            tmp = f.name
+
+        exec_cmd("serial", {"sub": "close", "name": "cco"})
+        r = exec_cmd("upg", {"file": tmp, "segment-size": "128", "name": "cco"})
+        _fail(r)
+        assert "name=cco" in r.get("error", "")
+        Path(tmp).unlink()
+
 
 # ═══════════════════════════════════════════════════════════════
 # 3. 帧构造 (通过 build API 验证)

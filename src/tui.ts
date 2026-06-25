@@ -178,6 +178,7 @@ class Screen {
   private cursor = 0;
   private prompt = ">";
   private status = "READY";
+  private activeConnection = "default";
   private scrollOffset = 0;
 
   setInput(value: string, cursor: number): void {
@@ -191,6 +192,10 @@ class Screen {
 
   setStatus(status: string): void {
     this.status = status;
+  }
+
+  setActiveConnection(name: string): void {
+    if (name) this.activeConnection = name;
   }
 
   clear(): void {
@@ -303,7 +308,12 @@ class Screen {
 
   private renderSuccess(data: Record<string, unknown>): void {
     const copyLines: string[] = [];
+    if (typeof data.active === "string") this.setActiveConnection(data.active);
+    else if (typeof data.name === "string" && data.status === "active") this.setActiveConnection(data.name);
     this.add("● success", "result_title");
+    if (Array.isArray(data.connections)) {
+      this.renderConnections(data, copyLines);
+    }
     if (typeof data.path === "string") {
       this.add(`└  path: ${data.path}`, "route_selected");
       copyLines.push(data.path);
@@ -313,10 +323,34 @@ class Screen {
       copyLines.push(data.frame);
     }
     for (const [key, value] of Object.entries(data)) {
+      if (key === "connections") continue;
+      if (key === "active" && Array.isArray(data.connections)) continue;
       if (key === "path" || key === "frame") continue;
       this.renderValue(key, value, 0, copyLines);
     }
     this.lastCopyText = copyLines.join("\n");
+  }
+
+  private renderConnections(data: Record<string, unknown>, copyLines: string[]): void {
+    const active = typeof data.active === "string" ? data.active : this.activeConnection;
+    this.setActiveConnection(active);
+    this.add(`   active: ${active}`, "field_name");
+    copyLines.push(`active: ${active}`);
+    this.add("   connections:", "field_name");
+    copyLines.push("connections:");
+    for (const item of data.connections as unknown[]) {
+      if (!item || typeof item !== "object") continue;
+      const conn = item as Record<string, unknown>;
+      const name = String(conn.name ?? conn.id ?? "");
+      const marker = name === active ? "*" : " ";
+      const state = String(conn.state ?? "unknown");
+      const port = String(conn.port ?? "");
+      const baudrate = String(conn.baudrate ?? "");
+      const err = conn.last_error ? `  ${String(conn.last_error)}` : "";
+      const line = `${marker} ${name}  ${state}  ${port}${baudrate ? `  ${baudrate}` : ""}${err}`;
+      this.add(`   ${line}`, state === "connected" ? "success" : "warning");
+      copyLines.push(line);
+    }
   }
 
   private renderValue(key: string, value: unknown, depth: number, copyLines: string[]): void {
@@ -349,7 +383,7 @@ class Screen {
 
   private statusLine(cols: number): string {
     const scroll = this.scrollOffset > 0 ? `  scroll +${this.scrollOffset}` : "";
-    const status = `${this.status.toLowerCase()}${scroll}  PgUp/PgDn output  Ctrl+L clear  Ctrl+Q exit  local: /copy`;
+    const status = `${this.status.toLowerCase()}  conn: ${this.activeConnection}${scroll}  PgUp/PgDn output  Ctrl+L clear  Ctrl+Q exit  local: /copy`;
     return paint(status.padStart(cols), "subtle");
   }
 

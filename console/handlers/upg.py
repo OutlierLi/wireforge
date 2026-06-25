@@ -11,6 +11,7 @@
   --timeout     每段超时秒数 (默认 5)
   --retries     每段重试次数 (默认 3)
   --dest        目标地址 (默认 000000000000)
+  --name        串口连接名 (默认 default)
   --no-cache    跳过缓存，强制重新构造
   --build-only  仅构造缓存，不执行传输
 """
@@ -81,12 +82,15 @@ def handle(args: dict[str, Any]) -> dict:
         return ok(results)
 
     # 检查串口
-    from serial.api import _connections
-    transport = _connections.get("default")
+    from serial.api import get_connection
+    conn_name = str(args.get("name") or args.get("id") or "default")
+    results["name"] = conn_name
+    transport = get_connection(conn_name)
     if not transport:
-        return fail("serial not connected. use /serial connect first")
+        return fail(f"serial not connected (name={conn_name}). use /serial connect --name {conn_name} first")
 
     log_serial("upg_start", port="", data={
+        "name": conn_name,
         "file": str(fp.name), "size": file_size,
         "segments": total_segments, "segment_size": segment_size,
         "cached": use_cache,

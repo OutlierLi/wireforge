@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
+import re
 from typing import Any
 
 from serial.transport import SerialTransport, SerialSettings
@@ -13,6 +15,9 @@ from protocol_tool.utils.logger import log_serial
 
 # 全局连接实例
 _connections: dict[str, SerialTransport] = {}
+_connection_meta: dict[str, dict[str, Any]] = {}
+_active_connection = "default"
+_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 
 
 # ── Result ────────────────────────────────────────────────────────────
@@ -38,13 +43,23 @@ def serial_open(args: dict[str, Any]) -> SerialResult:
 
     args: {port, baudrate?, bytesize?, parity?, stopbits?, timeout?, id?}
     """
+    args = _normalize_args(args)
     port = args.get("port", "")
     if not port:
         return SerialResult(False, "open", error="port is required")
 
-    cid = args.get("id", "default")
-    if cid in _connections:
-        _connections[cid].close()
+    cid = _connection_id(args)
+    invalid = _validate_name(cid)
+    if invalid:
+        return SerialResult(False, "open", error=invalid)
+
+    occupied_by = _port_occupied_by(port, cid)
+    if occupied_by:
+        return SerialResult(
+            False,
+            "open",
+            error=f"PORT_ALREADY_IN_USE: {port} is already bound to {occupied_by}",
+        )
 
     settings = SerialSettings(
         port=port,
@@ -56,11 +71,28 @@ def serial_open(args: dict[str, Any]) -> SerialResult:
     )
 
     try:
+        if cid in _connections:
+            _connections[cid].close()
+            _connections.pop(cid, None)
+            _connection_meta.pop(cid, None)
         t = SerialTransport(settings)
         t.open()
         _connections[cid] = t
+        _connection_meta[cid] = {
+            "id": cid,
+            "name": cid,
+            "port": port,
+            "baudrate": settings.baudrate,
+            "bytesize": settings.bytesize,
+            "parity": settings.parity,
+            "stopbits": settings.stopbits,
+            "timeout": settings.timeout,
+            "state": "connected",
+            "created_at": _now(),
+            "last_error": "",
+        }
         result = SerialResult(True, "open", data={
-            "id": cid, "port": port, "baudrate": settings.baudrate,
+            "id": cid, "name": cid, "port": port, "baudrate": settings.baudrate,
             "status": "connected",
         })
         log_serial("open", port=port, data=result.data)
@@ -75,10 +107,11 @@ def serial_send(args: dict[str, Any]) -> SerialResult:
 
     args: {hex, timeout?, id?}
     """
-    cid = args.get("id", "default")
+    args = _normalize_args(args)
+    cid = _connection_id(args)
     t = _connections.get(cid)
     if not t:
-        return SerialResult(False, "send", error=f"not connected (id={cid})")
+        return SerialResult(False, "send", error=f"not connected (name={cid})")
 
     hex_str = str(args.get("hex", "")).replace(" ", "").replace("\n", "")
     if not hex_str:
@@ -95,8 +128,9 @@ def serial_send(args: dict[str, Any]) -> SerialResult:
         if not t.connected:
             reason = getattr(t, '_last_error', '') or "port not open"
             _connections.pop(cid, None)
+            _mark_disconnected(cid, reason)
             log_serial("disconnect", port="", success=False,
-                       error=reason, data={"id": cid, "reason": reason})
+                       error=reason, data={"id": cid, "name": cid, "reason": reason})
             return SerialResult(False, "send", error=reason)
 
         written = t.write(data)
@@ -107,11 +141,12 @@ def serial_send(args: dict[str, Any]) -> SerialResult:
         if not t.connected:
             disconnect_reason = getattr(t, '_last_error', '') or "port not open"
             _connections.pop(cid, None)
+            _mark_disconnected(cid, disconnect_reason)
             log_serial("disconnect", port="", success=False,
-                       error=disconnect_reason, data={"id": cid, "reason": disconnect_reason})
+                       error=disconnect_reason, data={"id": cid, "name": cid, "reason": disconnect_reason})
 
         result = SerialResult(True, "send", data={
-            "id": cid, "sent": data.hex(" ").upper(),
+            "id": cid, "name": cid, "sent": data.hex(" ").upper(),
             "sent_bytes": written,
             "received": response.hex(" ").upper() if response else "",
             "received_bytes": len(response),
@@ -125,8 +160,9 @@ def serial_send(args: dict[str, Any]) -> SerialResult:
             result.data["warning"] = f"disconnected: {disconnect_reason}"
         return result
     except Exception as e:
+        _set_last_error(cid, str(e))
         log_serial("send", port="", success=False, error=str(e),
-                   data={"id": cid, "reason": str(e)})
+                   data={"id": cid, "name": cid, "reason": str(e)})
         return SerialResult(False, "send", error=str(e))
 
 
@@ -135,13 +171,15 @@ def serial_close(args: dict[str, Any]) -> SerialResult:
 
     args: {id?}
     """
-    cid = args.get("id", "default")
+    args = _normalize_args(args)
+    cid = _connection_id(args)
     t = _connections.pop(cid, None)
     if not t:
-        return SerialResult(False, "close", error=f"not connected (id={cid})")
+        return SerialResult(False, "close", error=f"not connected (name={cid})")
     try:
         t.close()
-        result = SerialResult(True, "close", data={"id": cid, "status": "closed"})
+        _mark_disconnected(cid, "")
+        result = SerialResult(True, "close", data={"id": cid, "name": cid, "status": "closed"})
         log_serial("close", port="", data=result.data)
         return result
     except Exception as e:
@@ -154,8 +192,113 @@ def serial_ports(args: dict[str, Any] | None = None) -> SerialResult:
     try:
         ports = SerialTransport.available_ports()
         connected = list(_connections.keys())
+        connections = [_connection_snapshot(cid) for cid in sorted(_connection_meta)]
         return SerialResult(True, "ports", data={
             "available": ports, "connected": connected,
+            "connections": connections, "active": _active_connection,
         })
     except Exception as e:
         return SerialResult(False, "ports", error=str(e))
+
+
+def serial_use(args: dict[str, Any]) -> SerialResult:
+    """设置当前活动连接。"""
+    global _active_connection
+    args = _normalize_args(args)
+    cid = _connection_id(args)
+    invalid = _validate_name(cid)
+    if invalid:
+        return SerialResult(False, "use", error=invalid)
+    if cid not in _connections:
+        return SerialResult(False, "use", error=f"not connected (name={cid})")
+    _active_connection = cid
+    return SerialResult(True, "use", data={
+        "id": cid, "name": cid, "active": cid, "status": "active",
+    })
+
+
+def active_connection() -> str:
+    return _active_connection
+
+
+def get_connection(name: str | None = None) -> SerialTransport | None:
+    cid = name or _active_connection or "default"
+    return _connections.get(cid)
+
+
+def get_connection_settings(name: str) -> dict[str, Any] | None:
+    meta = _connection_meta.get(name)
+    if not meta:
+        return None
+    return {
+        "port": meta.get("port", "mock://loop"),
+        "baudrate": meta.get("baudrate", 9600),
+        "bytesize": meta.get("bytesize", 8),
+        "parity": meta.get("parity", "N"),
+        "stopbits": meta.get("stopbits", 1.0),
+        "timeout": meta.get("timeout", 0.05),
+    }
+
+
+def _normalize_args(args: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(args)
+    if "name" in normalized and "id" not in normalized:
+        normalized["id"] = normalized["name"]
+    return normalized
+
+
+def _connection_id(args: dict[str, Any]) -> str:
+    return str(args.get("id") or args.get("name") or "default")
+
+
+def _validate_name(name: str) -> str:
+    if _NAME_RE.match(name):
+        return ""
+    return (
+        f"invalid connection name: {name}. "
+        "Use [A-Za-z_][A-Za-z0-9_-]*"
+    )
+
+
+def _is_physical_port(port: str) -> bool:
+    return not (port == "mock://loop" or port.startswith("virtual://"))
+
+
+def _port_occupied_by(port: str, cid: str) -> str:
+    if not _is_physical_port(port):
+        return ""
+    for name, meta in _connection_meta.items():
+        if name != cid and meta.get("state") == "connected" and meta.get("port") == port:
+            return name
+    return ""
+
+
+def _connection_snapshot(cid: str) -> dict[str, Any]:
+    meta = dict(_connection_meta.get(cid, {}))
+    transport = _connections.get(cid)
+    if transport and not transport.connected:
+        _connections.pop(cid, None)
+        _mark_disconnected(cid, getattr(transport, "_last_error", "") or "port not open")
+        meta = dict(_connection_meta.get(cid, meta))
+    if not meta:
+        meta = {"id": cid, "name": cid}
+    meta["state"] = "connected" if cid in _connections else meta.get("state", "disconnected")
+    return meta
+
+
+def _mark_disconnected(cid: str, reason: str) -> None:
+    meta = _connection_meta.get(cid)
+    if not meta:
+        return
+    meta["state"] = "disconnected"
+    meta["last_error"] = reason
+
+
+def _set_last_error(cid: str, reason: str) -> None:
+    meta = _connection_meta.get(cid)
+    if meta:
+        meta["last_error"] = reason
+
+
+def _now() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")

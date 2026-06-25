@@ -309,6 +309,41 @@ class TestSerial:
         _ok(r)
         assert "available" in r["data"]
 
+    def test_named_connection_ports_and_send(self):
+        exec_cmd("serial", {"sub": "connect", "name": "cco", "port": "mock://loop"})
+        r = exec_cmd("serial", {"sub": "ports"})
+        _ok(r)
+        assert "cco" in r["data"]["connected"]
+        assert any(c["name"] == "cco" for c in r["data"]["connections"])
+
+        r = exec_cmd("serial", {"sub": "send", "name": "cco", "hex": "68 0C 00 40"})
+        _ok(r)
+        assert r["data"]["id"] == "cco"
+        assert r["data"]["name"] == "cco"
+        assert r["data"]["received_bytes"] > 0
+
+    def test_multiple_named_connections_close_one(self):
+        exec_cmd("serial", {"sub": "connect", "name": "cco", "port": "mock://loop"})
+        exec_cmd("serial", {"sub": "connect", "name": "sta1", "port": "mock://loop"})
+        r = exec_cmd("serial", {"sub": "close", "name": "cco"})
+        _ok(r)
+        r = exec_cmd("serial", {"sub": "ports"})
+        _ok(r)
+        assert "cco" not in r["data"]["connected"]
+        assert "sta1" in r["data"]["connected"]
+
+    def test_use_named_connection_as_default_target(self):
+        exec_cmd("serial", {"sub": "connect", "name": "cco", "port": "mock://loop"})
+        exec_cmd("serial", {"sub": "use", "name": "cco"})
+        r = exec_cmd("serial", {"sub": "send", "hex": "68 0C 00 40"})
+        _ok(r)
+        assert r["data"]["name"] == "cco"
+
+    def test_invalid_connection_name(self):
+        r = exec_cmd("serial", {"sub": "connect", "name": "bad name", "port": "mock://loop"})
+        _fail(r)
+        assert "invalid connection name" in r.get("error", "")
+
     def test_close_when_connected(self):
         exec_cmd("serial", {"sub": "connect", "port": "mock://loop"})
         r = exec_cmd("serial", {"sub": "close"})
@@ -356,6 +391,7 @@ class TestHelp:
         assert r["data"]["command"] == "/serial"
         assert len(r["data"]["params"]) > 0
         assert any(p["name"] == "--port" for p in r["data"]["params"])
+        assert any(p["name"] == "--name" for p in r["data"]["params"])
 
     def test_help_serial_sub(self):
         r = exec_cmd("help", {"target": "/serial open"})
