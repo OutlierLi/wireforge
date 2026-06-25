@@ -45,6 +45,13 @@ def render_result(out: RichLog, result: dict):
     status = result.get("status")
     if status == "success":
         data = result.get("data", {})
+        # help 命令特殊渲染
+        if data.get("command") and "params" in data:
+            _render_help(out, data)
+            return
+        if data.get("commands"):
+            _render_help_list(out, data)
+            return
         if data.get("path"):
             out.write(f"[{_c('path')}]{_m()}{data['path']}[/]")
         if data.get("frame"):
@@ -95,6 +102,41 @@ def _render_missing(out: RichLog, missing: list[dict]) -> None:
         out.write(f"[{_c('key')}]{_m()}  --{key}[/][{_c('text')}]: {m.get('type','')}{eg}[/]")
         if m.get("note"):
             out.write(f"[{_c('subtle')}]{_m()}    {m['note']}[/]")
+
+
+def _render_help(out: RichLog, data: dict):
+    """渲染 /help /command 输出：加粗描述 + 参数表。"""
+    cmd = data["command"]
+    desc = data["desc"]
+    out.write(f"[bold {_c('text')}]{_m()}{cmd} — {desc}[/]")
+
+    params = data.get("params", [])
+    if params:
+        out.write(f"[{_c('subtle')}]{_m()}parameters:[/]")
+        for p in params:
+            req = "*" if p.get("required") else " "
+            eg = ", ".join(str(e) for e in p.get("examples", [])[:3])
+            eg_str = f"  e.g. {eg}" if eg else ""
+            out.write(f"[{_c('key')}]{_m()}  {req}{p['name']:20s}[/][{_c('value')}] {p['type']:6s}{eg_str}[/]")
+
+    subs = data.get("sub_commands", [])
+    if subs:
+        out.write(f"[{_c('subtle')}]{_m()}sub-commands:[/]")
+        for s in subs:
+            out.write(f"[{_c('key')}]{_m()}  {s['name']:20s}[/][{_c('text')}] {s['desc']}[/]")
+
+
+def _render_help_list(out: RichLog, data: dict):
+    """渲染 /help 命令列表。"""
+    cmds = data.get("commands", [])
+    out.write(f"[bold {_c('text')}]{_m()}Available commands:[/]")
+    for c in cmds:
+        out.write(f"[{_c('key')}]{_m()}  {c['name']:14s}[/][{_c('text')}] {c['desc']}[/]")
+        for s in c.get("sub_commands", []):
+            out.write(f"[{_c('subtle')}]{_m()}    {s['name']:20s} {s['desc']}[/]")
+    hint = data.get("hint", "")
+    if hint:
+        out.write(f"[{_c('subtle')}]{_m()}{hint}[/]")
 
 
 def _kv(out: RichLog, key: str, value: Any, depth: int):

@@ -232,5 +232,22 @@
       "disconnect": "Alias for close",
       "ports": "List available serial ports and connection status"
     }
+  },
+  "help": {
+    "desc": "Show command help. /help /serial or /help \"/serial open\"",
+    "module": "console.handlers.help",
+    "handler": "handle",
+    "enabled": true,
+    "params": {
+      "target": {
+        "type": "str",
+        "required": false,
+        "desc": "Command name, e.g. /serial",
+        "examples": [
+          "/serial",
+          "/serial open"
+        ]
+      }
+    }
   }
 }

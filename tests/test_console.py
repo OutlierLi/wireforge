@@ -337,7 +337,65 @@ class TestSerial:
 
 
 # ═══════════════════════════════════════════════════════════════
-# 11. 跨协议路径测试
+# 11. /help
+# ═══════════════════════════════════════════════════════════════
+
+class TestHelp:
+    def test_help_list_all(self):
+        r = exec_cmd("help", {})
+        _ok(r)
+        cmds = r["data"]["commands"]
+        names = [c["name"] for c in cmds]
+        assert "/build" in names
+        assert "/serial" in names
+        assert "/auto_rule" in names
+
+    def test_help_serial(self):
+        r = exec_cmd("help", {"target": "/serial"})
+        _ok(r)
+        assert r["data"]["command"] == "/serial"
+        assert len(r["data"]["params"]) > 0
+        assert any(p["name"] == "--port" for p in r["data"]["params"])
+
+    def test_help_serial_sub(self):
+        r = exec_cmd("help", {"target": "/serial open"})
+        _ok(r)
+        assert r["data"]["command"] == "/serial open"
+        assert "Re-open" in r["data"]["desc"]
+
+    def test_help_serial_send(self):
+        r = exec_cmd("help", {"target": "/serial send"})
+        _ok(r)
+        assert r["data"]["command"] == "/serial send"
+
+    def test_help_auto_rule(self):
+        r = exec_cmd("help", {"target": "/auto_rule"})
+        _ok(r)
+        sub_names = [s["name"] for s in r["data"].get("sub_commands", [])]
+        assert "/auto_rule add" in sub_names
+
+    def test_help_auto_rule_sub(self):
+        r = exec_cmd("help", {"target": "/auto_rule load"})
+        _ok(r)
+        assert "load" in r["data"]["command"]
+
+    def test_help_build(self):
+        r = exec_cmd("help", {"target": "/build"})
+        _ok(r)
+        assert r["data"]["command"] == "/build"
+
+    def test_help_decode(self):
+        r = exec_cmd("help", {"target": "/decode"})
+        _ok(r)
+        assert r["data"]["command"] == "/decode"
+
+    def test_help_unknown_command(self):
+        r = exec_cmd("help", {"target": "/nonexistent"})
+        _fail(r)
+
+
+# ═══════════════════════════════════════════════════════════════
+# 12. 跨协议路径测试
 # ═══════════════════════════════════════════════════════════════
 
 class TestCrossProtocol:
