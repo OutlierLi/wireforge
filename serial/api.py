@@ -87,6 +87,7 @@ def serial_open(args: dict[str, Any]) -> SerialResult:
             "parity": settings.parity,
             "stopbits": settings.stopbits,
             "timeout": settings.timeout,
+            "display": args.get("display", "hex"),
             "state": "connected",
             "created_at": _now(),
             "last_error": "",
@@ -145,11 +146,14 @@ def serial_send(args: dict[str, Any]) -> SerialResult:
             log_serial("disconnect", port="", success=False,
                        error=disconnect_reason, data={"id": cid, "name": cid, "reason": disconnect_reason})
 
+        display = (_connection_meta.get(cid, {}).get("display") or
+                   args.get("display", "hex"))
         result = SerialResult(True, "send", data={
             "id": cid, "name": cid, "sent": data.hex(" ").upper(),
             "sent_bytes": written,
-            "received": response.hex(" ").upper() if response else "",
+            "received": _format_received(response, display),
             "received_bytes": len(response),
+            "display": display,
         })
         log_serial("send", port="", data=result.data)
         if response:
@@ -283,6 +287,7 @@ def _connection_snapshot(cid: str) -> dict[str, Any]:
     if not meta:
         meta = {"id": cid, "name": cid}
     meta["state"] = "connected" if cid in _connections else meta.get("state", "disconnected")
+    meta.setdefault("display", "hex")
     return meta
 
 
@@ -298,6 +303,28 @@ def _set_last_error(cid: str, reason: str) -> None:
     meta = _connection_meta.get(cid)
     if meta:
         meta["last_error"] = reason
+
+
+def _format_received(data: bytes, display: str) -> str:
+    """根据显示格式格式化接收数据。"""
+    if not data:
+        return ""
+    if display == "ascii":
+        result = []
+        for b in data:
+            if 0x20 <= b <= 0x7E:
+                result.append(chr(b))
+            elif b == 0x0A:
+                result.append("\\n")
+            elif b == 0x0D:
+                result.append("\\r")
+            elif b == 0x09:
+                result.append("\\t")
+            else:
+                result.append(".")
+        return "".join(result)
+    # 默认 hex
+    return data.hex(" ").upper()
 
 
 def _now() -> str:

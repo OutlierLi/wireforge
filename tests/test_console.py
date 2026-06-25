@@ -370,10 +370,70 @@ class TestSerial:
         _ok(r)
         assert "available" in r["data"]
 
+    # ── display 参数测试 ──
 
-# ═══════════════════════════════════════════════════════════════
-# 11. /help
-# ═══════════════════════════════════════════════════════════════
+    def test_connect_with_display_ascii(self):
+        r = exec_cmd("serial", {"sub": "connect", "port": "mock://loop", "display": "ascii"})
+        _ok(r, "connect with display=ascii")
+
+    def test_send_ascii_display_format(self):
+        exec_cmd("serial", {"sub": "connect", "port": "mock://loop", "display": "ascii"})
+        r = exec_cmd("serial", {"sub": "send", "hex": "48 65 6C 6C 6F"})
+        _ok(r, "send ascii display")
+        assert r["data"]["display"] == "ascii"
+        assert r["data"]["received"] == "Hello", f"expected 'Hello', got '{r['data']['received']}'"
+
+    def test_send_default_hex_format(self):
+        exec_cmd("serial", {"sub": "connect", "port": "mock://loop"})
+        r = exec_cmd("serial", {"sub": "send", "hex": "48 65 6C 6C 6F"})
+        _ok(r)
+        assert r["data"]["display"] == "hex"
+        assert r["data"]["received"] == "48 65 6C 6C 6F"
+
+    def test_set_display_persists(self):
+        exec_cmd("serial", {"sub": "connect", "port": "mock://loop", "display": "ascii"})
+        exec_cmd("serial", {"sub": "close"})
+        r = exec_cmd("serial", {"sub": "open"})
+        _ok(r)
+        r2 = exec_cmd("serial", {"sub": "send", "hex": "41 42 43"})
+        _ok(r2)
+        # open 后应保留 ascii 设置
+        assert r2["data"]["display"] == "ascii"
+        assert "ABC" in r2["data"]["received"]
+
+    def test_set_display_via_set_command(self):
+        exec_cmd("serial", {"sub": "connect", "port": "mock://loop"})
+        r = exec_cmd("serial", {"sub": "set", "display": "ascii"})
+        _ok(r)
+        assert "ascii" in str(r["data"]["updated"])
+        # 需重连生效
+        exec_cmd("serial", {"sub": "open"})
+        r2 = exec_cmd("serial", {"sub": "send", "hex": "41 42 43"})
+        _ok(r2)
+        assert r2["data"]["display"] == "ascii"
+        assert r2["data"]["received"] == "ABC"
+
+    def test_send_ascii_control_chars(self):
+        """ASCII 模式下控制字符显示为转义形式"""
+        exec_cmd("serial", {"sub": "connect", "port": "mock://loop", "display": "ascii"})
+        r = exec_cmd("serial", {"sub": "send", "hex": "0D 0A 09 01"})
+        _ok(r)
+        # \\r\\n\\t 转义，非打印字符为 .
+        assert "\\r" in r["data"]["received"]
+        assert "\\n" in r["data"]["received"]
+        assert "\\t" in r["data"]["received"]
+
+    def test_ports_shows_display(self):
+        exec_cmd("serial", {"sub": "connect", "port": "mock://loop", "display": "ascii"})
+        r = exec_cmd("serial", {"sub": "ports"})
+        _ok(r)
+        conns = r["data"].get("connections", [])
+        default_conn = [c for c in conns if c.get("name") == "default"]
+        if default_conn:
+            assert default_conn[0].get("display", "hex") == "ascii"
+
+    def test_cleanup_serial_state(self):
+        exec_cmd("serial", {"sub": "close"})
 
 class TestHelp:
     def test_help_list_all(self):

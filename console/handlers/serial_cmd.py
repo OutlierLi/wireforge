@@ -97,7 +97,7 @@ def _set(args: dict) -> dict:
         current = {"port": "mock://loop", "baudrate": 9600, "bytesize": 8, "parity": "N"}
 
     new_params = {}
-    for key in ("port", "baudrate", "bytesize", "parity", "stopbits", "timeout"):
+    for key in ("port", "baudrate", "bytesize", "parity", "stopbits", "timeout", "display"):
         if key in args:
             new_params[key] = args[key]
     if not new_params:
@@ -161,6 +161,7 @@ def _settings_from_args(args: dict, data: dict[str, Any] | None = None) -> dict[
         "parity": args.get("parity", "N"),
         "stopbits": args.get("stopbits", 1.0),
         "timeout": args.get("timeout", 0.05),
+        "display": args.get("display", data.get("display", "hex")),
     }
 
 

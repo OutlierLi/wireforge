@@ -242,6 +242,17 @@
         ],
         "note": "set 修改后需 /serial open 生效"
       },
+      "display": {
+        "type": "choice",
+        "required": false,
+        "desc": "RX 数据显示格式 (connect/set)",
+        "examples": [
+          "hex",
+          "ascii"
+        ],
+        "default": "hex",
+        "note": "hex=十六进制大写空格分隔, ascii=可打印字符+控制符转义"
+      },
       "hex": {
         "type": "str",
         "desc": "发送数据(十六进制)"
