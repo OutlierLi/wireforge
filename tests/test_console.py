@@ -717,7 +717,82 @@ class TestVarIntegration:
 
 
 # ═══════════════════════════════════════════════════════════════
-# 13. 跨协议路径测试
+# 13. /print — 打印文本 + 变量引用
+# ═══════════════════════════════════════════════════════════════
+
+class TestPrint:
+    """覆盖: /print — 变量插值 + --raw + 边界"""
+
+    def test_basic_interpolation(self):
+        exec_cmd("var", {"sub": "set", "_": ["protocol"], "value": "csg"})
+        r = exec_cmd("print", {"text": "当前协议：${protocol}"})
+        _ok(r, "basic interpolation")
+        assert r["data"]["output"] == "当前协议：csg"
+
+    def test_template_multiple(self):
+        exec_cmd("var", {"sub": "set", "_": ["afn"], "value": "03"})
+        r = exec_cmd("print", {"text": "AFN=${afn}"})
+        _ok(r, "template")
+        assert r["data"]["output"] == "AFN=03"
+
+    def test_hex_value(self):
+        exec_cmd("var", {"sub": "set", "_": ["frame"], "value": "68 01 02 03 04 16", "type": "hex"})
+        r = exec_cmd("print", {"text": "发送报文：${frame}"})
+        _ok(r, "hex interpolation")
+        assert r["data"]["output"] == "发送报文：68 01 02 03 04 16"
+
+    def test_full_reference(self):
+        r = exec_cmd("print", {"text": "${frame}"})
+        _ok(r, "full ref")
+        assert r["data"]["output"] == "68 01 02 03 04 16"
+
+    def test_integer_value(self):
+        exec_cmd("var", {"sub": "set", "_": ["count"], "value": "5", "type": "integer"})
+        r = exec_cmd("print", {"text": "count=${count}"})
+        _ok(r, "integer")
+        assert r["data"]["output"] == "count=5"
+
+    def test_json_nested(self):
+        exec_cmd("var", {"sub": "set", "_": ["info"], "value": '{"phase":"A","current":"10.5"}', "type": "json"})
+        r = exec_cmd("print", {"text": "phase=${info.phase}"})
+        _ok(r, "nested json")
+        assert r["data"]["output"] == "phase=A"
+
+    def test_raw_no_interpolation(self):
+        r = exec_cmd("print", {"text": "变量文本：${protocol}", "raw": True})
+        _ok(r, "raw")
+        assert r["data"]["output"] == "变量文本：${protocol}"
+        assert r["data"]["raw"] is True
+
+    def test_no_variables(self):
+        r = exec_cmd("print", {"text": "hello world"})
+        _ok(r, "no vars")
+        assert r["data"]["output"] == "hello world"
+
+    def test_unknown_var_preserved(self):
+        r = exec_cmd("print", {"text": "未知：${no_such_var}"})
+        _ok(r, "unknown var")
+        assert r["data"]["output"] == "未知：${no_such_var}"
+
+    def test_empty_text(self):
+        r = exec_cmd("print", {})
+        _fail(r, "empty text")
+
+    def test_command_registered(self):
+        names = [c["name"] for c in list_cmds()]
+        assert "print" in names, "/print not registered"
+
+    def test_help_print(self):
+        r = exec_cmd("help", {"target": "/print"})
+        _ok(r)
+        assert r["data"]["command"] == "/print"
+
+    def test_cleanup(self):
+        exec_cmd("var", {"sub": "clear"})
+
+
+# ═══════════════════════════════════════════════════════════════
+# 14. 跨协议路径测试
 # ═══════════════════════════════════════════════════════════════
 
 class TestCrossProtocol:

@@ -116,6 +116,46 @@ def test_var_ndjson():
     assert results[14]["status"] == "success"
     passed += 1; checks += 1
 
+    # ── /print 测试 ──
+    print_reqs = [
+        {"schema":"protocol-tui.v1","type":"command.execute","command":"/var","args":{"sub":"set","_":["p"],"value":"csg"}},
+        {"schema":"protocol-tui.v1","type":"command.execute","command":"/var","args":{"sub":"set","_":["a"],"value":"03"}},
+        {"schema":"protocol-tui.v1","type":"command.execute","command":"/var","args":{"sub":"set","_":["f"],"value":"68 01","type":"hex"}},
+        {"schema":"protocol-tui.v1","type":"command.execute","command":"/print","args":{"text":"协议：${p}"}},
+        {"schema":"protocol-tui.v1","type":"command.execute","command":"/print","args":{"text":"${f}"}},
+        {"schema":"protocol-tui.v1","type":"command.execute","command":"/print","args":{"text":"文本：${p}","raw":True}},
+        {"schema":"protocol-tui.v1","type":"command.execute","command":"/print","args":{"text":"未知：${no}保持不变"}},
+        {"schema":"protocol-tui.v1","type":"command.execute","command":"/var","args":{"sub":"clear"}},
+    ]
+    p_payload = "\n".join(json.dumps(r) for r in print_reqs) + "\n"
+    p_proc = subprocess.run(
+        [sys.executable, "-m", "console.ndjson"],
+        input=p_payload, capture_output=True, text=True,
+        timeout=15, cwd=str(ROOT),
+    )
+    p_lines = [l.strip() for l in p_proc.stdout.strip().split("\n") if l.strip()]
+    p_results = [json.loads(l) for l in p_lines]
+    # set×3 → success
+    for i in range(3):
+        assert p_results[i]["status"] == "success", f"print setup[{i}] failed"
+        passed += 1; checks += 1
+    # print "协议：${p}" → "协议：csg"
+    assert p_results[3]["data"]["output"] == "协议：csg"
+    passed += 1; checks += 1
+    # print "${f}" → "68 01"
+    assert p_results[4]["data"]["output"] == "68 01"
+    passed += 1; checks += 1
+    # print --raw → literal "${p}"
+    assert p_results[5]["data"]["output"] == "文本：${p}"
+    assert p_results[5]["data"]["raw"] is True
+    passed += 1; checks += 1
+    # print unknown → preserved
+    assert p_results[6]["data"]["output"] == "未知：${no}保持不变"
+    passed += 1; checks += 1
+    # clear → success
+    assert p_results[7]["status"] == "success"
+    passed += 1; checks += 1
+
     print(f"  ✓ {passed}/{checks} NDJSON checks passed")
     # cleanup
     try: os.remove("/tmp/wf_run_all_vars.yaml")
@@ -128,12 +168,12 @@ except Exception as e:
     print(f"  ✗ FAILED: {e}")
 
 
-# 4. /var 变量引用 + build 联动测试
-def test_var_build_integration():
-    """通过 exec_cmd 测试 var → build 变量引用联动。"""
+# 4. /var → /print → /build 变量联动测试
+def test_var_print_build():
+    """通过 exec_cmd 测试 var → print → build 变量引用联动。"""
     global failures
     print(f"\n{'='*60}")
-    print(f"  4/4 /var → build 联动测试")
+    print(f"  4/4 /var → print → build 联动测试")
     print(f"{'='*60}")
 
     from console.api import exec_cmd
@@ -143,6 +183,17 @@ def test_var_build_integration():
     exec_cmd("var", {"sub": "set", "_": ["proto"], "value": "dlt645"})
     exec_cmd("var", {"sub": "set", "_": ["func_val"], "value": "0x11"})
     exec_cmd("var", {"sub": "set", "_": ["di_val"], "value": "00010000"})
+
+    # print 引用测试
+    r = exec_cmd("print", {"text": "proto=${proto} func=${func_val}"})
+    assert r["status"] == "success"
+    assert r["data"]["output"] == "proto=dlt645 func=0x11"
+    print(f"  ✓ print: {r['data']['output']}")
+
+    # /print --raw
+    r = exec_cmd("print", {"text": "raw:${proto}", "raw": True})
+    assert r["data"]["output"] == "raw:${proto}"
+    print(f"  ✓ print --raw: {r['data']['output']}")
 
     from console.runtime import runtime
     args = {"proto": "${proto}", "func": "${func_val}", "di": "${di_val}", "dir": "downlink"}
@@ -162,10 +213,10 @@ def test_var_build_integration():
     assert lf is not None
 
     store.clear()
-    print("  ✓ var → build 联动 + last_build/last_frame")
+    print("  ✓ var → print → build 联动 + last_build/last_frame")
 
 try:
-    test_var_build_integration()
+    test_var_print_build()
 except Exception as e:
     failures += 1
     print(f"  ✗ FAILED: {e}")

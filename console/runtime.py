@@ -38,8 +38,9 @@ class Runtime:
         command = command.lstrip("/")
         args = _normalize_args(args)
 
-        # 解析变量引用 ${name} / ${object.field}
-        args = self._resolve_var_refs(args)
+        # 解析变量引用 ${name} / ${object.field}（print 自己处理引用）
+        if command != "print":
+            args = self._resolve_var_refs(args)
 
         fn = registry.resolve(command)
         if not fn:

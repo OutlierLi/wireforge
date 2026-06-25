@@ -250,6 +250,30 @@
       }
     }
   },
+  "print": {
+    "desc": "Print text with variable interpolation. ${name} / ${object.field}",
+    "module": "console.handlers.print",
+    "handler": "handle",
+    "enabled": true,
+    "params": {
+      "text": {
+        "type": "str",
+        "required": true,
+        "desc": "文本内容，支持 ${name} 变量引用和 ${object.field} 路径访问",
+        "examples": [
+          "当前协议：${protocol}",
+          "${frame}",
+          "AFN=${afn}"
+        ]
+      },
+      "raw": {
+        "type": "bool",
+        "required": false,
+        "desc": "原样输出，不解析变量引用"
+      }
+    },
+    "sub_commands": {}
+  },
   "var": {
     "desc": "Variable management. Sub: set, get, show, delete, clear, export, import",
     "module": "console.handlers.var",
