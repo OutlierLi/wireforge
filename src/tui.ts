@@ -202,7 +202,8 @@ class Screen {
   private connections: ConnectionItem[] = [];
   private scrollOffset = 0;
   private visibleOutputRows: string[] = [];
-  private outputTopRow = 2;
+  private outputTopRow = 1;
+  private outputRightCol = Infinity;
   private selection: Selection | undefined;
 
   setInput(value: string, cursor: number): void {
@@ -300,20 +301,23 @@ class Screen {
   draw(): void {
     const cols = Math.max(stdout.columns || 100, 60);
     const rows = Math.max(stdout.rows || 30, 18);
-    const chromeHeight = 5;
+    const sideWidth = cols >= 100 ? Math.min(34, Math.max(28, Math.floor(cols * 0.22))) : 0;
+    const mainCols = sideWidth > 0 ? cols - sideWidth - 1 : cols;
+    const chromeHeight = 4;
     const outputHeight = rows - chromeHeight;
 
     const out: string[] = [];
     out.push("\x1b[?25l\x1b[H");
-    out.push(this.connectionBar(cols));
-    this.outputTopRow = 2;
+    this.outputTopRow = 1;
+    this.outputRightCol = mainCols;
+    const outputLines: string[] = [];
 
     if (this.lines.length === 0) {
-      const welcome = this.welcomeLines(cols, outputHeight);
+      const welcome = this.welcomeLines(mainCols, outputHeight);
       this.visibleOutputRows = welcome.map((line) => stripAnsi(line));
-      out.push(...welcome);
+      outputLines.push(...welcome);
     } else {
-      const wrapped = this.wrapVisibleLines(cols - 2);
+      const wrapped = this.wrapVisibleLines(mainCols - 2);
       const maxOffset = Math.max(wrapped.length - outputHeight, 0);
       this.scrollOffset = Math.min(this.scrollOffset, maxOffset);
       const end = Math.max(wrapped.length - this.scrollOffset, 0);
@@ -323,18 +327,19 @@ class Screen {
       for (let i = 0; i < outputHeight; i += 1) {
         const line = visible[i];
         if (line) {
-          this.visibleOutputRows.push(this.outputPlainLine(line, cols));
-          out.push(this.renderOutputLine(line, cols, this.outputTopRow + i));
+          this.visibleOutputRows.push(this.outputPlainLine(line, mainCols));
+          outputLines.push(this.renderOutputLine(line, mainCols, this.outputTopRow + i));
         } else {
           this.visibleOutputRows.push("");
-          out.push(" ".repeat(cols));
+          outputLines.push(" ".repeat(mainCols));
         }
       }
     }
-    out.push(this.statusLine(cols));
-    out.push(this.accentLine(cols));
-    out.push(this.inputLine(cols));
-    out.push(this.accentLine(cols));
+    out.push(...this.composeMainAndSide(outputLines, mainCols, sideWidth, outputHeight));
+    out.push(this.statusLine(mainCols) + (sideWidth > 0 ? paint("│", "subtle") + " ".repeat(sideWidth) : ""));
+    out.push(this.accentLine(mainCols) + (sideWidth > 0 ? paint("│", "subtle") + " ".repeat(sideWidth) : ""));
+    out.push(this.inputLine(mainCols) + (sideWidth > 0 ? paint("│", "subtle") + " ".repeat(sideWidth) : ""));
+    out.push(this.accentLine(mainCols) + (sideWidth > 0 ? paint("│", "subtle") + " ".repeat(sideWidth) : ""));
     out.push(this.cursorMove(rows, cols));
     stdout.write(out.join("\n"));
   }
@@ -373,19 +378,22 @@ class Screen {
     if (typeof data.name !== "string" && typeof data.id !== "string") return;
     const name = String(data.name ?? data.id);
     const state = String(data.status ?? "connected");
+    const existing = this.connections.findIndex((item) => item.name === name);
+    const prev = existing >= 0 ? this.connections[existing] : null;
+    // 只覆盖响应中实际存在的字段，避免 send 等操作返回的 port/baudrate 为
+    // 空字符串时把 connect 时记录的有效值覆盖掉。
     const next: ConnectionItem = {
       name,
       state,
-      port: String(data.port ?? ""),
-      baudrate: String(data.baudrate ?? ""),
+      port: data.port !== undefined ? String(data.port) : (prev?.port ?? ""),
+      baudrate: data.baudrate !== undefined ? String(data.baudrate) : (prev?.baudrate ?? ""),
       lastError: "",
     };
-    const existing = this.connections.findIndex((item) => item.name === name);
     if (state === "closed") {
-      if (existing >= 0) this.connections[existing] = { ...this.connections[existing], state: "disconnected" };
+      if (prev) this.connections[existing] = { ...prev, state: "disconnected" };
       return;
     }
-    if (existing >= 0) this.connections[existing] = { ...this.connections[existing], ...next };
+    if (prev) this.connections[existing] = { ...prev, ...next };
     else this.connections.push(next);
   }
 
@@ -449,6 +457,7 @@ class Screen {
   }
 
   beginSelection(screenRow: number, screenCol: number): boolean {
+    if (screenCol > this.outputRightCol) return false;
     const row = this.outputIndexForScreenRow(screenRow);
     if (row < 0 || row >= this.visibleOutputRows.length) return false;
     const col = this.clampSelectionCol(row, screenCol - 1);
@@ -460,7 +469,7 @@ class Screen {
   updateSelection(screenRow: number, screenCol: number): boolean {
     if (!this.selection || !this.selection.active) return false;
     const row = Math.max(0, Math.min(this.outputIndexForScreenRow(screenRow), this.visibleOutputRows.length - 1));
-    const col = this.clampSelectionCol(row, screenCol - 1);
+    const col = this.clampSelectionCol(row, Math.min(screenCol, this.outputRightCol) - 1);
     if (row !== this.selection.start.row || col !== this.selection.start.col) this.selection.dragged = true;
     this.selection.end = { row, col };
     this.updateCopyFromSelection();
@@ -561,27 +570,37 @@ class Screen {
 
   private statusLine(cols: number): string {
     const scroll = this.scrollOffset > 0 ? `  scroll +${this.scrollOffset}` : "";
-    const status = `${this.status.toLowerCase()}  connection: ${this.activeConnection}${scroll}  wheel/PgUp/PgDn output  drag select copies  ↑↓ history  Ctrl+L clear  Ctrl+Q exit`;
+    const status = `${this.status.toLowerCase()}${scroll}  wheel/PgUp/PgDn output  drag select copies  ↑↓ history  Ctrl+L clear  Ctrl+Q exit`;
     return paint(status.padStart(cols), "subtle");
   }
 
-  private connectionBar(cols: number): string {
+  private composeMainAndSide(outputLines: string[], mainCols: number, sideWidth: number, height: number): string[] {
+    if (sideWidth <= 0) return outputLines;
+    const side = this.connectionSidePanel(sideWidth, height);
+    return outputLines.map((line, index) => `${line}${paint("│", "subtle")}${side[index] ?? " ".repeat(sideWidth)}`);
+  }
+
+  private connectionSidePanel(width: number, height: number): string[] {
     const items = this.connections.length > 0
       ? this.connections
       : [{ name: this.activeConnection, state: "unknown", port: "", baudrate: "", lastError: "" }];
-    const chunks: string[] = [];
-    for (let i = 0; i < Math.min(items.length, 9); i += 1) {
-      const item = items[i];
+    const visibleItems = items.some((item) => item.name === this.activeConnection)
+      ? items
+      : [{ name: this.activeConnection, state: "unknown", port: "", baudrate: "", lastError: "" }, ...items];
+    const lines: string[] = [];
+    lines.push(" ".repeat(width));
+    lines.push(paint(pad(" Serial", width), "result_title"));
+    lines.push(paint(pad(" *  name       port", width), "subtle"));
+    for (const item of visibleItems) {
       const active = item.name === this.activeConnection;
-      const stateMark = item.state === "connected" ? "on" : item.state || "off";
-      const port = item.port ? ` ${item.port}` : "";
-      const rate = item.baudrate ? ` ${item.baudrate}` : "";
-      const label = `[${active ? "active: " : ""}${item.name} | ${stateMark}${port}${rate}]`;
-      chunks.push(label);
+      const marker = active ? "*" : " ";
+      const name = fit(item.name, 10);
+      const port = fit(item.port || "-", Math.max(width - 14, 4));
+      lines.push(paint(pad(` ${marker} ${name} ${port}`, width), "text"));
+      if (lines.length >= height) break;
     }
-    chunks.push("[new: /serial connect --name ...]");
-    const text = fit(`Connections: ${chunks.join(" ")}`, cols);
-    return paint(pad(text, cols), "command_bar");
+    while (lines.length < height) lines.push(" ".repeat(width));
+    return lines;
   }
 
   private welcomeLines(cols: number, height: number): string[] {
