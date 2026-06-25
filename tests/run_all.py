@@ -314,6 +314,53 @@ except Exception as e:
     print(f"  ✗ FAILED: {e}")
 
 
+# 6. /delay 集成测试
+def test_delay():
+    """通过 NDJSON 测试 /delay ms/s。"""
+    global failures
+    print(f"\n{'='*60}")
+    print(f"  6/6 /delay 集成测试")
+    print(f"{'='*60}")
+
+    delay_reqs = [
+        {"schema":"protocol-tui.v1","type":"command.execute","command":"/delay","args":{"value":"50ms"}},
+        {"schema":"protocol-tui.v1","type":"command.execute","command":"/delay","args":{"value":"0.1s"}},
+        {"schema":"protocol-tui.v1","type":"command.execute","command":"/delay","args":{"value":"50"}},
+        {"schema":"protocol-tui.v1","type":"command.execute","command":"/delay","args":{"value":"abc"}},
+        {"schema":"protocol-tui.v1","type":"command.execute","command":"/delay","args":{"value":"301s"}},
+    ]
+    payload = "\n".join(json.dumps(r) for r in delay_reqs) + "\n"
+    proc = subprocess.run(
+        [sys.executable, "-m", "console.ndjson"],
+        input=payload, capture_output=True, text=True,
+        timeout=15, cwd=str(ROOT),
+    )
+    lines = [l.strip() for l in proc.stdout.strip().split("\n") if l.strip()]
+    results = [json.loads(l) for l in lines]
+
+    checks = passed = 0
+    # 50ms → success
+    assert results[0]["status"] == "success"; passed += 1; checks += 1
+    assert results[0]["data"]["elapsed_ms"] >= 20; passed += 1; checks += 1
+    # 0.1s → success
+    assert results[1]["status"] == "success"; passed += 1; checks += 1
+    assert results[1]["data"]["seconds"] == 0.1; passed += 1; checks += 1
+    # 50 (default ms) → success
+    assert results[2]["status"] == "success"; passed += 1; checks += 1
+    # abc → fail
+    assert results[3]["status"] != "success"; passed += 1; checks += 1
+    # 301s → fail (exceeds max)
+    assert results[4]["status"] != "success"; passed += 1; checks += 1
+
+    print(f"  ✓ {passed}/{checks} checks passed")
+
+try:
+    test_delay()
+except Exception as e:
+    failures += 1
+    print(f"  ✗ FAILED: {e}")
+
+
 print(f"\n{'='*60}")
 if failures:
     print(f"  {failures} step(s) FAILED")

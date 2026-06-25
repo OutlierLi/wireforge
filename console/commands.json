@@ -84,6 +84,26 @@
       "--describe": "Alias for --resolve"
     }
   },
+  "delay": {
+    "desc": "Delay/wait for a duration. /delay 100 (ms) or /delay 2s",
+    "module": "console.handlers.delay",
+    "handler": "handle",
+    "enabled": true,
+    "params": {
+      "value": {
+        "type": "str",
+        "required": true,
+        "desc": "时长，默认 ms，支持 s 后缀",
+        "examples": [
+          "100",
+          "500ms",
+          "2s",
+          "1.5s"
+        ]
+      }
+    },
+    "sub_commands": {}
+  },
   "decode": {
     "desc": "Decode raw hex frame to structured fields and route path",
     "module": "console.handlers.decode",

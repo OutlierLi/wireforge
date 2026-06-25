@@ -378,47 +378,47 @@ class TestSerial:
 
     def test_send_ascii_display_format(self):
         exec_cmd("serial", {"sub": "connect", "port": "mock://loop", "display": "ascii"})
-        r = exec_cmd("serial", {"sub": "send", "hex": "48 65 6C 6C 6F"})
+        r = exec_cmd("serial", {"sub": "send", "hex": "48 65 6C 6C 6F", "name": "default"})
         _ok(r, "send ascii display")
         assert r["data"]["display"] == "ascii"
         assert r["data"]["received"] == "Hello", f"expected 'Hello', got '{r['data']['received']}'"
 
     def test_send_default_hex_format(self):
+        exec_cmd("serial", {"sub": "close"})
         exec_cmd("serial", {"sub": "connect", "port": "mock://loop"})
-        r = exec_cmd("serial", {"sub": "send", "hex": "48 65 6C 6C 6F"})
+        r = exec_cmd("serial", {"sub": "send", "hex": "48 65 6C 6C 6F", "name": "default"})
         _ok(r)
         assert r["data"]["display"] == "hex"
         assert r["data"]["received"] == "48 65 6C 6C 6F"
 
     def test_set_display_persists(self):
+        exec_cmd("serial", {"sub": "close"})
         exec_cmd("serial", {"sub": "connect", "port": "mock://loop", "display": "ascii"})
         exec_cmd("serial", {"sub": "close"})
         r = exec_cmd("serial", {"sub": "open"})
         _ok(r)
-        r2 = exec_cmd("serial", {"sub": "send", "hex": "41 42 43"})
+        r2 = exec_cmd("serial", {"sub": "send", "hex": "41 42 43", "name": "default"})
         _ok(r2)
-        # open 后应保留 ascii 设置
         assert r2["data"]["display"] == "ascii"
         assert "ABC" in r2["data"]["received"]
 
     def test_set_display_via_set_command(self):
+        exec_cmd("serial", {"sub": "close"})
         exec_cmd("serial", {"sub": "connect", "port": "mock://loop"})
         r = exec_cmd("serial", {"sub": "set", "display": "ascii"})
         _ok(r)
         assert "ascii" in str(r["data"]["updated"])
-        # 需重连生效
         exec_cmd("serial", {"sub": "open"})
-        r2 = exec_cmd("serial", {"sub": "send", "hex": "41 42 43"})
+        r2 = exec_cmd("serial", {"sub": "send", "hex": "41 42 43", "name": "default"})
         _ok(r2)
         assert r2["data"]["display"] == "ascii"
         assert r2["data"]["received"] == "ABC"
 
     def test_send_ascii_control_chars(self):
-        """ASCII 模式下控制字符显示为转义形式"""
+        exec_cmd("serial", {"sub": "close"})
         exec_cmd("serial", {"sub": "connect", "port": "mock://loop", "display": "ascii"})
-        r = exec_cmd("serial", {"sub": "send", "hex": "0D 0A 09 01"})
+        r = exec_cmd("serial", {"sub": "send", "hex": "0D 0A 09 01", "name": "default"})
         _ok(r)
-        # \\r\\n\\t 转义，非打印字符为 .
         assert "\\r" in r["data"]["received"]
         assert "\\n" in r["data"]["received"]
         assert "\\t" in r["data"]["received"]
@@ -986,7 +986,66 @@ class TestBuildFromFrame:
 
 
 # ═══════════════════════════════════════════════════════════════
-# 15. 跨协议路径测试
+# 15. /delay — 延时等待
+# ═══════════════════════════════════════════════════════════════
+
+class TestDelay:
+    """覆盖: /delay — ms + s + 边界 + 非法输入"""
+
+    def test_delay_ms_default(self):
+        import time
+        start = time.monotonic()
+        r = exec_cmd("delay", {"value": "50"})
+        elapsed = time.monotonic() - start
+        _ok(r)
+        assert r["data"]["elapsed_ms"] >= 30, "should delay at least 30ms"
+        assert elapsed >= 0.04, "should have waited"
+
+    def test_delay_with_ms_suffix(self):
+        r = exec_cmd("delay", {"value": "100ms"})
+        _ok(r)
+        assert r["data"]["seconds"] == 0.1
+        assert r["data"]["elapsed_ms"] >= 50
+
+    def test_delay_with_s_suffix(self):
+        r = exec_cmd("delay", {"value": "0.2s"})
+        _ok(r)
+        assert r["data"]["seconds"] == 0.2
+        assert r["data"]["elapsed_ms"] >= 100
+
+    def test_delay_decimal_seconds(self):
+        r = exec_cmd("delay", {"value": "1.5s"})
+        _ok(r)
+        assert r["data"]["seconds"] == 1.5
+
+    def test_delay_invalid_format(self):
+        r = exec_cmd("delay", {"value": "abc"})
+        _fail(r, "invalid format")
+
+    def test_delay_negative(self):
+        r = exec_cmd("delay", {"value": "-1s"})
+        _fail(r, "negative")
+
+    def test_delay_exceeds_max(self):
+        r = exec_cmd("delay", {"value": "301s"})
+        _fail(r, "exceeds max")
+
+    def test_delay_missing_value(self):
+        r = exec_cmd("delay", {})
+        _fail(r, "missing value")
+
+    def test_command_registered(self):
+        names = [c["name"] for c in list_cmds()]
+        assert "delay" in names, "/delay not registered"
+
+    def test_help_delay(self):
+        r = exec_cmd("help", {"target": "/delay"})
+        _ok(r)
+        assert r["data"]["command"] == "/delay"
+
+
+# ═══════════════════════════════════════════════════════════════
+# 16. 跨协议路径测试
 # ═══════════════════════════════════════════════════════════════
 
 class TestCrossProtocol:
