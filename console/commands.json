@@ -249,5 +249,59 @@
         ]
       }
     }
+  },
+  "upg": {
+    "desc": "Firmware upgrade via CSG AFN=07 file transfer",
+    "module": "console.handlers.upg",
+    "handler": "handle",
+    "enabled": true,
+    "params": {
+      "file": {
+        "type": "str",
+        "required": true,
+        "desc": "Firmware file path",
+        "examples": [
+          "database/bin/firmware_v2.bin"
+        ]
+      },
+      "segment-size": {
+        "type": "int",
+        "required": false,
+        "desc": "Segment size (128/256/512/1024)",
+        "examples": [
+          1024,
+          512
+        ],
+        "default": 1024
+      },
+      "timeout": {
+        "type": "int",
+        "required": false,
+        "desc": "Per-segment timeout (seconds)",
+        "examples": [
+          5,
+          10
+        ],
+        "default": 5
+      },
+      "retries": {
+        "type": "int",
+        "required": false,
+        "desc": "Retries per segment",
+        "examples": [
+          3
+        ],
+        "default": 3
+      },
+      "dest": {
+        "type": "str",
+        "required": false,
+        "desc": "Destination address",
+        "examples": [
+          "000000000000"
+        ]
+      }
+    },
+    "sub_commands": {}
   }
 }
