@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from serial.api import (
+from wireforge_serial.api import (
     active_connection,
     get_connection_settings,
     serial_close,

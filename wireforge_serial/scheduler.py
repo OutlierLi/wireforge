@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from typing import Protocol
 
-from serial.rules import RuleMatchResult
+from wireforge_serial.rules import RuleMatchResult
 
 
 class ActionTransport(Protocol):

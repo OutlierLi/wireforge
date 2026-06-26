@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from serial.api import serial_open, serial_send, serial_close, serial_ports
+from wireforge_serial.api import serial_open, serial_send, serial_close, serial_ports
 from console.response import missing_param
 
 

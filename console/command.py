@@ -25,7 +25,7 @@ from typing import Any, Callable
 class Command:
     name: str
     desc: str = ""
-    module: str = ""    # "serial.api"
+    module: str = ""    # "wireforge_serial.api"
     handler: str = ""   # "serial_open"
     enabled: bool = True
     params: dict[str, Any] = field(default_factory=dict)

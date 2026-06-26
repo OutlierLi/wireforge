@@ -82,7 +82,7 @@ def handle(args: dict[str, Any]) -> dict:
         return ok(results)
 
     # 检查串口
-    from serial.api import get_connection
+    from wireforge_serial.api import get_connection
     conn_name = str(args.get("name") or args.get("id") or "default")
     results["name"] = conn_name
     transport = get_connection(conn_name)

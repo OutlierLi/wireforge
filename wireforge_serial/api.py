@@ -10,7 +10,7 @@ from datetime import datetime
 import re
 from typing import Any
 
-from serial.transport import SerialTransport, SerialSettings
+from wireforge_serial.transport import SerialTransport, SerialSettings
 from protocol_tool.utils.logger import log_serial
 
 # 全局连接实例

@@ -11,14 +11,47 @@ YAML 驱动的协议解析与构造框架。支持 DL/T 645-2007、CSG 2016、Q/
 ### 安装
 
 ```bash
-cd protocol_tool
-pip install --break-system-packages pyyaml typer rich
+cd wireforge
+pip install -e .
 ```
 
 或者用 uv：
 
 ```bash
 uv sync
+```
+
+### 普通终端控制台
+
+不需要 TUI，也不接管鼠标或全屏缓冲区，适合 Windows Terminal、PowerShell、cmd 和普通 SSH 终端。
+
+开发环境直接运行：
+
+```bash
+python3 -m console.terminal
+```
+
+Windows 可使用：
+
+```powershell
+py -m console.terminal
+```
+
+安装后也可以运行脚本入口：
+
+```bash
+wireforge-terminal
+```
+
+进入后使用现有命令，例如：
+
+```text
+/help
+/serial ports
+/serial connect --name cco --port COM3 --baudrate 9600
+/serial use --name cco
+/serial send --hex "68 00 16"
+/exit
 ```
 
 ### 编译协议
