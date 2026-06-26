@@ -15,6 +15,8 @@ build/
 # Node
 node_modules/
 .wireforge_history
+.wireforge_terminal_history
+agent_protocol_runs/
 
 # Virtual environment
 .venv/

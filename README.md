@@ -54,6 +54,79 @@ wireforge-terminal
 /exit
 ```
 
+### OpenCode MCP 服务
+
+WireForge 提供一个面向 Agent 的 MCP Server，用于处理“自然语言 → 协议任务 → JSON 请求 → 执行结果”。MCP 内部维护可恢复状态机，不要求 Agent 拼接 `/build ...` 或 `/serial ...` 命令文本。
+
+直接启动：
+
+```bash
+python3 scripts/python/wireforge_mcp_server.py
+```
+
+Windows：
+
+```powershell
+py scripts\python\wireforge_mcp_server.py
+```
+
+安装后也可以使用脚本入口：
+
+```bash
+wireforge-mcp-server
+```
+
+OpenCode MCP 配置示例：
+
+```json
+{
+  "mcp": {
+    "wireforge": {
+      "type": "local",
+      "command": ["python3", "scripts/python/wireforge_mcp_server.py"],
+      "enabled": true
+    }
+  }
+}
+```
+
+暴露工具：
+
+- `protocol_task_run`
+
+调用方式：
+
+```json
+{
+  "raw_input": "构造 dlt645 功能码 13 address AAAAAAAAAAAA"
+}
+```
+
+若返回 `WAITING_INPUT`，上层 Agent 只需要向用户询问缺失字段，再用同一个 `run_id` 补充：
+
+```json
+{
+  "run_id": "<run_id>",
+  "user_input": {
+    "proto": "dlt645",
+    "func": "13",
+    "address": "AAAAAAAAAAAA"
+  }
+}
+```
+
+每次运行会写入：
+
+```text
+agent_protocol_runs/<run_id>/
+  raw_input
+  context.json
+  task_plan.json
+  state.json
+  events
+  result.json
+```
+
 ### 编译协议
 
 将 YAML 协议定义编译为运行时 IR：
