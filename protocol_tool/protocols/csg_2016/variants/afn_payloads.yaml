@@ -223,8 +223,21 @@ variants:
           type: ascii
           length: 2
         - name: version_date
-          type: bcd
-          length: 3
+          type: struct
+          description: "版本日期 (YYMMDD)"
+          fields:
+            - name: year
+              type: bcd
+              length: 1
+              description: "年"
+            - name: month
+              type: bcd
+              length: 1
+              description: "月"
+            - name: day
+              type: bcd
+              length: 1
+              description: "日"
         - name: version
           type: bcd
           length: 2
@@ -426,8 +439,33 @@ variants:
       type: struct
       fields:
         - name: datetime
-          type: bcd
-          length: 6
+          type: struct
+          description: "集中器当前时间 (ssmmhhDDMMYY)"
+          fields:
+            - name: second
+              type: bcd
+              length: 1
+              description: "秒"
+            - name: minute
+              type: bcd
+              length: 1
+              description: "分"
+            - name: hour
+              type: bcd
+              length: 1
+              description: "时"
+            - name: day
+              type: bcd
+              length: 1
+              description: "日"
+            - name: month
+              type: bcd
+              length: 1
+              description: "月"
+            - name: year
+              type: bcd
+              length: 1
+              description: "年"
 
   # ═══════════════════════════════════════════════════════
   # AFN=07H 文件传输 → afn07_di_router

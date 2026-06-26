@@ -180,18 +180,15 @@ def _collect_input_fields(ir, leaf, leaf_id) -> list[InputField]:
                    "sum8", "xor8", "crc16_modbus", "crc16_ccitt", "crc8"):
             continue  # 固定/计算字段
         elif t == "struct":
-            children = []
+            # 展开 struct 子字段为扁平 dotted name (如 datetime.second)
             for sf in lf.params.get("fields", []):
-                children.append(InputField(
-                    name=sf.get("name", "?"),
+                fields.append(InputField(
+                    name=f"{lf.name}.{sf.get('name', '?')}",
                     type=sf.get("type", "uint8"),
                     required=True,
                     length=sf.get("length"),
+                    desc=sf.get("description", ""),
                 ))
-            fields.append(InputField(
-                name=lf.name, type="struct", required=False,
-                children=children, desc=lf.params.get("description", ""),
-            ))
         else:
             required = not lf.optional
             extra: dict[str, Any] = {}
@@ -361,6 +358,24 @@ def encode(target: BuildTarget, user_values: dict[str, Any]) -> str:
     if "di" in ti:
         info["di"] = str(ti["di"])
 
+    # 将 dotted key 嵌套为 struct: datetime.second → {datetime: {second: ...}}
+    fv = _nest_dotted(fv)
+
     r = be.build(fv, info=info)
     de.decode(r.frame)  # 验证
     return r.frame_hex
+
+
+def _nest_dotted(values: dict[str, Any]) -> dict[str, Any]:
+    """将 dotted key 嵌套为 dict。"""
+    result: dict[str, Any] = {}
+    for key, val in values.items():
+        if "." in key:
+            parent, child = key.split(".", 1)
+            if parent not in result or not isinstance(result[parent], dict):
+                result[parent] = {}
+            result[parent][child] = val
+        else:
+            if key not in result:
+                result[key] = val
+    return result

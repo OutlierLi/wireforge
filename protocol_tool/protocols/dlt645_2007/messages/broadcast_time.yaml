@@ -12,5 +12,30 @@ messages:
       type: struct
       fields:
         - name: datetime
-          type: datetime_ymdhms
+          type: struct
           description: "当前时间 (YYMMDDhhmmss)"
+          fields:
+            - name: year
+              type: bcd
+              length: 1
+              description: "年"
+            - name: month
+              type: bcd
+              length: 1
+              description: "月"
+            - name: day
+              type: bcd
+              length: 1
+              description: "日"
+            - name: hour
+              type: bcd
+              length: 1
+              description: "时"
+            - name: minute
+              type: bcd
+              length: 1
+              description: "分"
+            - name: second
+              type: bcd
+              length: 1
+              description: "秒"
