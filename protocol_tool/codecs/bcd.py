@@ -39,8 +39,8 @@ class BcdCodec(FieldCodec):
         raw = reader.read(length)
 
         # Byte order
-        byte_order = field.params.get("byte_order", "big")
-        if byte_order in ("little", "little_endian", "reverse"):
+        byte_order = field.params.get("byte_order", "little")
+        if byte_order not in ("big", "big_endian"):
             raw = raw[::-1]
 
         # Decode nibbles
@@ -86,8 +86,8 @@ class BcdCodec(FieldCodec):
         )
 
         # Byte order
-        byte_order = field.params.get("byte_order", "big")
-        if byte_order in ("little", "little_endian", "reverse"):
+        byte_order = field.params.get("byte_order", "little")
+        if byte_order not in ("big", "big_endian"):
             raw = raw[::-1]
 
         writer.write(raw)

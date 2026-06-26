@@ -31,19 +31,29 @@ class TestUIntCodec:
 
 class TestBcdCodec:
     def test_decode(self):
+        """默认 LE: 线缆 [0x56, 0x34, 0x12] → 反转 → 解码 → "123456" """
         c = BcdCodec()
         f = FieldNode(id="x", name="x", type_ref="bcd", length=3)
-        r = DecodeReader(bytes([0x12, 0x34, 0x56]), 0)
+        r = DecodeReader(bytes([0x56, 0x34, 0x12]), 0)
         assert c.decode(f, r, DecodeContext()) == "123456"
 
     def test_encode(self):
+        """默认 LE: "123456" → 编码 → 反转 → 线缆 [0x56, 0x34, 0x12] """
         c = BcdCodec()
         f = FieldNode(id="x", name="x", type_ref="bcd", length=3)
         w = ByteWriter()
         c.encode(f, "123456", w, BuildContext())
-        assert w.bytes() == bytes([0x12, 0x34, 0x56])
+        assert w.bytes() == bytes([0x56, 0x34, 0x12])
+
+    def test_big_endian_explicit(self):
+        """显式 BE: 不做反转"""
+        c = BcdCodec()
+        f = FieldNode(id="x", name="x", type_ref="bcd", params={"byte_order": "big"}, length=3)
+        r = DecodeReader(bytes([0x12, 0x34, 0x56]), 0)
+        assert c.decode(f, r, DecodeContext()) == "123456"
 
     def test_little_endian_decode(self):
+        """显式 LE: 与默认行为一致"""
         c = BcdCodec()
         f = FieldNode(id="x", name="x", type_ref="bcd", params={"byte_order": "little"}, length=3)
         r = DecodeReader(bytes([0x56, 0x34, 0x12]), 0)
