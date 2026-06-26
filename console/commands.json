@@ -310,6 +310,61 @@
       }
     }
   },
+  "route": {
+    "desc": "Resolve route path and input schema for target. Agent calls this before /build.",
+    "module": "console.handlers.route",
+    "handler": "handle",
+    "enabled": true,
+    "params": {
+      "proto": {
+        "type": "choice",
+        "required": true,
+        "desc": "协议类型",
+        "examples": [
+          "dlt645",
+          "csg"
+        ]
+      },
+      "func": {
+        "type": "hex",
+        "required": false,
+        "desc": "功能码 (DLT645)",
+        "examples": [
+          "0x11",
+          "0x13"
+        ]
+      },
+      "afn": {
+        "type": "hex",
+        "required": false,
+        "desc": "应用功能码 (CSG)",
+        "examples": [
+          "0x00",
+          "0x06"
+        ]
+      },
+      "di": {
+        "type": "str",
+        "required": false,
+        "desc": "数据标识DI",
+        "examples": [
+          "00010000",
+          "E8010601"
+        ]
+      },
+      "dir": {
+        "type": "choice",
+        "required": false,
+        "desc": "传输方向",
+        "examples": [
+          "downlink",
+          "uplink"
+        ],
+        "default": "downlink"
+      }
+    },
+    "sub_commands": {}
+  },
   "print": {
     "desc": "Print text with variable interpolation. ${name} / ${object.field}",
     "module": "console.handlers.print",

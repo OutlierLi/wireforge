@@ -183,14 +183,16 @@ class TestBuildFailMissingParam:
         _fail(r)
 
     def test_missing_business_fields_shows_detail(self):
-        """645 上行需要 freeze_* 字段"""
+        """645 上行需要 freeze_* 字段 — 返回 route_required + schema"""
         r = exec_cmd("build", {
             "proto": "dlt645", "func": "0x11", "di": "00010000", "dir": "uplink",
         })
         _fail(r)
-        # need_input 状态时字段在 input_schema 中
-        schema = r.get("input_schema", r.get("detail", {}).get("missing", []))
-        keys = [m["key"] for m in schema]
+        assert r["status"] == "route_required"
+        detail = r.get("detail", {})
+        assert detail["required_step"] == "route"
+        schema = detail.get("input_schema", [])
+        keys = [m["name"] for m in schema]
         assert "freeze_year" in keys, f"should require freeze_year, got: {keys}"
 
 

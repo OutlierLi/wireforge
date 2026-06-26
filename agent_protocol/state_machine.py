@@ -31,6 +31,7 @@ RunState = Literal[
     "INIT",
     "CONTEXT_READY",
     "PLAN_READY",
+    "ROUTING",
     "EXECUTING",
     "WAITING_INPUT",
     "FAILED",
@@ -177,6 +178,12 @@ def _advance(record: RunRecord) -> None:
         _append_event(record, "plan_ready", plan_result["log"])
 
     if record.state == "PLAN_READY":
+        record.state = "ROUTING"
+
+    if record.state == "ROUTING":
+        if "BUILD" in record.task_plan.tasks:
+            if not _execute_route(record):
+                return
         record.state = "EXECUTING"
 
     if record.state == "EXECUTING":
@@ -565,6 +572,57 @@ def _ensure_build_route(record: RunRecord) -> bool:
     return False
 
 
+def _execute_route(record: RunRecord) -> bool:
+    """ROUTING 状态：调用 /route 获取真实 schema，映射字段到正确的 dotted name。"""
+    from console.handlers.route import handle as route_handle
+
+    route_args: dict[str, Any] = {}
+    for key in ("proto", "func", "afn", "di", "dir"):
+        val = record.facts.get(key)
+        if val is not None and val != "":
+            route_args[key] = val
+
+    record.results["route_request"] = dict(route_args)
+    _append_event(record, "route_request", _redact_large(route_args))
+
+    response = route_handle(route_args)
+    _append_event(record, "route_result", {"summary": _result_summary(response), "result": response})
+
+    if not response.get("success"):
+        record.state = "FAILED"
+        record.error = f"route failed: {response.get('error')}"
+        _append_event(record, "failed", {"task": "ROUTE", "error": record.error})
+        return False
+
+    data = response.get("data") or {}
+    schema = data.get("input_schema") or []
+    record.results["route"] = data
+
+    if not schema:
+        return True  # 无业务字段，不需要映射
+
+    # 映射 facts 中的字段到 schema 的 dotted name
+    _append_event(record, "route_mapping",
+                  {"input_schema": [f["name"] for f in schema],
+                   "facts_fields": record.facts.get("fields", {})})
+
+    mapped = _map_fields_via_route(record, schema)
+    if mapped:
+        # 清除旧字段名，将 mapped 放入 fields 以便 _build_request 读取
+        old_keys = _old_field_keys_from_schema(schema)
+        fields_dict = dict(record.facts.get("fields") or {})
+        for old_key in old_keys:
+            fields_dict.pop(old_key, None)
+            record.facts.pop(old_key, None)
+        fields_dict.update(mapped)  # 新 dotted 字段放入 fields
+        record.facts["fields"] = fields_dict
+        record.facts.update(mapped)
+        _append_event(record, "route_mapped", {"mapped": mapped, "removed": list(old_keys),
+                                                "fields": fields_dict})
+
+    return True
+
+
 def _execute_build(record: RunRecord) -> bool:
     request = _build_request(record.facts)
     record.results["build_request"] = request
@@ -691,6 +749,79 @@ def _complete_task(record: RunRecord, task: TaskType) -> None:
     _append_event(record, "task_completed", {"task": label})
 
 
+def _map_fields_via_route(record: RunRecord, schema: list[dict[str, Any]]) -> dict[str, Any]:
+    """根据 route 返回的 input_schema 将 facts 中的字段映射为正确的 dotted name。
+
+    对于时间类 struct 字段（含 second/minute/hour/day/month/year 子字段），
+    优先用当前时间生成值，不依赖 RAG 的 monolithic datetime 字符串。
+    """
+    from datetime import datetime
+
+    result: dict[str, Any] = {}
+    user_fields = dict(record.facts.get("fields") or {})
+    deterministic = dict(record.context.get("deterministic_fields") or {})
+    has_time_request = any("时间" in str(record.raw_input) or "time" in str(record.raw_input).lower()
+                           for _ in [1])
+    now = datetime.now() if has_time_request else None
+
+    # 收集每个 parent 的所有子字段
+    parents: dict[str, list[dict[str, Any]]] = {}
+    for field in schema:
+        name = str(field.get("name") or "")
+        if "." in name:
+            parent, child = name.split(".", 1)
+            parents.setdefault(parent, []).append(field)
+
+    for parent, sub_fields in parents.items():
+        # 判断是否为时间类型（子字段包含 second/minute/hour/day/month/year 等）
+        child_names = {str(f.get("name","")).split(".",1)[-1] for f in sub_fields}
+        time_children = child_names & {"second", "minute", "hour", "day", "month", "year"}
+        is_time = len(time_children) >= 3
+
+        if is_time and now:
+            # 用当前时间填充
+            time_map = {"year": str(now.year % 100).zfill(2),
+                       "month": str(now.month).zfill(2),
+                       "day": str(now.day).zfill(2),
+                       "hour": str(now.hour).zfill(2),
+                       "minute": str(now.minute).zfill(2),
+                       "second": str(now.second).zfill(2)}
+            for field in sub_fields:
+                name = str(field.get("name") or "")
+                child = name.split(".", 1)[-1]
+                if child in time_map:
+                    result[name] = time_map[child]
+            continue
+
+        # 非时间字段：尝试从 user_fields 中获取
+        parent_value = user_fields.get(parent) or deterministic.get(parent) or record.facts.get(parent)
+        if isinstance(parent_value, str) and len(parent_value) >= 2:
+            chunks = _split_time_value(parent_value, schema, parent)
+            if chunks:
+                result.update(chunks)
+                continue
+
+        for field in sub_fields:
+            name = str(field.get("name") or "")
+            child = name.split(".", 1)[-1]
+            if child in user_fields:
+                result[name] = user_fields[child]
+            elif child in record.facts:
+                result[name] = record.facts[child]
+
+    return result
+
+
+def _old_field_keys_from_schema(schema: list[dict[str, Any]]) -> set[str]:
+    """从 schema 中提取父级字段名（dotted name 的第一段）。"""
+    parents: set[str] = set()
+    for field in schema:
+        name = str(field.get("name") or "")
+        if "." in name:
+            parents.add(name.split(".", 1)[0])
+    return parents
+
+
 def _build_request(facts: dict[str, Any]) -> dict[str, Any]:
     allowed = {
         "proto", "func", "afn", "di", "dir", "direction", "address", "preamble",
@@ -774,7 +905,7 @@ def _find_decoded_field(decode: dict[str, Any], field: str) -> Any:
             return
         if isinstance(value, dict):
             for child_key, child_value in value.items():
-                if str(child_key).split(".")[-1] == field:
+                if str(child_key).split(".")[-1] in (field, field.split(".")[-1]):
                     found = child_value
                     return
                 visit(child_value, str(child_key))

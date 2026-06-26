@@ -33,7 +33,7 @@ SCHEMA_VERSION = "protocol-tui.v1"
 ResponseKind = Literal[
     "success", "need_input", "need_disambiguation",
     "invalid_argument", "no_route", "execution_error",
-    "session_closed",
+    "session_closed", "route_required",
 ]
 
 

@@ -260,6 +260,16 @@ class Runtime:
         error = result.get("error", "")
         detail = result.get("detail", {})
 
+        # route_required → agent 必须先调 /route
+        if result.get("status") == "route_required":
+            return {
+                "schema": "protocol-tui.v1",
+                "status": "route_required",
+                "error": error,
+                "detail": detail,
+                "path": result.get("path", ""),
+            }
+
         # missing required params → need_input
         missing = detail.get("missing", [])
         if missing:

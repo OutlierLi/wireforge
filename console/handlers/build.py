@@ -106,22 +106,36 @@ def handle(args: dict[str, Any]) -> dict:
         return {"success": True, "data": target.to_dict()}
 
     schema_names = {f.name for f in target.input_schema}
+    schema_list = [{"name": f.name, "type": f.type, "required": f.required,
+                    "desc": f.desc} for f in target.input_schema]
     for k, v in target_info.items():
         if k in schema_names and k not in business_values:
             business_values[k] = v
 
-    has_required = any(f.required for f in target.input_schema)
-    if not business_values and has_required:
-        required = [f.name for f in target.input_schema if f.required]
+    # ── 校验：检测字段不匹配 → 要求先调 /route ──
+    unknown_fields = [k for k in business_values if k not in schema_names]
+    missing_required = [f for f in target.input_schema
+                        if f.required and f.name not in business_values]
+
+    if unknown_fields or missing_required:
+        detail: dict[str, Any] = {
+            "input_schema": [f.to_dict() for f in target.input_schema],
+            "required_step": "route",
+            "hint": "必须先调用 /route 获取正确的字段 schema，然后按 schema 填充字段值",
+        }
+        if unknown_fields:
+            detail["unknown_fields"] = unknown_fields
+            detail["error"] = f"未识别的字段: {', '.join(unknown_fields)}。字段名已变更，请通过 /route 确认当前 schema"
+        if missing_required:
+            detail["missing_required"] = [f.name for f in missing_required]
+            if not unknown_fields:
+                detail["error"] = "缺少必填字段，请通过 /route 确认当前 schema"
+
         return {
             "success": False,
-            "error": "missing required fields",
-            "detail": {
-                "missing": [{"key": f.name, "type": f.type,
-                             "desc": f.desc, "values": f.enum_values}
-                            for f in target.input_schema if f.required],
-                "hint": "use --resolve to see full input_schema",
-            },
+            "status": "route_required",
+            "error": detail.get("error", "字段不匹配，请先调用 /route"),
+            "detail": detail,
             "path": target.path,
         }
 
@@ -140,11 +154,20 @@ def handle(args: dict[str, Any]) -> dict:
         err = str(e)
         import re
         missing = re.findall(r"Required field '(\w+)'", err)
-        detail: dict = {}
+        detail = {
+            "input_schema": [f.to_dict() for f in target.input_schema],
+            "required_step": "route",
+            "hint": "必须先调用 /route 获取正确的字段 schema，然后按 schema 填充字段值",
+        }
         if missing:
-            detail["missing"] = [{"key": m} for m in missing]
-            detail["hint"] = "use --resolve to see input_schema"
-        return {"success": False, "error": err, "detail": detail, "path": target.path}
+            detail["missing_required"] = missing
+        return {
+            "success": False,
+            "status": "route_required",
+            "error": err,
+            "detail": detail,
+            "path": target.path,
+        }
 
 
 def _handle_from_frame(args: dict[str, Any], hex_text: str, set_overrides: dict) -> dict:
