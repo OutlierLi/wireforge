@@ -11,6 +11,7 @@ from agent_protocol import run_agent_protocol
 
 SERVER_NAME = "wireforge-protocol-agent"
 SERVER_VERSION = "0.1.0"
+_FRAMING_MODE = "content-length"
 
 TOOLS: list[dict[str, Any]] = [
     {
@@ -45,6 +46,8 @@ def main() -> int:
 
 
 def serve(input_stream: BinaryIO, output_stream: BinaryIO) -> int:
+    global _FRAMING_MODE
+    _FRAMING_MODE = "content-length"
     while True:
         message = _read_message(input_stream)
         if message is None:
@@ -134,10 +137,16 @@ Tool: `protocol_task_run`
 
 
 def _read_message(stream: BinaryIO) -> dict[str, Any] | None:
+    global _FRAMING_MODE
     first = stream.readline()
     if not first:
         return None
+    stripped = first.strip()
+    if stripped.startswith(b"{"):
+        _FRAMING_MODE = "json-lines"
+        return json.loads(stripped.decode("utf-8"))
     if first.lower().startswith(b"content-length:"):
+        _FRAMING_MODE = "content-length"
         length = int(first.split(b":", 1)[1].strip())
         while True:
             line = stream.readline()
@@ -147,12 +156,15 @@ def _read_message(stream: BinaryIO) -> dict[str, Any] | None:
         if not body:
             return None
         return json.loads(body.decode("utf-8"))
-    return json.loads(first.decode("utf-8"))
+    return json.loads(stripped.decode("utf-8"))
 
 
 def _write_message(stream: BinaryIO, message: dict[str, Any]) -> None:
     body = json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    stream.write(b"Content-Length: " + str(len(body)).encode("ascii") + b"\r\n\r\n" + body)
+    if _FRAMING_MODE == "json-lines":
+        stream.write(body + b"\n")
+    else:
+        stream.write(b"Content-Length: " + str(len(body)).encode("ascii") + b"\r\n\r\n" + body)
     stream.flush()
 
 

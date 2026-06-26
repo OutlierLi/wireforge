@@ -127,6 +127,22 @@ agent_protocol_runs/<run_id>/
   result.json
 ```
 
+同时会追加全局 workflow 日志：
+
+```text
+log/agent_protocol_workflow.log
+```
+
+每一步都是带时间戳的文本段落，只记录该步骤新增的信息：用户原文、扩展上下文、识别到的任务类型、线性 task plan、底层 build/decode/send 调用、调用结果、等待输入/失败原因和最终结果。
+
+协议知识库来源集中在 `database/protocols/<protocol>/doc` 和 `protocol_tool/protocols`。MCP 进入后会先检索知识库，把最相关的协议文档片段和结构化 YAML 片段放入上下文，再做任务判断、构造/解析和 decode 校验。
+
+重建知识库索引：
+
+```bash
+python3 scripts/python/knowledge_kb_cli.py ingest --rebuild
+```
+
 ### 编译协议
 
 将 YAML 协议定义编译为运行时 IR：

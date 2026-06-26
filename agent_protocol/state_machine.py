@@ -17,11 +17,14 @@ from typing import Any, Literal
 
 from console.handlers import build as build_handler
 from console.handlers import decode as decode_handler
+from knowledge_base.store import search as kb_search
 from wireforge_serial.api import get_connection, serial_send
 
 
 ROOT = Path(__file__).resolve().parent.parent
 RUNS_DIR = ROOT / "agent_protocol_runs"
+LOG_DIR = ROOT / "log"
+WORKFLOW_LOG = LOG_DIR / "agent_protocol_workflow.log"
 
 TaskType = Literal["BUILD", "DECODE", "SEND"]
 RunState = Literal[
@@ -131,6 +134,12 @@ def run_agent_protocol(
         record.error = str(exc)
         _append_event(record, "failed_exception", {"error": str(exc)})
 
+    _append_event(record, "round_exit", {
+        "final_state": record.state,
+        "waiting_input": record.waiting_input,
+        "error": record.error,
+        "final_result": record.results,
+    })
     _save(record)
     return {
         "run_id": record.run_id,
@@ -142,12 +151,13 @@ def run_agent_protocol(
         "results": record.results,
         "error": record.error,
         "log_dir": str(_run_dir(record.run_id)),
+        "workflow_log": str(WORKFLOW_LOG),
     }
 
 
 def _advance(record: RunRecord) -> None:
     if record.state == "INIT":
-        record.context = MarkdownContextProvider().build_context(record.raw_input)
+        record.context = RagContextProvider().build_context(record.raw_input)
         record.state = "CONTEXT_READY"
         _write_json(record, "context", record.context)
         _append_event(record, "context_ready", _context_summary(record.context))
@@ -173,32 +183,25 @@ def _advance(record: RunRecord) -> None:
         _execute_until_blocked(record)
 
 
-class MarkdownContextProvider:
-    """Read local markdown/protocol files and produce a stable context shape."""
+class RagContextProvider:
+    """Retrieve protocol knowledge chunks and produce a stable context shape."""
 
     def __init__(self, root: Path = ROOT):
         self.root = root
 
     def build_context(self, raw_input: str) -> dict[str, Any]:
-        text = raw_input.lower()
-        sources: list[str] = []
-        hints: list[dict[str, Any]] = []
-
-        readme = self.root / "README.md"
-        if readme.exists():
-            sources.append(str(readme))
-
-        protocol_root = self.root / "protocol_tool" / "protocols"
-        if protocol_root.exists():
-            sources.append(str(protocol_root / "registry.yaml"))
-
-        if any(word in text for word in ["同步", "校时", "时钟", "time", "clock"]):
-            hints.append({
-                "kind": "capability",
-                "summary": "用户可能需要构造时间同步/校时报文；必须由明确协议和路由确认后才能构造。",
-                "fields": ["proto", "route", "time", "address"],
-                "certainty": "candidate",
-            })
+        initial = kb_search(raw_input, top_k=6)
+        protocol_tag = _dominant_protocol_tag(initial.get("results") or [])
+        expanded_query = _expanded_context_query(raw_input)
+        focused = kb_search(expanded_query, top_k=20, tag=protocol_tag) if protocol_tag else {"results": []}
+        chunks = _merge_chunks(list(initial.get("results") or []) + list(focused.get("results") or []))
+        sources = _context_sources(chunks)
+        deterministic_fields: dict[str, Any] = {}
+        if _mentions_current_time(raw_input):
+            deterministic_fields["datetime"] = datetime.now().strftime("%y%m%d%H%M%S")
+        facts = _facts_from_retrieved_context(raw_input, chunks, deterministic_fields)
+        task_intents = _task_intents(raw_input)
+        hints = _context_hints(chunks, facts)
         if re.search(r"\bCOM\d+\b", raw_input, re.IGNORECASE):
             hints.append({
                 "kind": "serial",
@@ -208,19 +211,243 @@ class MarkdownContextProvider:
             })
 
         return {
-            "provider": "MarkdownContextProvider",
+            "provider": "RagContextProvider",
             "sources": sources,
-            "summary": "; ".join(item["summary"] for item in hints) or "未找到明确协议任务上下文。",
+            "summary": "; ".join(item["summary"] for item in hints) or "知识库未返回明确协议上下文。",
             "hints": hints,
+            "retrieved": [_context_chunk_summary(chunk) for chunk in chunks],
+            "deterministic_fields": deterministic_fields,
+            "facts": facts,
+            "task_intents": task_intents,
+            "value_aliases": {"dir": {"uplink": [1, "1"], "downlink": [0, "0"]}},
         }
 
 
-def _plan_tasks(raw_input: str, context: dict[str, Any]) -> dict[str, Any]:
+def _task_intents(raw_input: str) -> dict[str, bool]:
     text = raw_input.lower()
+    return {
+        "build": any(word in raw_input for word in ["构造", "生成", "组帧", "回复", "响应"]) or "build" in text,
+        "decode": any(word in raw_input for word in ["解析", "解码"]) or "decode" in text,
+        "send": any(word in raw_input for word in ["发送", "下发", "写入", "执行"]) or "send" in text,
+    }
+
+
+def _expanded_context_query(raw_input: str) -> str:
+    terms = [raw_input]
+    if _mentions_current_time(raw_input):
+        terms.append("datetime 当前时间")
+    if _wants_response(raw_input):
+        terms.append("response resp 响应 应答 上行")
+    if _wants_request(raw_input):
+        terms.append("request 请求 下行")
+    return " ".join(terms)
+
+
+def _mentions_current_time(raw_input: str) -> bool:
+    return any(word in raw_input for word in ["当前时间", "当前日期", "现在时间", "系统时间"])
+
+
+def _wants_response(raw_input: str) -> bool:
+    return any(word in raw_input for word in ["响应", "应答", "回复", "返回"])
+
+
+def _wants_request(raw_input: str) -> bool:
+    return "请求" in raw_input and not _wants_response(raw_input)
+
+
+def _dominant_protocol_tag(chunks: list[dict[str, Any]]) -> str | None:
+    counts: dict[str, float] = {}
+    for chunk in chunks:
+        for tag in chunk.get("tags") or []:
+            tag_text = str(tag)
+            if re.fullmatch(r"[a-z0-9_]+_\d{4}", tag_text):
+                counts[tag_text] = counts.get(tag_text, 0.0) + float(chunk.get("score") or 0.0)
+    if not counts:
+        return None
+    return max(counts.items(), key=lambda item: item[1])[0]
+
+
+def _merge_chunks(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged: dict[int, dict[str, Any]] = {}
+    for chunk in chunks:
+        chunk_id = int(chunk.get("chunk_id") or 0)
+        if not chunk_id:
+            continue
+        current = merged.get(chunk_id)
+        if current is None or float(chunk.get("score") or 0.0) > float(current.get("score") or 0.0):
+            merged[chunk_id] = chunk
+    return sorted(merged.values(), key=lambda item: float(item.get("score") or 0.0), reverse=True)
+
+
+def _context_sources(chunks: list[dict[str, Any]]) -> list[str]:
+    sources: list[str] = []
+    for chunk in chunks:
+        path = str(chunk.get("path") or "")
+        if path and path not in sources:
+            sources.append(path)
+    return sources
+
+
+def _context_chunk_summary(chunk: dict[str, Any]) -> dict[str, Any]:
+    text = str(chunk.get("text") or "")
+    return {
+        "chunk_id": chunk.get("chunk_id"),
+        "source_id": chunk.get("source_id"),
+        "path": chunk.get("path"),
+        "page_start": chunk.get("page_start"),
+        "page_end": chunk.get("page_end"),
+        "score": chunk.get("score"),
+        "text": text[:500],
+    }
+
+
+def _context_hints(chunks: list[dict[str, Any]], facts: dict[str, Any]) -> list[dict[str, Any]]:
+    hints: list[dict[str, Any]] = []
+    if chunks:
+        top = chunks[0]
+        hints.append({
+            "kind": "retrieval",
+            "summary": f"知识库命中 {len(chunks)} 个候选片段，最高分来源 {top.get('path')}",
+            "certainty": "candidate",
+        })
+    if facts:
+        hints.append({
+            "kind": "facts",
+            "summary": "从知识库候选片段中提取到可执行参数。",
+            "fields": sorted(facts.keys()),
+            "certainty": "candidate",
+        })
+    return hints
+
+
+def _facts_from_retrieved_context(raw_input: str, chunks: list[dict[str, Any]], deterministic_fields: dict[str, Any]) -> dict[str, Any]:
+    facts: dict[str, Any] = {}
+    proto = _explicit_proto(raw_input) or (_proto_from_chunks(chunks) if _raw_mentions_protocol_domain(raw_input) else "")
+    if proto:
+        facts["proto"] = proto
+    if not _raw_has_explicit_route(raw_input):
+        route_chunks = _chunks_for_proto(chunks, proto)
+        route_chunk = _select_route_chunk(raw_input, route_chunks, deterministic_fields)
+        route_text = str(route_chunk.get("text") or "") if route_chunk else ""
+        if route_text:
+            afn = _extract_afn(route_text)
+            if afn:
+                facts["afn"] = afn
+            di = _extract_di(_select_route_block(raw_input, route_text, deterministic_fields))
+            if di:
+                facts["di"] = di
+    if _wants_response(raw_input):
+        facts["dir"] = "uplink"
+    elif _wants_request(raw_input):
+        facts["dir"] = "downlink"
+    if deterministic_fields:
+        facts["fields"] = dict(deterministic_fields)
+    return facts
+
+
+def _proto_from_chunks(chunks: list[dict[str, Any]]) -> str:
+    for chunk in chunks:
+        tags = [str(tag) for tag in chunk.get("tags") or []]
+        if "csg_2016" in tags:
+            return "csg"
+        if "dlt645_2007" in tags:
+            return "dlt645"
+    return ""
+
+
+def _explicit_proto(raw_input: str) -> str:
+    text = raw_input.lower()
+    if "dlt645" in text or "645" in text:
+        return "dlt645"
+    if "csg" in text or "南网" in raw_input:
+        return "csg"
+    return ""
+
+
+def _raw_mentions_protocol_domain(raw_input: str) -> bool:
+    return bool(_explicit_proto(raw_input) or any(word in raw_input for word in ["集中器", "采集器", "电表", "本地通信模块"]))
+
+
+def _raw_has_explicit_route(raw_input: str) -> bool:
+    return bool(
+        re.search(r"(?:func|功能码)\s*[=: ]\s*(0x[0-9a-fA-F]+|[0-9a-fA-F]{2})", raw_input)
+        or re.search(r"\bAFN\s*[=: ]\s*(0x[0-9a-fA-F]+|[0-9a-fA-F]{2})", raw_input, re.IGNORECASE)
+        or re.search(r"\bDI\s*[=: ]\s*([0-9a-fA-F]{8})", raw_input, re.IGNORECASE)
+    )
+
+
+def _chunks_for_proto(chunks: list[dict[str, Any]], proto: str) -> list[dict[str, Any]]:
+    if not proto:
+        return chunks
+    tag = "csg_2016" if proto == "csg" else "dlt645_2007" if proto == "dlt645" else proto
+    filtered = [chunk for chunk in chunks if tag in [str(item) for item in chunk.get("tags") or []]]
+    return filtered or chunks
+
+
+def _select_route_chunk(raw_input: str, chunks: list[dict[str, Any]], deterministic_fields: dict[str, Any]) -> dict[str, Any] | None:
+    scored: list[tuple[float, dict[str, Any]]] = []
+    for chunk in chunks:
+        text = str(chunk.get("text") or "")
+        score = float(chunk.get("score") or 0.0)
+        if "variant" in text or "message" in text:
+            score += 0.15
+        if _wants_response(raw_input) and re.search(r"\b(resp|response)\b|响应|应答|上行", text, re.I):
+            score += 0.2
+        if _wants_request(raw_input) and re.search(r"\brequest\b|请求|下行", text, re.I):
+            score += 0.2
+        for field in deterministic_fields:
+            if field in text:
+                score += 0.2
+        if _extract_di(text):
+            score += 0.1
+        scored.append((score, chunk))
+    if not scored:
+        return None
+    return max(scored, key=lambda item: item[0])[1]
+
+
+def _select_route_block(raw_input: str, text: str, deterministic_fields: dict[str, Any]) -> str:
+    blocks = re.split(r"(?=\n- kind:|\nid:)", "\n" + text)
+    if len(blocks) <= 1:
+        return text
+    scored: list[tuple[float, str]] = []
+    for block in blocks:
+        score = 0.0
+        if _wants_response(raw_input) and re.search(r"\b(resp|response)\b|响应|应答|上行", block, re.I):
+            score += 2.0
+        if _wants_request(raw_input) and re.search(r"\brequest\b|请求|下行", block, re.I):
+            score += 2.0
+        for field in deterministic_fields:
+            if field in block:
+                score += 1.0
+        if _extract_di(block):
+            score += 0.5
+        scored.append((score, block))
+    return max(scored, key=lambda item: item[0])[1]
+
+
+def _extract_afn(text: str) -> str:
+    if match := re.search(r"\bafn\s*:\s*(?:0x)?([0-9A-Fa-f]{1,2})", text, re.I):
+        return match.group(1).zfill(2).upper()
+    if match := re.search(r"\bAFN\s*[=＝]\s*(?:0x)?([0-9A-Fa-f]{1,2})H?", text, re.I):
+        return match.group(1).zfill(2).upper()
+    return ""
+
+
+def _extract_di(text: str) -> str:
+    if match := re.search(r"\bdi\s*:\s*[\"']?([0-9A-Fa-f]{8})", text, re.I):
+        return match.group(1).upper()
+    if match := re.search(r"\b([A-Fa-f0-9]{2})\s+([A-Fa-f0-9]{2})\s+([A-Fa-f0-9]{2})\s+([A-Fa-f0-9]{2})\b", text):
+        return "".join(match.groups()).upper()
+    return ""
+
+
+def _plan_tasks(raw_input: str, context: dict[str, Any]) -> dict[str, Any]:
     has_hex = bool(_extract_hex(raw_input))
-    wants_decode = any(word in text for word in ["解析", "decode"])
-    wants_build = any(word in text for word in ["构造", "生成", "组帧", "build", "同步", "校时", "时钟", "clock"])
-    wants_send = any(word in text for word in ["发送", "下发", "写入", "执行", "send"]) or bool(re.search(r"通过\s*COM\d+", raw_input, re.I))
+    task_intents = context.get("task_intents") or {}
+    wants_decode = bool(task_intents.get("decode"))
+    wants_build = bool(task_intents.get("build"))
+    wants_send = bool(task_intents.get("send")) or bool(re.search(r"通过\s*COM\d+", raw_input, re.I))
 
     tasks: list[TaskType] = []
     reason: list[str] = []
@@ -246,6 +473,10 @@ def _plan_tasks(raw_input: str, context: dict[str, Any]) -> dict[str, Any]:
         }
 
     facts = _extract_facts(raw_input)
+    facts.update(context.get("facts") or {})
+    deterministic_fields = dict(context.get("deterministic_fields") or {})
+    if deterministic_fields:
+        facts.setdefault("fields", {}).update(deterministic_fields)
     plan = TaskPlan(
         tasks=tasks,
         pending=[_task_label(task) for task in tasks],
@@ -336,9 +567,10 @@ def _ensure_build_route(record: RunRecord) -> bool:
 
 def _execute_build(record: RunRecord) -> bool:
     request = _build_request(record.facts)
+    record.results["build_request"] = request
     _append_event(record, "build_request", _redact_large(request))
     response = build_handler.handle(request)
-    _append_event(record, "build_result", _result_summary(response))
+    _append_event(record, "build_result", {"summary": _result_summary(response), "result": response})
     if not response.get("success"):
         missing = response.get("detail", {}).get("missing") or []
         if missing:
@@ -347,6 +579,7 @@ def _execute_build(record: RunRecord) -> bool:
         else:
             record.state = "FAILED"
             record.error = str(response.get("error") or "build failed")
+            _append_event(record, "failed", {"task": "BUILD", "error": record.error, "result": response})
         return False
     data = dict(response.get("data") or {})
     record.results["build"] = data
@@ -356,16 +589,20 @@ def _execute_build(record: RunRecord) -> bool:
 
 def _execute_decode_verify(record: RunRecord) -> bool:
     response = _decode_response(record)
-    _append_event(record, "decode_verify_result", _result_summary(response))
+    _append_event(record, "decode_verify_result", {"summary": _result_summary(response), "result": response})
     if not response.get("success"):
         record.state = "FAILED"
         record.error = f"BUILD verification decode failed: {response.get('error')}"
         record.results["decode_verify"] = response
+        _append_event(record, "failed", {"task": "DECODE_VERIFY", "error": record.error, "result": response})
         return False
     data = dict(response.get("data") or {})
     build = dict(record.results.get("build") or {})
-    differences = _verify_build_against_decode(record.raw_input, build, data)
-    record.results["decode_verify"] = {"decode": data, "differences": differences}
+    build_request = dict(record.results.get("build_request") or {})
+    check = _verify_build_against_decode(build, data, build_request, record.context)
+    differences = check["differences"]
+    record.results["decode_verify"] = {"decode": data, "differences": differences, "checked_fields": check["checked_fields"]}
+    _append_event(record, "decode_verify_checked", check)
     if differences:
         record.state = "FAILED"
         record.error = "BUILD verification failed"
@@ -376,10 +613,11 @@ def _execute_decode_verify(record: RunRecord) -> bool:
 
 def _execute_decode(record: RunRecord, *, verify: bool) -> bool:
     response = _decode_response(record)
-    _append_event(record, "decode_result", _result_summary(response))
+    _append_event(record, "decode_result", {"summary": _result_summary(response), "result": response})
     if not response.get("success"):
         record.state = "FAILED"
         record.error = str(response.get("error") or "decode failed")
+        _append_event(record, "failed", {"task": "DECODE", "error": record.error, "result": response})
         return False
     record.results["decode"] = response.get("data") or {}
     return True
@@ -424,19 +662,22 @@ def _execute_send(record: RunRecord) -> bool:
             "baudrate": record.facts.get("baudrate", 9600),
         }
         open_result = serial_open(open_args)
-        _append_event(record, "send_open_result", _result_summary(open_result.to_dict()))
+        open_result_data = open_result.to_dict()
+        _append_event(record, "send_open_result", {"summary": _result_summary(open_result_data), "result": open_result_data})
         if not open_result.success:
             record.state = "FAILED"
             record.error = open_result.error
+            _append_event(record, "failed", {"task": "SEND_OPEN", "error": record.error, "result": open_result_data})
             return False
         args["name"] = generated_name
     _append_event(record, "send_request", _redact_large(args))
     response = serial_send(args).to_dict()
-    _append_event(record, "send_result", _result_summary(response))
+    _append_event(record, "send_result", {"summary": _result_summary(response), "result": response})
     if not response.get("success"):
         record.state = "FAILED"
         record.error = str(response.get("error") or "send failed")
         record.results["send"] = response
+        _append_event(record, "failed", {"task": "SEND", "error": record.error, "result": response})
         return False
     record.results["send"] = response.get("data") or {}
     return True
@@ -461,19 +702,85 @@ def _build_request(facts: dict[str, Any]) -> dict[str, Any]:
     return request
 
 
-def _verify_build_against_decode(raw_input: str, build: dict[str, Any], decode: dict[str, Any]) -> list[str]:
+def _verify_build_against_decode(
+    build: dict[str, Any],
+    decode: dict[str, Any],
+    build_request: dict[str, Any],
+    context: dict[str, Any],
+) -> dict[str, Any]:
     differences: list[str] = []
+    checked_fields: list[dict[str, Any]] = []
     if build.get("protocol") and decode.get("protocol") and build["protocol"] != decode["protocol"]:
         differences.append(f"protocol mismatch: build={build['protocol']} decode={decode['protocol']}")
     message_id = str((build.get("resolved") or {}).get("message_id") or "")
     if message_id and decode.get("path") and message_id not in str(decode["path"]):
         differences.append(f"route mismatch: build={build.get('path')} decode={decode['path']}")
-    text = raw_input.lower()
-    path_text = str(decode.get("path", "")).lower()
-    if any(word in text for word in ["同步", "校时", "时钟", "clock", "time"]):
-        if not any(word in path_text for word in ["time", "clock", "broadcast_time", "write", "set"]):
-            differences.append("raw_input asks time sync, but decoded route does not clearly indicate time/write/set")
-    return differences
+    value_aliases = context.get("value_aliases") or {}
+    for field, expected in _verifiable_build_fields(build_request).items():
+        actual = _find_decoded_field(decode, field)
+        ok = _values_match(field, expected, actual, value_aliases)
+        checked_fields.append({
+            "field": field,
+            "expected": expected,
+            "actual": actual,
+            "ok": ok,
+        })
+        if not ok:
+            differences.append(f"field mismatch: {field} expected={expected} decode={actual}")
+    return {"differences": differences, "checked_fields": checked_fields}
+
+
+def _verifiable_build_fields(build_request: dict[str, Any]) -> dict[str, Any]:
+    skipped = {"proto", "protocol", "intent", "name", "port", "baudrate", "timeout"}
+    return {
+        str(key): value
+        for key, value in build_request.items()
+        if key not in skipped and value not in ("", None)
+    }
+
+
+def _values_match(field: str, expected: Any, actual: Any, aliases: dict[str, Any]) -> bool:
+    if actual is None:
+        return False
+    normalized_actual = _normalize_compare_value(actual)
+    normalized_expected = _normalize_compare_value(expected)
+    field_aliases = aliases.get(field) if isinstance(aliases, dict) else None
+    if isinstance(field_aliases, dict) and str(expected) in field_aliases:
+        return normalized_actual in {_normalize_compare_value(item) for item in field_aliases[str(expected)]}
+    return normalized_actual == normalized_expected
+
+
+def _normalize_compare_value(value: Any) -> str:
+    if isinstance(value, int):
+        return str(value)
+    text = str(value).strip()
+    compact = re.sub(r"\s+", "", text)
+    if re.fullmatch(r"0x[0-9a-fA-F]+", compact):
+        return str(int(compact, 16))
+    if re.fullmatch(r"[0-9A-Fa-f]{2}", compact):
+        return str(int(compact, 16))
+    return compact.lower()
+
+
+def _find_decoded_field(decode: dict[str, Any], field: str) -> Any:
+    values = decode.get("values")
+    if not isinstance(values, dict):
+        return None
+    found: Any = None
+
+    def visit(value: Any, key: str = "") -> None:
+        nonlocal found
+        if found is not None:
+            return
+        if isinstance(value, dict):
+            for child_key, child_value in value.items():
+                if str(child_key).split(".")[-1] == field:
+                    found = child_value
+                    return
+                visit(child_value, str(child_key))
+
+    visit(values)
+    return found
 
 
 def _detect_protocol(frame_hex: str) -> str:
@@ -491,11 +798,6 @@ def _detect_protocol(frame_hex: str) -> str:
 
 def _extract_facts(raw_input: str) -> dict[str, Any]:
     facts: dict[str, Any] = {}
-    text = raw_input.lower()
-    if "dlt645" in text or "645" in text:
-        facts["proto"] = "dlt645"
-    elif "csg" in text or "南网" in text:
-        facts["proto"] = "csg"
     if match := re.search(r"\bCOM\d+\b", raw_input, re.IGNORECASE):
         facts["port"] = match.group(0).upper()
     if match := re.search(r"(?:--name|连接名|name)\s*[=: ]\s*([A-Za-z_][A-Za-z0-9_-]*)", raw_input):
@@ -599,6 +901,176 @@ def _append_event(record: RunRecord, event: str, data: dict[str, Any]) -> None:
     }
     with (_run_dir(record.run_id) / "events").open("a", encoding="utf-8") as f:
         f.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
+    _append_workflow_log(record, event, data, payload["timestamp"])
+
+
+def _append_workflow_log(record: RunRecord, event: str, data: dict[str, Any], timestamp: str) -> None:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    with WORKFLOW_LOG.open("a", encoding="utf-8") as f:
+        f.write(_format_workflow_log(record, event, data, timestamp))
+
+
+def _format_workflow_log(record: RunRecord, event: str, data: dict[str, Any], timestamp: str) -> str:
+    lines = [
+        f"[{timestamp}] run={record.run_id} state={record.state} step={event}",
+    ]
+    if event == "enter":
+        lines.extend([
+            f"raw_input: {record.raw_input}",
+            f"user_input: {_format_inline(data.get('user_input') or {})}",
+        ])
+    elif event == "context_ready":
+        lines.extend([
+            f"context.provider: {record.context.get('provider') or ''}",
+            f"context.summary: {record.context.get('summary') or ''}",
+            "context.sources:",
+            *_format_list(record.context.get("sources") or []),
+        ])
+        deterministic_fields = record.context.get("deterministic_fields") or {}
+        if deterministic_fields:
+            lines.append(f"context.deterministic_fields: {_format_inline(deterministic_fields)}")
+        hints = record.context.get("hints") or []
+        if hints:
+            lines.extend(["context.hints:", *_format_list([_format_inline(hint) for hint in hints])])
+    elif event == "plan_ready":
+        lines.extend([
+            f"task_types: {', '.join(record.task_plan.tasks)}",
+            f"task_plan: {_format_task_plan(record.task_plan)}",
+            f"facts: {_format_inline(data.get('facts') or record.facts)}",
+        ])
+        if data.get("reason"):
+            lines.extend(["reason:", *_format_list(data["reason"])])
+    elif event.endswith("_request"):
+        lines.extend([
+            "request:",
+            *_format_mapping(data),
+        ])
+    elif event.endswith("_result") or event == "send_open_result":
+        result = data.get("result") if isinstance(data.get("result"), dict) else data
+        summary = data.get("summary") if isinstance(data.get("summary"), dict) else _result_summary(result)
+        lines.extend([
+            f"success: {summary.get('success')}",
+            f"error: {summary.get('error') or ''}",
+        ])
+        result_data = result.get("data") if isinstance(result, dict) else {}
+        if isinstance(result_data, dict):
+            if result_data.get("frame"):
+                lines.append(f"frame: {result_data['frame']}")
+            if result_data.get("path"):
+                lines.append(f"path: {result_data['path']}")
+            resolved = result_data.get("resolved")
+            if resolved:
+                lines.append(f"resolved: {_format_inline(resolved)}")
+            decoded_fields = _format_decoded_fields(result_data)
+            if decoded_fields:
+                lines.extend(["decoded_fields:", *decoded_fields])
+    elif event == "decode_verify_checked":
+        checked_fields = data.get("checked_fields") or []
+        if checked_fields:
+            lines.append("checked_fields:")
+            for item in checked_fields:
+                lines.append(
+                    "  - "
+                    f"{item.get('field')}: "
+                    f"expected={item.get('expected')} "
+                    f"actual={item.get('actual')} "
+                    f"ok={item.get('ok')}"
+                )
+        else:
+            lines.append("checked_fields: none")
+        differences = data.get("differences") or []
+        if differences:
+            lines.extend(["differences:", *_format_list(differences)])
+        else:
+            lines.append("differences: none")
+    elif event == "waiting_input":
+        lines.extend([
+            f"field: {data.get('field') or ''}",
+            f"message: {data.get('message') or ''}",
+            f"examples: {_format_inline(data.get('examples') or [])}",
+        ])
+    elif event in {"failed", "failed_exception", "decode_verify_failed", "not_supported"}:
+        lines.extend([
+            f"error: {data.get('error') or record.error or data.get('reason') or ''}",
+            f"detail: {_format_inline(data)}",
+        ])
+    elif event == "task_completed":
+        lines.append(f"completed: {data.get('task') or ''}")
+    elif event == "succeeded":
+        lines.append(f"completed: {_format_inline(data.get('completed') or [])}")
+    elif event == "round_exit":
+        lines.extend([
+            f"final_state: {data.get('final_state') or record.state}",
+            f"error: {data.get('error') or ''}",
+        ])
+        final_result = data.get("final_result") if isinstance(data.get("final_result"), dict) else {}
+        build = final_result.get("build") if isinstance(final_result, dict) else None
+        if isinstance(build, dict):
+            if build.get("frame"):
+                lines.append(f"final_frame: {build['frame']}")
+            if build.get("path"):
+                lines.append(f"final_path: {build['path']}")
+        waiting = data.get("waiting_input")
+        if waiting:
+            lines.append(f"waiting_input: {_format_inline(waiting)}")
+    else:
+        lines.extend(["data:", *_format_mapping(data)])
+    return "\n".join(lines) + "\n\n"
+
+
+def _format_task_plan(plan: TaskPlan) -> str:
+    return (
+        f"tasks=[{', '.join(plan.tasks)}], "
+        f"completed=[{', '.join(plan.completed)}], "
+        f"pending=[{', '.join(plan.pending)}]"
+    )
+
+
+def _format_mapping(data: dict[str, Any]) -> list[str]:
+    return [f"  {key}: {_format_inline(value)}" for key, value in data.items()]
+
+
+def _format_list(items: list[Any]) -> list[str]:
+    return [f"  - {_format_inline(item)}" for item in items]
+
+
+def _format_inline(value: Any) -> str:
+    compact = _compact_log_value(value, max_string=500, max_items=20)
+    if isinstance(compact, (dict, list)):
+        return json.dumps(compact, ensure_ascii=False, separators=(",", ":"), default=str)
+    return str(compact)
+
+
+def _format_decoded_fields(result_data: dict[str, Any]) -> list[str]:
+    values = result_data.get("values")
+    if not isinstance(values, dict):
+        return []
+    return [
+        f"  - {path}: {value}"
+        for path, value in _flatten_scalar_fields(values, max_items=20)
+    ]
+
+
+def _flatten_scalar_fields(value: Any, *, max_items: int, prefix: str = "") -> list[tuple[str, Any]]:
+    if max_items <= 0:
+        return []
+    if isinstance(value, dict):
+        fields: list[tuple[str, Any]] = []
+        for key, child in value.items():
+            child_prefix = f"{prefix}.{key}" if prefix else str(key)
+            fields.extend(_flatten_scalar_fields(child, max_items=max_items - len(fields), prefix=child_prefix))
+            if len(fields) >= max_items:
+                break
+        return fields
+    if isinstance(value, list):
+        fields = []
+        for index, child in enumerate(value):
+            child_prefix = f"{prefix}[{index}]"
+            fields.extend(_flatten_scalar_fields(child, max_items=max_items - len(fields), prefix=child_prefix))
+            if len(fields) >= max_items:
+                break
+        return fields
+    return [(prefix, value)]
 
 
 def _context_summary(context: dict[str, Any]) -> dict[str, Any]:
@@ -626,3 +1098,22 @@ def _redact_large(data: dict[str, Any]) -> dict[str, Any]:
         if isinstance(value, str) and len(value) > 160:
             out[key] = value[:160] + "..."
     return out
+
+
+def _compact_log_value(value: Any, *, max_string: int = 4000, max_items: int = 100) -> Any:
+    if isinstance(value, dict):
+        items = list(value.items())
+        compacted = {str(k): _compact_log_value(v, max_string=max_string, max_items=max_items) for k, v in items[:max_items]}
+        if len(items) > max_items:
+            compacted["__truncated_keys__"] = len(items) - max_items
+        return compacted
+    if isinstance(value, list):
+        compacted_list = [_compact_log_value(v, max_string=max_string, max_items=max_items) for v in value[:max_items]]
+        if len(value) > max_items:
+            compacted_list.append({"__truncated_items__": len(value) - max_items})
+        return compacted_list
+    if isinstance(value, tuple):
+        return _compact_log_value(list(value), max_string=max_string, max_items=max_items)
+    if isinstance(value, str) and len(value) > max_string:
+        return value[:max_string] + f"...<truncated {len(value) - max_string} chars>"
+    return value

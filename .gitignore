@@ -16,7 +16,9 @@ build/
 node_modules/
 .wireforge_history
 .wireforge_terminal_history
+*.upg_cache
 agent_protocol_runs/
+database/knowledge_index/
 
 # Virtual environment
 .venv/

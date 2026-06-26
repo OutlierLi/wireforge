@@ -1,0 +1,20 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": ["../AGENTS.md"],
+  "mcp": {
+    "wireforge": {
+      "type": "local",
+      "command": ["python3", "scripts/python/wireforge_mcp_server.py"],
+      "enabled": true,
+      "timeout": 120000
+    }
+  },
+  "permission": {
+    "edit": {
+      "*": "allow",
+      "**/__pycache__/**": "deny",
+      "agent_protocol_runs/**": "deny"
+    },
+    "bash": "ask"
+  }
+}
