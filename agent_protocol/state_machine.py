@@ -26,6 +26,10 @@ RUNS_DIR = ROOT / "agent_protocol_runs"
 LOG_DIR = ROOT / "log"
 WORKFLOW_LOG = LOG_DIR / "agent_protocol_workflow.log"
 
+# 知识库检索：只保留分数 >= 阈值的 chunk，最多取前 N 个
+KB_SCORE_THRESHOLD = 0.08
+KB_MAX_CHUNKS = 3
+
 TaskType = Literal["BUILD", "DECODE", "SEND"]
 RunState = Literal[
     "INIT",
@@ -201,7 +205,9 @@ class RagContextProvider:
         protocol_tag = _dominant_protocol_tag(initial.get("results") or [])
         expanded_query = _expanded_context_query(raw_input)
         focused = kb_search(expanded_query, top_k=20, tag=protocol_tag) if protocol_tag else {"results": []}
-        chunks = _merge_chunks(list(initial.get("results") or []) + list(focused.get("results") or []))
+        all_chunks = _merge_chunks(list(initial.get("results") or []) + list(focused.get("results") or []))
+        # 阈值过滤 + 最多 N 个
+        chunks = [c for c in all_chunks if float(c.get("score") or 0) >= KB_SCORE_THRESHOLD][:KB_MAX_CHUNKS]
         sources = _context_sources(chunks)
         deterministic_fields: dict[str, Any] = {}
         if _mentions_current_time(raw_input):
@@ -318,38 +324,79 @@ def _context_hints(chunks: list[dict[str, Any]], facts: dict[str, Any]) -> list[
             "certainty": "candidate",
         })
     if facts:
+        # 去除非路由辅助字段
+        display_keys = [k for k in sorted(facts.keys()) if k != "_sources"]
+        sources = facts.get("_sources", {})
         hints.append({
             "kind": "facts",
             "summary": "从知识库候选片段中提取到可执行参数。",
-            "fields": sorted(facts.keys()),
+            "fields": display_keys,
+            "values": {k: facts[k] for k in display_keys},
+            "sources": {k: sources.get(k, "") for k in display_keys},
             "certainty": "candidate",
         })
     return hints
 
 
 def _facts_from_retrieved_context(raw_input: str, chunks: list[dict[str, Any]], deterministic_fields: dict[str, Any]) -> dict[str, Any]:
+    """从知识库 chunks 中提取事实，每条事实附带来源依据。"""
     facts: dict[str, Any] = {}
+    sources: dict[str, str] = {}  # field → source citation
+
+    def _set(key: str, value: Any, source: str = ""):
+        facts[key] = value
+        if source:
+            sources[key] = source
+
     proto = _explicit_proto(raw_input) or (_proto_from_chunks(chunks) if _raw_mentions_protocol_domain(raw_input) else "")
     if proto:
-        facts["proto"] = proto
+        _set("proto", proto, _source_cite(_proto_chunk(chunks, proto)))
+
     if not _raw_has_explicit_route(raw_input):
         route_chunks = _chunks_for_proto(chunks, proto)
         route_chunk = _select_route_chunk(raw_input, route_chunks, deterministic_fields)
         route_text = str(route_chunk.get("text") or "") if route_chunk else ""
+        source_path = str(route_chunk.get("path", "")) if route_chunk else ""
         if route_text:
             afn = _extract_afn(route_text)
             if afn:
-                facts["afn"] = afn
+                _set("afn", afn, _source_cite(route_chunk))
             di = _extract_di(_select_route_block(raw_input, route_text, deterministic_fields))
             if di:
-                facts["di"] = di
+                _set("di", di, _source_cite(route_chunk))
+
     if _wants_response(raw_input):
-        facts["dir"] = "uplink"
+        _set("dir", "uplink", "intent: response words in raw_input")
     elif _wants_request(raw_input):
-        facts["dir"] = "downlink"
+        _set("dir", "downlink", "intent: request words in raw_input")
+
     if deterministic_fields:
-        facts["fields"] = dict(deterministic_fields)
+        _set("fields", dict(deterministic_fields), "deterministic: current time")
+
+    facts["_sources"] = sources
     return facts
+
+
+def _proto_chunk(chunks: list[dict[str, Any]], proto: str) -> dict[str, Any] | None:
+    for c in chunks:
+        if proto == "csg" and "csg_2016" in [str(t) for t in c.get("tags", [])]:
+            return c
+        if proto == "dlt645" and "dlt645_2007" in [str(t) for t in c.get("tags", [])]:
+            return c
+    return chunks[0] if chunks else None
+
+
+def _compact_sources(sources: dict[str, str]) -> dict[str, str]:
+    """裁剪 source 字符串到 80 字符以便日志展示。"""
+    return {k: (v[:77] + "..." if len(v) > 80 else v) for k, v in sources.items()}
+
+
+def _source_cite(chunk: dict[str, Any] | None) -> str:
+    if not chunk:
+        return ""
+    path = str(chunk.get("path", ""))
+    text = str(chunk.get("text", ""))[:60].replace("\n", " ")
+    return f"{path} | {text}"
 
 
 def _proto_from_chunks(chunks: list[dict[str, Any]]) -> str:
@@ -1053,13 +1100,12 @@ def _format_workflow_log(record: RunRecord, event: str, data: dict[str, Any], ti
     elif event == "context_ready":
         lines.extend([
             f"context.provider: {record.context.get('provider') or ''}",
-            f"context.summary: {record.context.get('summary') or ''}",
-            "context.sources:",
-            *_format_list(record.context.get("sources") or []),
+            f"context.chunks: {len(record.context.get('retrieved') or [])} (threshold>={KB_SCORE_THRESHOLD}, max={KB_MAX_CHUNKS})",
         ])
-        deterministic_fields = record.context.get("deterministic_fields") or {}
-        if deterministic_fields:
-            lines.append(f"context.deterministic_fields: {_format_inline(deterministic_fields)}")
+        # 列出 chunk 摘要（路径 + 前 80 字符文本）
+        for chunk in (record.context.get("retrieved") or [])[:KB_MAX_CHUNKS]:
+            snippet = str(chunk.get("text", ""))[:80].replace("\n", " ")
+            lines.append(f"  - {chunk.get('score',0):.3f} {chunk.get('path','?')} | {snippet}")
         hints = record.context.get("hints") or []
         if hints:
             lines.extend(["context.hints:", *_format_list([_format_inline(hint) for hint in hints])])
@@ -1067,8 +1113,17 @@ def _format_workflow_log(record: RunRecord, event: str, data: dict[str, Any], ti
         lines.extend([
             f"task_types: {', '.join(record.task_plan.tasks)}",
             f"task_plan: {_format_task_plan(record.task_plan)}",
-            f"facts: {_format_inline(data.get('facts') or record.facts)}",
         ])
+        # 最终可执行上下文（路由定位参数 + 业务字段）
+        plan_facts = {
+            "route": {k: v for k, v in record.facts.items() if k in ("proto","func","afn","di","dir")},
+            "fields": record.facts.get("fields", {}),
+            "sources": _compact_sources(record.facts.get("_sources", {})),
+        }
+        assembled = _format_inline(plan_facts)
+        if len(assembled) > 500:
+            assembled = assembled[:497] + "..."
+        lines.append(f"plan.assembled: {assembled}")
         if data.get("reason"):
             lines.extend(["reason:", *_format_list(data["reason"])])
     elif event.endswith("_request"):
