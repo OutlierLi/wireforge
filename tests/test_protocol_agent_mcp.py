@@ -152,7 +152,7 @@ def test_protocol_task_treats_generic_add_as_build_intent():
     assert result["state"] == "WAITING_INPUT"
     assert result["need"] == "protocol_match"
     candidate_ids = [item["id"] for item in result["candidates"]]
-    assert any("afn04_active_register" in item for item in candidate_ids)
+    assert any("afn04_add_slave" in item for item in candidate_ids)
 
 
 def test_protocol_task_candidates_are_diversified_by_leaf():
@@ -160,7 +160,72 @@ def test_protocol_task_candidates_are_diversified_by_leaf():
 
     leaf_ids = [item["id"].split("::", 1)[0] for item in result["candidates"]]
     assert len(leaf_ids) == len(set(leaf_ids))
-    assert any("afn04_active_register" in item for item in leaf_ids)
+    assert "afn04_add_slave" in leaf_ids[0]
+
+
+def test_csg_concentrator_protocol_map_covers_pdf_table4():
+    pdf_table4 = [
+        ("00", "E8010001", "downlink", "确认"),
+        ("00", "E8010002", "downlink", "否认"),
+        ("01", "E8020101", "downlink", "复位硬件"),
+        ("01", "E8020102", "downlink", "初始化档案"),
+        ("01", "E8020103", "downlink", "初始化任务"),
+        ("02", "E8020201", "downlink", "添加任务"),
+        ("02", "E8020202", "downlink", "删除任务"),
+        ("02", "E8000203", "downlink", "查询未完成任务数"),
+        ("02", "E8030204", "downlink", "查询未完成任务列表"),
+        ("02", "E8040204", "uplink", "返回查询未完成任务列表"),
+        ("02", "E8030205", "downlink", "查询未完成任务详细信息"),
+        ("02", "E8040205", "uplink", "返回查询未完成任务详细信息"),
+        ("02", "E8000206", "downlink", "查询剩余可分配任务数"),
+        ("02", "E8020207", "downlink", "添加多播任务（选配）"),
+        ("02", "E8020208", "downlink", "启动任务"),
+        ("02", "E8020209", "downlink", "暂停任务"),
+        ("03", "E8000301", "downlink", "查询厂商代码和版本信息"),
+        ("03", "E8000302", "downlink", "查询本地通信模块运行模式信息"),
+        ("03", "E8000303", "downlink", "查询主节点地址"),
+        ("03", "E8030304", "downlink", "查询通信延时时长"),
+        ("03", "E8040304", "uplink", "返回查询通信延时时长"),
+        ("03", "E8000305", "downlink", "查询从节点数量"),
+        ("03", "E8030306", "downlink", "查询从节点信息"),
+        ("03", "E8040306", "uplink", "返回查询从节点信息"),
+        ("03", "E8000307", "downlink", "查询从节点主动注册进度"),
+        ("03", "E8030308", "downlink", "查询从节点的父节点"),
+        ("03", "E8040308", "uplink", "返回查询从节点的父节点"),
+        ("04", "E8020401", "downlink", "设置主节点地址"),
+        ("04", "E8020402", "downlink", "添加从节点"),
+        ("04", "E8020403", "downlink", "删除从节点"),
+        ("04", "E8020404", "downlink", "允许/禁止上报从节点事件"),
+        ("04", "E8020405", "downlink", "激活从节点主动注册"),
+        ("04", "E8020406", "downlink", "终止从节点主动注册"),
+        ("05", "E8050501", "uplink", "上报任务数据"),
+        ("05", "E8050502", "uplink", "上报从节点事件"),
+        ("05", "E8050503", "uplink", "上报从节点信息"),
+        ("05", "E8050504", "uplink", "上报从节点注册结束"),
+        ("05", "E8050505", "uplink", "上报任务状态"),
+        ("06", "E8060601", "downlink", "请求集中器时间"),
+        ("07", "E8020701", "downlink", "启动文件传输"),
+        ("07", "E8020702", "downlink", "传输文件内容"),
+        ("07", "E8000703", "downlink", "查询文件信息"),
+        ("07", "E8000704", "downlink", "查询文件处理进度"),
+        ("07", "E8030704", "downlink", "查询文件传输失败节点"),
+        ("07", "E8040704", "uplink", "返回查询文件传输失败节点"),
+    ]
+    first = run_agent_protocol("构造 csg 集中器报文")
+    protocol_map = _saved_protocol_map(first)
+    csg_entries = protocol_map["protocols"]["csg_2016"]["entries"]
+
+    for afn, di, direction, description in pdf_table4:
+        matches = [
+            entry
+            for entry in csg_entries
+            if entry["route_params"].get("afn") == afn
+            and entry["route_params"].get("di") == di
+            and entry["route_params"].get("dir") == direction
+            and entry["route_params"].get("has_address") is False
+        ]
+        assert matches, f"missing CSG table4 entry: AFN={afn} DI={di}"
+        assert matches[0]["description"] == description
 
 
 def test_protocol_map_entry_ids_include_route_path():
@@ -266,6 +331,38 @@ def test_protocol_task_builds_csg_concentrator_time_response():
     assert ["datetime", True] in result["checks"]
 
 
+def test_protocol_task_builds_csg_add_slave_with_address_array():
+    first = run_agent_protocol("构造一个添加从节点的报文，从节点地址为012400038813，012400038824")
+    entry = _find_entry(
+        _saved_protocol_map(first),
+        "afn04_add_slave",
+        proto="csg",
+        dir="downlink",
+        has_address=False,
+    )
+    second = run_agent_protocol(
+        run_id=first["run_id"],
+        user_input={"entry_id": entry["id"], "route_params": entry["route_params"]},
+    )
+
+    assert second["state"] == "WAITING_INPUT"
+    assert second["fields"] == ["slave_count", "slave_addrs"]
+
+    result = run_agent_protocol(
+        run_id=first["run_id"],
+        user_input={"fields": {
+            "slave_count": 2,
+            "slave_addrs": ["012400038813", "012400038824"],
+        }},
+    )
+
+    assert result["state"] == "SUCCEEDED"
+    assert result["variant_id"] == "csg_2016.afn04_add_slave"
+    assert result["decode_verified"] is True
+    assert ["slave_count", True] in result["checks"]
+    assert ["slave_addrs", True] in result["checks"]
+
+
 def test_protocol_task_build_failure_stops_after_three_attempts():
     first = run_agent_protocol("构造 csg 添加任务")
     entry = _find_entry(_saved_protocol_map(first), "afn02_add_task", proto="csg")
@@ -274,7 +371,13 @@ def test_protocol_task_build_failure_stops_after_three_attempts():
         user_input={"entry_id": entry["id"], "route_params": entry["route_params"]},
     )
 
-    bad_fields = {"task_info": "ZZ"}
+    bad_fields = {
+        "task_id": 1,
+        "task_mode_word": 0,
+        "timeout_seconds": 30,
+        "payload_length": 1,
+        "payload": "ZZ",
+    }
     one = run_agent_protocol(run_id=first["run_id"], user_input={"fields": bad_fields})
     two = run_agent_protocol(run_id=first["run_id"], user_input={"fields": bad_fields})
     three = run_agent_protocol(run_id=first["run_id"], user_input={"fields": bad_fields})

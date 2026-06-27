@@ -929,15 +929,18 @@ def _candidate_entries(protocol_map: dict[str, Any], raw_input: str, *, limit: i
     query_chars = {ch for ch in query if not ch.isspace()}
     for info in (protocol_map.get("protocols") or {}).values():
         for entry in info.get("entries") or []:
+            description = str(entry.get("description") or "")
             text = " ".join([
                 str(entry.get("name") or ""),
-                str(entry.get("description") or ""),
+                description,
                 " ".join(str(part) for part in (entry.get("path") or [])),
                 " ".join(str(field) for field in (entry.get("fields") or [])),
                 json.dumps(entry.get("route_params") or {}, ensure_ascii=False),
             ]).lower()
             score = 0
             if text and query:
+                if description and description in raw_input:
+                    score += len(description) * 20
                 for token in re.findall(r"[a-z0-9_]+|[\u4e00-\u9fff]+", query):
                     if token and token in text:
                         score += len(token) * 8

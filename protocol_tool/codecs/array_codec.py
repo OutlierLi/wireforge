@@ -36,6 +36,8 @@ class ArrayCodec(FieldCodec):
         item_type = field.params.get("item_type", "hex")
         item_params = field.params.get("item_params", {})
         item_name = field.params.get("item_name", "item")
+        item_length = item_params.get("length")
+        item_length_from = item_params.get("length_from")
 
         results: list[Any] = []
         for i in range(count) if count is not None else _forever():
@@ -46,7 +48,9 @@ class ArrayCodec(FieldCodec):
                 id=f"{field.id}[{i}]",
                 name=f"{item_name}[{i}]",
                 type_ref=item_type,
-                params={**item_params},
+                params={k: v for k, v in item_params.items() if k not in ("length", "length_from")},
+                length=item_length,
+                length_from=item_length_from,
             )
             codec = _get_codec(item_type)
             value = codec.decode(item_field, reader, context)
@@ -70,13 +74,17 @@ class ArrayCodec(FieldCodec):
         item_type = field.params.get("item_type", "hex")
         item_params = field.params.get("item_params", {})
         item_name = field.params.get("item_name", "item")
+        item_length = item_params.get("length")
+        item_length_from = item_params.get("length_from")
 
         for i, item_value in enumerate(items):
             item_field = FN(
                 id=f"{field.id}[{i}]",
                 name=f"{item_name}[{i}]",
                 type_ref=item_type,
-                params={**item_params},
+                params={k: v for k, v in item_params.items() if k not in ("length", "length_from")},
+                length=item_length,
+                length_from=item_length_from,
             )
             codec = _get_codec(item_type)
             codec.encode(item_field, item_value, writer, context)

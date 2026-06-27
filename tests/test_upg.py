@@ -44,9 +44,24 @@ class TestSegmentation:
         assert 0 <= crc <= 0xFFFF
 
     def test_pack_file_info(self):
-        import struct
-        info = struct.pack("<HHHH", 2, 128, 0xABCD, 30)
-        assert len(info) == 8
+        info = {
+            "file_type": 2,
+            "file_id": 0,
+            "dest_addr": "999999999999",
+            "total_segments": 2,
+            "file_size": 256,
+            "file_crc": 0xABCD,
+            "timeout_minutes": 30,
+        }
+        assert set(info) == {
+            "file_type",
+            "file_id",
+            "dest_addr",
+            "total_segments",
+            "file_size",
+            "file_crc",
+            "timeout_minutes",
+        }
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -107,7 +122,13 @@ class TestUpgFrameBuild:
         r = exec_cmd("build", {
             "proto": "csg", "afn": "0x07", "di": "E8020701",
             "dir": "downlink",
-            "file_info": b"\x02\x00\x80\x00\xeb\xf6\x1e\x00",
+            "file_type": 2,
+            "file_id": 0,
+            "dest_addr": "999999999999",
+            "total_segments": 2,
+            "file_size": 256,
+            "file_crc": 0xABCD,
+            "timeout_minutes": 30,
         })
         _ok(r)
         assert "68" in r["data"]["frame"]
@@ -117,7 +138,10 @@ class TestUpgFrameBuild:
         r = exec_cmd("build", {
             "proto": "csg", "afn": "0x07", "di": "E8020702",
             "dir": "downlink",
-            "file_segment": b"\x00" * 128,
+            "segment_index": 0,
+            "segment_length": 128,
+            "segment_data": b"\x00" * 128,
+            "segment_crc": 0xABCD,
         })
         _ok(r)
         assert "68" in r["data"]["frame"]

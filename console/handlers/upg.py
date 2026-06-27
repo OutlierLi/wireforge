@@ -151,8 +151,6 @@ def handle(args: dict[str, Any]) -> dict:
 
 def _build_cache(name: str, data: bytes, seg_size: int, file_hash: str, file_size: int) -> dict:
     """构建所有帧的缓存。返回 {frames: {file_info: hex, "1": hex, ...}, ...}"""
-    import struct
-
     segments = _segment_file(data, seg_size)
     total = len(segments)
     file_crc = _crc16_modbus(data)
@@ -164,10 +162,16 @@ def _build_cache(name: str, data: bytes, seg_size: int, file_hash: str, file_siz
     last_progress = -1
 
     # 文件信息帧
-    info_payload = struct.pack("<HHHH", total, seg_size, file_crc, 30)
     r = exec_cmd("build", {
         "proto": "csg", "afn": "0x07", "di": "E8020701",
-        "dir": "downlink", "file_info": info_payload,
+        "dir": "downlink",
+        "file_type": "0x02",
+        "file_id": "0x00",
+        "dest_addr": "999999999999",
+        "total_segments": total,
+        "file_size": file_size,
+        "file_crc": file_crc,
+        "timeout_minutes": 30,
     })
     if r.get("status") == "success" and r.get("data", {}).get("frame"):
         cache["file_info"] = r["data"]["frame"]
@@ -175,9 +179,14 @@ def _build_cache(name: str, data: bytes, seg_size: int, file_hash: str, file_siz
 
     # 分段帧
     for i, seg in enumerate(segments):
+        segment_crc = _crc16_modbus(seg)
         r = exec_cmd("build", {
             "proto": "csg", "afn": "0x07", "di": "E8020702",
-            "dir": "downlink", "file_segment": seg,
+            "dir": "downlink",
+            "segment_index": i,
+            "segment_length": len(seg),
+            "segment_data": seg,
+            "segment_crc": segment_crc,
         })
         if r.get("status") == "success" and r.get("data", {}).get("frame"):
             cache[str(i + 1)] = r["data"]["frame"]

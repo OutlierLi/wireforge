@@ -131,7 +131,12 @@ class TestBuildSuccess:
     def test_build_csg_with_address(self):
         r = exec_cmd("build", {
             "proto": "csg", "afn": "0x02", "di": "E8020201", "dir": "downlink",
-            "addr": True, "task_info": "010203",
+            "addr": True,
+            "task_id": 1,
+            "task_mode_word": 0,
+            "timeout_seconds": 30,
+            "payload_length": 0,
+            "payload": "",
         })
         _ok(r, "CSG 带地址域")
 
@@ -1078,8 +1083,9 @@ class TestCrossProtocol:
         }
         for afn in range(8):
             di = di_map.get(afn, f"E800{afn:02X}01")
+            direction = "uplink" if afn == 5 else "downlink"
             r = exec_cmd("build", {
                 "proto": "csg", "afn": f"0x{afn:02X}", "di": di,
-                "dir": "downlink", "resolve": True,
+                "dir": direction, "resolve": True,
             })
             _ok(r, f"CSG AFN=0x{afn:02X}")

@@ -48,41 +48,46 @@ routers:
     kind: variant_router
     keys:
       - di
+      - control.dir
     target_kind: variant
     fallback: error
-    description: "AFN=01 初始化 — 按 DI 路由"
+    description: "AFN=01 初始化 — 按 DI+传输方向路由"
 
   afn02_di_router:
     kind: variant_router
     keys:
       - di
+      - control.dir
     target_kind: variant
     fallback: error
-    description: "AFN=02 管理任务 — 按 DI 路由"
+    description: "AFN=02 管理任务 — 按 DI+传输方向路由"
 
   afn03_di_router:
     kind: variant_router
     keys:
       - di
+      - control.dir
     target_kind: variant
     fallback: error
-    description: "AFN=03 读参数 — 按 DI 路由"
+    description: "AFN=03 读参数 — 按 DI+传输方向路由"
 
   afn04_di_router:
     kind: variant_router
     keys:
       - di
+      - control.dir
     target_kind: variant
     fallback: error
-    description: "AFN=04 写参数 — 按 DI 路由"
+    description: "AFN=04 写参数 — 按 DI+传输方向路由"
 
   afn05_di_router:
     kind: variant_router
     keys:
       - di
+      - control.dir
     target_kind: variant
     fallback: error
-    description: "AFN=05 上报信息 — 按 DI 路由"
+    description: "AFN=05 上报信息 — 按 DI+传输方向路由"
 
   afn06_di_router:
     kind: variant_router
@@ -97,9 +102,10 @@ routers:
     kind: variant_router
     keys:
       - di
+      - control.dir
     target_kind: variant
     fallback: error
-    description: "AFN=07 文件传输 — 按 DI 路由"
+    description: "AFN=07 文件传输 — 按 DI+传输方向路由"
 
 build:
   default_frame: csg_2016.frame

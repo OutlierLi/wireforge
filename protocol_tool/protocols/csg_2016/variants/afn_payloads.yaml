@@ -69,27 +69,33 @@ variants:
 
   - kind: variant
     id: csg_2016.afn01_reset_hardware
+    description: "复位硬件"
     router: afn01_di_router
     match:
       di: "E8020101"
+      control.dir: 0
     body:
       type: struct
       fields: []
 
   - kind: variant
     id: csg_2016.afn01_init_archive
+    description: "初始化档案"
     router: afn01_di_router
     match:
       di: "E8020102"
+      control.dir: 0
     body:
       type: struct
       fields: []
 
   - kind: variant
     id: csg_2016.afn01_init_task
+    description: "初始化任务"
     router: afn01_di_router
     match:
       di: "E8020103"
+      control.dir: 0
     body:
       type: struct
       fields: []
@@ -113,76 +119,241 @@ variants:
 
   - kind: variant
     id: csg_2016.afn02_add_task
+    description: "添加任务"
     router: afn02_di_router
     match:
       di: "E8020201"
-    body:
-      type: struct
-      fields:
-        - name: task_info
-          type: bytes
-          boundary:
-            kind: remaining
-
-  - kind: variant
-    id: csg_2016.afn02_delete_task
-    router: afn02_di_router
-    match:
-      di: "E8020202"
+      control.dir: 0
     body:
       type: struct
       fields:
         - name: task_id
+          type: uint16_le
+          description: "任务ID"
+        - name: task_mode_word
           type: uint8
+          description: "任务模式字"
+        - name: timeout_seconds
+          type: uint16_le
+          description: "任务执行超时时间(秒)"
+        - name: payload_length
+          type: uint8
+          description: "报文长度"
+        - name: payload
+          type: hex
+          length_from: payload_length
+          description: "原始报文内容"
 
   - kind: variant
-    id: csg_2016.afn02_query_remaining
+    id: csg_2016.afn02_delete_task
+    description: "删除任务"
     router: afn02_di_router
     match:
-      di: "E8000203"
+      di: "E8020202"
+      control.dir: 0
     body:
       type: struct
       fields:
-        - name: task_count
-          type: uint8
-          optional: true
+        - name: task_id
+          type: uint16_le
+          description: "任务ID"
+
+  - kind: variant
+    id: csg_2016.afn02_query_remaining
+    description: "查询未完成任务数"
+    router: afn02_di_router
+    match:
+      di: "E8000203"
+      control.dir: 0
+    body:
+      type: struct
+      fields: []
 
   - kind: variant
     id: csg_2016.afn02_query_remaining_resp
     router: afn02_di_router
     match:
-      di: "E8040203"
+      di: "E8000203"
+      control.dir: 1
     body:
       type: struct
       fields:
         - name: task_count
-          type: uint8
+          type: uint16_le
+          description: "未完成任务数量"
 
   - kind: variant
     id: csg_2016.afn02_query_task_list
+    description: "查询未完成任务列表"
     router: afn02_di_router
     match:
       di: "E8030204"
+      control.dir: 0
     body:
       type: struct
       fields:
-        - name: task_list
-          type: bytes
-          boundary:
-            kind: remaining
+        - name: start_task_index
+          type: uint16_le
+          description: "起始任务序号"
+        - name: query_task_count
+          type: uint8
+          description: "查询任务数量"
 
   - kind: variant
     id: csg_2016.afn02_query_task_list_resp
+    description: "返回查询未完成任务列表"
     router: afn02_di_router
     match:
       di: "E8040204"
+      control.dir: 1
     body:
       type: struct
       fields:
-        - name: task_list
-          type: bytes
-          boundary:
-            kind: remaining
+        - name: reported_task_count
+          type: uint16_le
+          description: "上报任务数量"
+        - name: task_ids
+          type: array
+          count_ref: reported_task_count
+          item_type: uint16_le
+          item_name: task_id
+          description: "任务ID列表"
+
+  - kind: variant
+    id: csg_2016.afn02_query_task_detail
+    description: "查询未完成任务详细信息"
+    router: afn02_di_router
+    match:
+      di: "E8030205"
+      control.dir: 0
+    body:
+      type: struct
+      fields:
+        - name: task_id
+          type: uint16_le
+          description: "任务ID"
+
+  - kind: variant
+    id: csg_2016.afn02_query_task_detail_resp
+    description: "返回查询未完成任务详细信息"
+    router: afn02_di_router
+    match:
+      di: "E8040205"
+      control.dir: 1
+    body:
+      type: struct
+      fields:
+        - name: task_id
+          type: uint16_le
+          description: "任务ID"
+        - name: task_mode_word
+          type: uint8
+          description: "任务模式字"
+        - name: dest_addr_count
+          type: uint16_le
+          description: "目的地址数量"
+        - name: dest_addrs
+          type: array
+          count_ref: dest_addr_count
+          item_type: bcd
+          item_params:
+            length: 6
+            byte_order: little
+          item_name: dest_addr
+          description: "目的地址列表"
+        - name: payload_length
+          type: uint8
+          description: "报文长度"
+        - name: payload
+          type: hex
+          length_from: payload_length
+          description: "原始报文内容"
+
+  - kind: variant
+    id: csg_2016.afn02_query_remaining_allocatable
+    description: "查询剩余可分配任务数"
+    router: afn02_di_router
+    match:
+      di: "E8000206"
+      control.dir: 0
+    body:
+      type: struct
+      fields: []
+
+  - kind: variant
+    id: csg_2016.afn02_query_remaining_allocatable_resp
+    description: "返回查询剩余可分配任务数"
+    router: afn02_di_router
+    match:
+      di: "E8000206"
+      control.dir: 1
+    body:
+      type: struct
+      fields:
+        - name: remaining_task_count
+          type: uint16_le
+          description: "剩余可分配任务数"
+
+  - kind: variant
+    id: csg_2016.afn02_add_multicast_task
+    description: "添加多播任务（选配）"
+    router: afn02_di_router
+    match:
+      di: "E8020207"
+      control.dir: 0
+    body:
+      type: struct
+      fields:
+        - name: task_id
+          type: uint16_le
+          description: "任务ID"
+        - name: task_mode_word
+          type: uint8
+          description: "任务模式字"
+        - name: slave_count
+          type: uint16_le
+          description: "从节点数量，0xFFFF 表示广播"
+        - name: slave_addrs
+          type: array
+          count_ref: slave_count
+          item_type: bcd
+          item_params:
+            length: 6
+            byte_order: little
+          item_name: slave_addr
+          description: "从节点地址列表"
+        - name: timeout_seconds
+          type: uint16_le
+          description: "任务执行超时时间(秒)"
+        - name: payload_length
+          type: uint8
+          description: "报文长度"
+        - name: payload
+          type: hex
+          length_from: payload_length
+          description: "原始报文内容"
+
+  - kind: variant
+    id: csg_2016.afn02_start_task
+    description: "启动任务"
+    router: afn02_di_router
+    match:
+      di: "E8020208"
+      control.dir: 0
+    body:
+      type: struct
+      fields: []
+
+  - kind: variant
+    id: csg_2016.afn02_pause_task
+    description: "暂停任务"
+    router: afn02_di_router
+    match:
+      di: "E8020209"
+      control.dir: 0
+    body:
+      type: struct
+      fields: []
 
   # ═══════════════════════════════════════════════════════
   # AFN=03H 读参数 → afn03_di_router
@@ -203,20 +374,22 @@ variants:
 
   - kind: variant
     id: csg_2016.afn03_query_vendor
-    description: "查询厂商代码"
+    description: "查询厂商代码和版本信息"
     router: afn03_di_router
     match:
       di: "E8000301"
+      control.dir: 0
     body:
       type: struct
       fields: []
 
   - kind: variant
     id: csg_2016.afn03_query_vendor_resp
-    description: "返回厂商代码"
+    description: "返回厂商代码和版本信息"
     router: afn03_di_router
     match:
-      di: "E8010301"
+      di: "E8000301"
+      control.dir: 1
     body:
       type: struct
       fields:
@@ -248,42 +421,288 @@ variants:
 
   - kind: variant
     id: csg_2016.afn03_query_mode
+    description: "查询本地通信模块运行模式信息"
     router: afn03_di_router
     match:
       di: "E8000302"
+      control.dir: 0
     body:
       type: struct
       fields: []
 
   - kind: variant
+    id: csg_2016.afn03_query_mode_resp
+    description: "返回本地通信模块运行模式信息"
+    router: afn03_di_router
+    match:
+      di: "E8000302"
+      control.dir: 1
+    body:
+      type: struct
+      fields:
+        - name: local_mode_word
+          type: uint8
+          description: "本地通信模式字"
+        - name: max_protocol_frame_length
+          type: uint16_le
+          description: "最大支持的协议报文长度"
+        - name: max_file_packet_length
+          type: uint16_le
+          description: "文件传输最大单包长度"
+        - name: upgrade_wait_minutes
+          type: uint8
+          description: "升级操作等待时间(分钟)"
+        - name: master_addr
+          type: bcd
+          length: 6
+          byte_order: little
+          description: "主节点地址"
+        - name: max_slave_count
+          type: uint16_le
+          description: "支持的最大从节点数量"
+        - name: current_slave_count
+          type: uint16_le
+          description: "当前从节点数量"
+        - name: max_slave_rw_count
+          type: uint16_le
+          description: "支持单次读写从节点信息的最大数量"
+        - name: protocol_release_date
+          type: struct
+          description: "通信模块接口协议发布日期(YYMMDD)"
+          fields:
+            - name: year
+              type: bcd
+              length: 1
+            - name: month
+              type: bcd
+              length: 1
+            - name: day
+              type: bcd
+              length: 1
+        - name: vendor_code
+          type: ascii
+          length: 2
+        - name: chip_code
+          type: ascii
+          length: 2
+        - name: version_date
+          type: struct
+          description: "版本日期(YYMMDD)"
+          fields:
+            - name: year
+              type: bcd
+              length: 1
+            - name: month
+              type: bcd
+              length: 1
+            - name: day
+              type: bcd
+              length: 1
+        - name: version
+          type: bcd
+          length: 2
+
+  - kind: variant
     id: csg_2016.afn03_query_master_addr
+    description: "查询主节点地址"
     router: afn03_di_router
     match:
       di: "E8000303"
+      control.dir: 0
     body:
       type: struct
       fields: []
+
+  - kind: variant
+    id: csg_2016.afn03_query_master_addr_resp
+    description: "返回主节点地址"
+    router: afn03_di_router
+    match:
+      di: "E8000303"
+      control.dir: 1
+    body:
+      type: struct
+      fields:
+        - name: master_addr
+          type: bcd
+          length: 6
+          byte_order: little
+          description: "主节点地址"
 
 
   - kind: variant
     id: csg_2016.afn03_query_delay
+    description: "查询通信延时时长"
     router: afn03_di_router
     match:
       di: "E8030304"
+      control.dir: 0
+    body:
+      type: struct
+      fields:
+        - name: dest_addr
+          type: bcd
+          length: 6
+          byte_order: little
+          description: "通信目的地址"
+        - name: payload_length
+          type: uint8
+          description: "报文长度"
+
+  - kind: variant
+    id: csg_2016.afn03_query_delay_resp
+    description: "返回查询通信延时时长"
+    router: afn03_di_router
+    match:
+      di: "E8040304"
+      control.dir: 1
+    body:
+      type: struct
+      fields:
+        - name: dest_addr
+          type: bcd
+          length: 6
+          byte_order: little
+          description: "通信目的地址"
+        - name: delay_time
+          type: uint16_le
+          description: "通信延时时长(秒)"
+        - name: payload_length
+          type: uint8
+          description: "报文长度"
+
+  - kind: variant
+    id: csg_2016.afn03_query_slave_count
+    description: "查询从节点数量"
+    router: afn03_di_router
+    match:
+      di: "E8000305"
+      control.dir: 0
     body:
       type: struct
       fields: []
 
   - kind: variant
-    id: csg_2016.afn03_query_delay_resp
+    id: csg_2016.afn03_query_slave_count_resp
+    description: "返回查询从节点数量"
     router: afn03_di_router
     match:
-      di: "E8040304"
+      di: "E8000305"
+      control.dir: 1
     body:
       type: struct
       fields:
-        - name: delay_time
+        - name: slave_total
+          type: uint16_le
+          description: "从节点总数量"
+
+  - kind: variant
+    id: csg_2016.afn03_query_slave_info
+    description: "查询从节点信息"
+    router: afn03_di_router
+    match:
+      di: "E8030306"
+      control.dir: 0
+    body:
+      type: struct
+      fields:
+        - name: start_slave_index
+          type: uint16_le
+          description: "从节点起始序号"
+        - name: slave_count
           type: uint8
+          description: "从节点数量"
+
+  - kind: variant
+    id: csg_2016.afn03_query_slave_info_resp
+    description: "返回查询从节点信息"
+    router: afn03_di_router
+    match:
+      di: "E8040306"
+      control.dir: 1
+    body:
+      type: struct
+      fields:
+        - name: slave_total
+          type: uint16_le
+          description: "从节点总数量"
+        - name: response_slave_count
+          type: uint8
+          description: "本次应答的从节点数量"
+        - name: slave_addrs
+          type: array
+          count_ref: response_slave_count
+          item_type: bcd
+          item_params:
+            length: 6
+            byte_order: little
+          item_name: slave_addr
+          description: "从节点地址列表"
+
+  - kind: variant
+    id: csg_2016.afn03_query_slave_register_progress
+    description: "查询从节点主动注册进度"
+    router: afn03_di_router
+    match:
+      di: "E8000307"
+      control.dir: 0
+    body:
+      type: struct
+      fields: []
+
+  - kind: variant
+    id: csg_2016.afn03_query_slave_register_progress_resp
+    description: "返回查询从节点主动注册进度"
+    router: afn03_di_router
+    match:
+      di: "E8000307"
+      control.dir: 1
+    body:
+      type: struct
+      fields:
+        - name: register_status
+          type: uint8
+          description: "从节点主动注册工作标示"
+
+  - kind: variant
+    id: csg_2016.afn03_query_slave_parent
+    description: "查询从节点的父节点"
+    router: afn03_di_router
+    match:
+      di: "E8030308"
+      control.dir: 0
+    body:
+      type: struct
+      fields:
+        - name: slave_addr
+          type: bcd
+          length: 6
+          byte_order: little
+          description: "从节点地址"
+
+  - kind: variant
+    id: csg_2016.afn03_query_slave_parent_resp
+    description: "返回查询从节点的父节点"
+    router: afn03_di_router
+    match:
+      di: "E8040308"
+      control.dir: 1
+    body:
+      type: struct
+      fields:
+        - name: slave_addr
+          type: bcd
+          length: 6
+          byte_order: little
+          description: "从节点地址"
+        - name: parent_addr
+          type: bcd
+          length: 6
+          byte_order: little
+          description: "父节点地址"
+        - name: link_quality
+          type: uint8
+          description: "链路质量"
 
   # ═══════════════════════════════════════════════════════
   # AFN=04H 写参数 → afn04_di_router
@@ -308,6 +727,7 @@ variants:
     router: afn04_di_router
     match:
       di: "E8020404"
+      control.dir: 0
     body:
       type: struct
       fields:
@@ -316,11 +736,74 @@ variants:
           values: { 0x00: "禁止上报", 0x01: "允许上报" }
 
   - kind: variant
+    id: csg_2016.afn04_set_master_addr
+    description: "设置主节点地址"
+    router: afn04_di_router
+    match:
+      di: "E8020401"
+      control.dir: 0
+    body:
+      type: struct
+      fields:
+        - name: master_addr
+          type: bcd
+          length: 6
+          byte_order: little
+          description: "主节点地址"
+
+  - kind: variant
+    id: csg_2016.afn04_add_slave
+    description: "添加从节点"
+    router: afn04_di_router
+    match:
+      di: "E8020402"
+      control.dir: 0
+    body:
+      type: struct
+      fields:
+        - name: slave_count
+          type: uint8
+          description: "从节点数量"
+        - name: slave_addrs
+          type: array
+          count_ref: slave_count
+          item_type: bcd
+          item_params:
+            length: 6
+            byte_order: little
+          item_name: slave_addr
+          description: "从节点地址列表"
+
+  - kind: variant
+    id: csg_2016.afn04_delete_slave
+    description: "删除从节点"
+    router: afn04_di_router
+    match:
+      di: "E8020403"
+      control.dir: 0
+    body:
+      type: struct
+      fields:
+        - name: slave_count
+          type: uint8
+          description: "从节点数量"
+        - name: slave_addrs
+          type: array
+          count_ref: slave_count
+          item_type: bcd
+          item_params:
+            length: 6
+            byte_order: little
+          item_name: slave_addr
+          description: "从节点地址列表"
+
+  - kind: variant
     id: csg_2016.afn04_active_register
     description: "激活从节点主动注册"
     router: afn04_di_router
     match:
       di: "E8020405"
+      control.dir: 0
     body:
       type: struct
       fields: []
@@ -331,6 +814,7 @@ variants:
     router: afn04_di_router
     match:
       di: "E8020406"
+      control.dir: 0
     body:
       type: struct
       fields: []
@@ -354,62 +838,98 @@ variants:
 
   - kind: variant
     id: csg_2016.afn05_report_task_data
+    description: "上报任务数据"
     router: afn05_di_router
     match:
       di: "E8050501"
+      control.dir: 1
     body:
       type: struct
       fields:
-        - name: task_data
-          type: bytes
-          boundary:
-            kind: remaining
+        - name: task_id
+          type: uint16_le
+          description: "任务ID"
+        - name: payload_length
+          type: uint8
+          description: "报文长度"
+        - name: payload
+          type: hex
+          length_from: payload_length
+          description: "原始报文内容"
 
   - kind: variant
     id: csg_2016.afn05_report_slave_event
+    description: "上报从节点事件"
     router: afn05_di_router
     match:
       di: "E8050502"
+      control.dir: 1
     body:
       type: struct
       fields:
-        - name: event_data
-          type: bytes
-          boundary:
-            kind: remaining
+        - name: payload_length
+          type: uint8
+          description: "报文长度"
+        - name: payload
+          type: hex
+          length_from: payload_length
+          description: "状态字原始报文内容"
 
   - kind: variant
     id: csg_2016.afn05_report_slave_info
+    description: "上报从节点信息"
     router: afn05_di_router
     match:
       di: "E8050503"
+      control.dir: 1
     body:
       type: struct
       fields:
-        - name: slave_data
-          type: bytes
-          boundary:
-            kind: remaining
+        - name: slave_count
+          type: uint8
+          description: "上报从节点数量"
+        - name: slave_addrs
+          type: array
+          count_ref: slave_count
+          item_type: bcd
+          item_params:
+            length: 6
+            byte_order: little
+          item_name: slave_addr
+          description: "从节点地址列表"
 
   - kind: variant
     id: csg_2016.afn05_report_register_end
+    description: "上报从节点注册结束"
     router: afn05_di_router
     match:
       di: "E8050504"
+      control.dir: 1
     body:
       type: struct
       fields: []
 
   - kind: variant
     id: csg_2016.afn05_report_task_status
+    description: "上报任务状态"
     router: afn05_di_router
     match:
       di: "E8050505"
+      control.dir: 1
     body:
       type: struct
       fields:
+        - name: task_id
+          type: uint16_le
+          description: "任务ID"
+        - name: slave_addr
+          type: bcd
+          length: 6
+          byte_order: little
+          description: "从节点地址"
         - name: task_status
           type: uint8
+          description: "任务状态"
 
   # ═══════════════════════════════════════════════════════
   # AFN=06H 请求信息 → afn06_di_router
@@ -497,44 +1017,220 @@ variants:
 
   - kind: variant
     id: csg_2016.afn07_file_transfer_start
+    description: "启动文件传输"
     router: afn07_di_router
     match:
       di: "E8020701"
+      control.dir: 0
     body:
       type: struct
       fields:
-        - name: file_info
-          type: bytes
-          boundary:
-            kind: remaining
+        - name: file_type
+          type: uint8
+          description: "文件性质"
+        - name: file_id
+          type: uint8
+          description: "文件ID"
+        - name: dest_addr
+          type: bcd
+          length: 6
+          byte_order: little
+          description: "目的地址"
+        - name: total_segments
+          type: uint16_le
+          description: "文件总段数"
+        - name: file_size
+          type: uint32_le
+          description: "文件大小"
+        - name: file_crc
+          type: uint16_le
+          description: "文件总校验"
+        - name: timeout_minutes
+          type: uint8
+          description: "文件传输超时时间(分钟)"
 
   - kind: variant
     id: csg_2016.afn07_file_transfer_data
+    description: "传输文件内容"
     router: afn07_di_router
     match:
       di: "E8020702"
+      control.dir: 0
     body:
       type: struct
       fields:
-        - name: file_segment
-          type: bytes
-          boundary:
-            kind: remaining
+        - name: segment_index
+          type: uint16_le
+          description: "文件段号"
+        - name: segment_length
+          type: uint16_le
+          description: "文件段长度"
+        - name: segment_data
+          type: hex
+          length_from: segment_length
+          description: "文件段内容"
+        - name: segment_crc
+          type: uint16_le
+          description: "文件段校验"
 
   - kind: variant
     id: csg_2016.afn07_query_file_info
+    description: "查询文件信息"
     router: afn07_di_router
     match:
       di: "E8000703"
+      control.dir: 0
     body:
       type: struct
       fields: []
 
   - kind: variant
+    id: csg_2016.afn07_query_file_info_resp
+    description: "返回查询文件信息"
+    router: afn07_di_router
+    match:
+      di: "E8000703"
+      control.dir: 1
+    body:
+      type: struct
+      fields:
+        - name: file_type
+          type: uint8
+          description: "文件性质"
+        - name: file_id
+          type: uint8
+          description: "文件ID"
+        - name: dest_addr
+          type: bcd
+          length: 6
+          byte_order: little
+          description: "目的地址"
+        - name: total_segments
+          type: uint16_le
+          description: "文件总段数"
+        - name: file_size
+          type: uint32_le
+          description: "文件大小"
+        - name: file_crc
+          type: uint16_le
+          description: "文件总校验"
+        - name: received_segments
+          type: uint16_le
+          description: "已成功接收文件段数"
+
+  - kind: variant
     id: csg_2016.afn07_query_progress
+    description: "查询文件处理进度"
     router: afn07_di_router
     match:
       di: "E8000704"
+      control.dir: 0
     body:
       type: struct
       fields: []
+
+  - kind: variant
+    id: csg_2016.afn07_query_progress_resp
+    description: "返回查询文件处理进度"
+    router: afn07_di_router
+    match:
+      di: "E8000704"
+      control.dir: 1
+    body:
+      type: struct
+      fields:
+        - name: progress
+          type: uint8
+          description: "文件处理进度"
+        - name: unfinished_file_id
+          type: uint8
+          description: "处理未完成的文件ID"
+        - name: failed_node_count
+          type: uint16_le
+          description: "失败节点数量"
+
+  - kind: variant
+    id: csg_2016.afn07_query_failed_nodes
+    description: "查询文件传输失败节点"
+    router: afn07_di_router
+    match:
+      di: "E8030704"
+      control.dir: 0
+    body:
+      type: struct
+      fields:
+        - name: start_node_index
+          type: uint16_le
+          description: "节点起始序号"
+        - name: query_node_count
+          type: uint8
+          description: "本次查询的节点数量"
+
+  - kind: variant
+    id: csg_2016.afn07_query_failed_nodes_v2
+    description: "查询文件传输失败节点"
+    router: afn07_di_router
+    match:
+      di: "E8030705"
+      control.dir: 0
+    body:
+      type: struct
+      fields:
+        - name: start_node_index
+          type: uint16_le
+          description: "节点起始序号"
+        - name: query_node_count
+          type: uint8
+          description: "本次查询的节点数量"
+
+  - kind: variant
+    id: csg_2016.afn07_query_failed_nodes_resp
+    description: "返回查询文件传输失败节点"
+    router: afn07_di_router
+    match:
+      di: "E8040704"
+      control.dir: 1
+    body:
+      type: struct
+      fields:
+        - name: node_total
+          type: uint16_le
+          description: "节点总数量"
+        - name: response_node_count
+          type: uint8
+          description: "本次应答的节点数量"
+        - name: node_addrs
+          type: array
+          count_ref: response_node_count
+          item_type: bcd
+          item_params:
+            length: 6
+            byte_order: little
+          item_name: node_addr
+          description: "节点地址列表"
+
+  - kind: variant
+    id: csg_2016.afn07_query_failed_nodes_resp_v2
+    description: "返回查询文件传输失败节点"
+    router: afn07_di_router
+    match:
+      di: "E8040705"
+      control.dir: 1
+    body:
+      type: struct
+      fields:
+        - name: node_total
+          type: uint16_le
+          description: "节点总数量"
+        - name: response_node_count
+          type: uint8
+          description: "本次应答的节点数量"
+        - name: node_addrs
+          type: array
+          count_ref: response_node_count
+          item_type: bcd
+          item_params:
+            length: 6
+            byte_order: little
+          item_name: node_addr
+          description: "节点地址列表"
