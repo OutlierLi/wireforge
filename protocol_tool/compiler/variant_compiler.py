@@ -108,6 +108,7 @@ class VariantCompiler:
                     message_ref=var_id,
                     router_id=router_id,
                     route_key=RouterBuilder.normalize_route_key(route_key_raw),
+                    description=entry.get("description", ""),
                 )
                 leaves[node_id] = leaf
                 bindings.append(VariantBinding(
@@ -160,6 +161,7 @@ class VariantCompiler:
                 message_ref=base_msg_id,
                 router_id=router_id,
                 route_key=RouterBuilder.normalize_route_key(route_key_raw),
+                description=entry.get("description", base_leaf.description),
             )
             leaves[node_id] = variant_leaf
 

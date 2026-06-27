@@ -234,6 +234,8 @@ class LeafNode:
         The router this leaf is registered to (for build-time message lookup).
     route_key:
         The serialized route key this leaf matches (for build-time reverse lookup).
+    description:
+        Human-readable protocol description from the source YAML.
     """
 
     id: str
@@ -242,6 +244,7 @@ class LeafNode:
     message_ref: str | None = None
     router_id: str | None = None
     route_key: str | None = None
+    description: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -255,6 +258,8 @@ class LeafNode:
             d["router_id"] = self.router_id
         if self.route_key:
             d["route_key"] = self.route_key
+        if self.description:
+            d["description"] = self.description
         return d
 
     @classmethod
@@ -266,6 +271,7 @@ class LeafNode:
             message_ref=d.get("message_ref"),
             router_id=d.get("router_id"),
             route_key=d.get("route_key"),
+            description=d.get("description", ""),
         )
 
 

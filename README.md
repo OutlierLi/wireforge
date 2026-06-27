@@ -94,23 +94,57 @@ OpenCode MCP 配置示例：
 
 - `protocol_task_run`
 
+首次使用或修改协议 YAML 后，先执行一键初始化：
+
+```bash
+python3 scripts/bootstrap_protocol_cache.py
+```
+
+该脚本会清理旧运行日志、测试输出和 `compiled/` 旧产物，重新编译启用协议，并生成：
+
+```text
+compiled/*.ir.json
+compiled/*_routes.svg
+compiled/protocol_map.json
+compiled/protocol_map.yaml
+```
+
+MCP 运行时只读取 `compiled/protocol_map.json`，不会每轮动态生成协议地图。若该文件不存在，MCP 会返回失败信息并提示运行上述脚本。
+
 调用方式：
 
 ```json
 {
-  "raw_input": "构造 dlt645 功能码 13 address AAAAAAAAAAAA"
+  "raw_input": "构造一个请求集中器的响应报文，时间为当前时间"
 }
 ```
 
-若返回 `WAITING_INPUT`，上层 Agent 只需要向用户询问缺失字段，再用同一个 `run_id` 补充：
+默认返回是紧凑模式，只包含继续推进所需的信息。若返回 `state: "WAITING_INPUT"` 且 `need: "protocol_match"`，上层 Agent 需要从 `candidates` 中选择唯一报文，并返回完整路径级 `entry_id` 或 `route_params`。MCP 返回中只包含候选和 `map_entries`，不会返回完整 map。不要用 `leaf_id` 代替 `entry_id`，因为同一叶子可能同时存在上行/下行、带地址/不带地址路径：
 
 ```json
 {
   "run_id": "<run_id>",
   "user_input": {
-    "proto": "dlt645",
-    "func": "13",
-    "address": "AAAAAAAAAAAA"
+    "entry_id": "node:csg_2016.csg_2016.afn06_request_time_resp::dir=uplink::add=0::afn=06::di=E8060601",
+    "route_params": {"proto": "csg", "afn": "06", "di": "E8060601", "dir": "uplink"}
+  }
+}
+```
+
+MCP 随后调用 `/route` 返回 `need: "values"` 和 `fields`。Agent 按字段名填充值，再继续：
+
+```json
+{
+  "run_id": "<run_id>",
+  "user_input": {
+    "fields": {
+      "datetime.second": "06",
+      "datetime.minute": "49",
+      "datetime.hour": "21",
+      "datetime.day": "26",
+      "datetime.month": "06",
+      "datetime.year": "26"
+    }
   }
 }
 ```
@@ -120,8 +154,9 @@ OpenCode MCP 配置示例：
 ```text
 agent_protocol_runs/<run_id>/
   raw_input
-  context.json
+  protocol_map.json
   task_plan.json
+  route.json
   state.json
   events
   result.json
@@ -133,14 +168,41 @@ agent_protocol_runs/<run_id>/
 log/agent_protocol_workflow.log
 ```
 
-每一步都是带时间戳的文本段落，只记录该步骤新增的信息：用户原文、扩展上下文、识别到的任务类型、线性 task plan、底层 build/decode/send 调用、调用结果、等待输入/失败原因和最终结果。
+每一步都是带时间戳的文本段落，只记录该步骤新增的信息：用户原文、协议地图退出状态、Agent 传回的 route 参数、底层 route/build/decode/send 调用、调用结果、等待输入/失败原因和最终结果。
 
-协议知识库来源集中在 `database/protocols/<protocol>/doc` 和 `protocol_tool/protocols`。MCP 进入后会先检索知识库，把最相关的协议文档片段和结构化 YAML 片段放入上下文，再做任务判断、构造/解析和 decode 校验。
+需要排查时可以打开详细返回。单次调用：
 
-重建知识库索引：
+```json
+{
+  "raw_input": "构造 dlt645 读通信地址请求",
+  "debug": true
+}
+```
+
+全局开启：
 
 ```bash
-python3 scripts/python/knowledge_kb_cli.py ingest --rebuild
+WIREFORGE_MCP_DEBUG=1 python3 scripts/python/wireforge_mcp_server.py
+```
+
+Windows PowerShell：
+
+```powershell
+$env:WIREFORGE_MCP_DEBUG="1"; py scripts\python\wireforge_mcp_server.py
+```
+
+debug 模式会返回完整 `waiting_input`、`results`、`log_dir` 和 `workflow_log`；日常 Agent 调用建议保持默认紧凑模式，避免工具输出过大。
+
+紧凑模式默认按 `max(512B, 用户原文 bytes * 20)` 控制返回体大小。需要调整时可配置：
+
+```bash
+WIREFORGE_MCP_MAX_RATIO=15 WIREFORGE_MCP_MIN_BYTES=512 python3 scripts/python/wireforge_mcp_server.py
+```
+
+协议地图缓存来源于实际协议路由表，是 Agent 做自然语言报文匹配的唯一依据；没有命中时应提示用户补充协议地图描述。需要单独重建协议地图文件时可运行：
+
+```bash
+python3 scripts/generate_protocol_map.py compiled/protocol_map.json
 ```
 
 ### 编译协议

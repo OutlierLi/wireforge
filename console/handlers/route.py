@@ -24,7 +24,7 @@ def handle(args: dict[str, Any]) -> dict:
     func = args.get("func", "")
     afn = args.get("afn", "")
     di = args.get("di", "")
-    dir_val = args.get("dir", "downlink")
+    dir_val = args.get("dir", args.get("direction", ""))
 
     if not proto:
         return fail("缺少 --proto。用法: /route --proto=csg --afn=0x06 --di=E8010601 --dir=uplink")
@@ -36,7 +36,8 @@ def handle(args: dict[str, Any]) -> dict:
         target_info["afn"] = afn
     if di:
         target_info["di"] = di
-    target_info["dir"] = dir_val
+    if dir_val:
+        target_info["dir"] = dir_val
 
     try:
         target = resolve(target_info)

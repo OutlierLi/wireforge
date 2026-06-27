@@ -14,6 +14,13 @@ from protocol_tool.ir.nodes import (
     ConditionSpec,
     BuildPlan,
 )
+from protocol_tool.ir.graph import (
+    GraphNode,
+    GraphRoute,
+    GraphPayload,
+    ProtocolGraph,
+    protocol_graph_from_ir,
+)
 
 __all__ = [
     "FieldNode",
@@ -24,4 +31,9 @@ __all__ = [
     "TransformSpec",
     "ConditionSpec",
     "BuildPlan",
+    "GraphNode",
+    "GraphRoute",
+    "GraphPayload",
+    "ProtocolGraph",
+    "protocol_graph_from_ir",
 ]

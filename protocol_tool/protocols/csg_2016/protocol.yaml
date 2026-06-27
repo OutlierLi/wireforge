@@ -88,9 +88,10 @@ routers:
     kind: variant_router
     keys:
       - di
+      - control.dir
     target_kind: variant
     fallback: error
-    description: "AFN=06 请求信息 — 按 DI 路由"
+    description: "AFN=06 请求信息 — 按 DI+传输方向路由"
 
   afn07_di_router:
     kind: variant_router

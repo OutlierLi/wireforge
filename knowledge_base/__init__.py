@@ -1,2 +1,0 @@
-"""Local protocol knowledge base."""
-

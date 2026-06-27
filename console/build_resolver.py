@@ -116,8 +116,8 @@ def resolve(target_info: dict[str, Any]) -> BuildTarget:
 
     # 构建 info dict 用于路由查找
     info: dict[str, Any] = {}
-    dn = target_info.get("dir", target_info.get("direction", "downlink"))
-    info["direction"] = dn
+    if "dir" in target_info or "direction" in target_info:
+        info["direction"] = target_info.get("dir", target_info.get("direction"))
     if "func" in target_info:
         info["func"] = int(str(target_info["func"]).replace("0x", ""), 16)
     if "afn" in target_info:
@@ -129,6 +129,11 @@ def resolve(target_info: dict[str, Any]) -> BuildTarget:
 
     # 路由查找
     path_info = be.resolve_path(info)
+    dn = _direction_from_path(path_info, info)
+    target_info = dict(target_info)
+    if dn:
+        target_info.setdefault("dir", dn)
+        target_info.setdefault("direction", dn)
     leaf_id = path_info["leaf_id"]
     leaf = ir.leaves.get(leaf_id)
     if not leaf:
@@ -164,8 +169,9 @@ def _collect_input_fields(ir, leaf, leaf_id) -> list[InputField]:
     fields: list[InputField] = []
 
     for lf in leaf.fields:
-        if lf.optional:
+        if lf.optional and not lf.condition:  # 有条件的不跳过，只是标记为可选
             continue
+        has_condition = lf.condition is not None
         t = lf.type_ref
         if t == "routed_payload":
             # 递归到子路由
@@ -181,16 +187,17 @@ def _collect_input_fields(ir, leaf, leaf_id) -> list[InputField]:
             continue  # 固定/计算字段
         elif t == "struct":
             # 展开 struct 子字段为扁平 dotted name (如 datetime.second)
+            # 如果 struct 有条件，子字段标记为不必填
             for sf in lf.params.get("fields", []):
                 fields.append(InputField(
                     name=f"{lf.name}.{sf.get('name', '?')}",
                     type=sf.get("type", "uint8"),
-                    required=True,
+                    required=not has_condition,
                     length=sf.get("length"),
                     desc=sf.get("description", ""),
                 ))
         else:
-            required = not lf.optional
+            required = not lf.optional and not has_condition
             extra: dict[str, Any] = {}
             if t == "enum":
                 extra["enum_values"] = lf.params.get("values")
@@ -205,6 +212,21 @@ def _collect_input_fields(ir, leaf, leaf_id) -> list[InputField]:
             ))
 
     return fields
+
+
+def _direction_from_path(path_info: dict[str, Any], info: dict[str, Any]) -> str:
+    direction = info.get("direction")
+    if direction in {"downlink", "uplink"}:
+        return str(direction)
+    route_vals = path_info.get("route_vals") or {}
+    raw = route_vals.get("control.dir")
+    if raw is None:
+        raw = route_vals.get("dir")
+    if raw in (0, "0", "downlink"):
+        return "downlink"
+    if raw in (1, "1", "uplink"):
+        return "uplink"
+    raise ValueError("direction is required; provide --dir=downlink or --dir=uplink")
 
 
 def _normalize_di(di: str) -> str:

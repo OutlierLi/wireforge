@@ -91,6 +91,7 @@ class MessageCompiler:
             fields=tuple(fields),
             message_ref=msg_id,
             router_id=msg.get("router", ""),
+            description=msg.get("description", ""),
         )
 
         # Build route binding

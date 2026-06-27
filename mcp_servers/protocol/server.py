@@ -16,7 +16,7 @@ _FRAMING_MODE = "content-length"
 TOOLS: list[dict[str, Any]] = [
     {
         "name": "protocol_task_run",
-        "description": "推进自然语言协议任务状态机：BUILD、DECODE、SEND，保存 run_id 状态并返回当前结果。",
+        "description": "推进协议地图驱动的协议任务状态机：BUILD、DECODE、SEND，保存 run_id 状态并返回当前结果。",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -24,7 +24,11 @@ TOOLS: list[dict[str, Any]] = [
                 "raw_input": {"type": "string", "description": "用户原始输入；新任务必填，会永久保存。"},
                 "user_input": {
                     "type": "object",
-                    "description": "WAITING_INPUT 后用户补充的结构化字段，如 {\"proto\":\"dlt645\",\"func\":\"08\"}。",
+                    "description": "WAITING_INPUT 后用户补充的结构化字段，如 {\"entry_id\":\"...\"} 或 {\"fields\":{...}}。",
+                },
+                "debug": {
+                    "type": "boolean",
+                    "description": "返回完整调试结构；默认 false。也可用 WIREFORGE_MCP_DEBUG=1 全局开启。",
                 },
             },
         },
@@ -111,6 +115,7 @@ def call_tool(name: str, arguments: dict[str, Any]) -> Any:
         raw_input=arguments.get("raw_input"),
         run_id=arguments.get("run_id"),
         user_input=_object(arguments.get("user_input")) if arguments.get("user_input") else None,
+        debug=arguments.get("debug") if "debug" in arguments else None,
     )
 
 
@@ -131,8 +136,12 @@ Tool: `protocol_task_run`
 
 - New run: pass `raw_input`.
 - Resume run: pass `run_id` and optional `user_input`.
+- Default responses are compact. Use `debug: true` per call, or `WIREFORGE_MCP_DEBUG=1`, to return full waiting/results/log paths.
+- Build runs first return `need: "protocol_match"` plus compact `candidates`; the Agent selects one candidate and sends `entry_id` or `route_params`.
+- MCP then returns `need: "values"` plus field names; the Agent sends `fields`.
 - The MCP persists state in `agent_protocol_runs/<run_id>/`.
 - It calls Build/Decode/Send modules with structured JSON dictionaries, not CLI strings.
+- Route selection is deterministic and based on the generated protocol map.
 """
 
 
