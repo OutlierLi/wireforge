@@ -1,0 +1,42 @@
+# WireForge TestPlan 基础模版 — 单连接 mock://auto
+#
+# 用法:
+#   1. 编排前: 用 wireforge protocol_task_run 逐条确认报文 schema（见 AGENTS.md / TEST_PLAN_AGENT.md）
+#   2. 复制本文件到 database/runs/<name>.yaml，填写 setup/steps
+#   3. test.validate → test.dry_run → test.run（默认 mock://auto）
+#   4. 真机: test.run options.vars.port = /dev/ttyUSB0 或 COM3
+#
+# 约定:
+#   - send 后接 wait-frame 时 timeout: 0（避免 send 读走 mock 回复）
+#   - auto_rule.then 用 dict 格式（command + args.hex），不用字符串 then
+#   - auto_rule.match 用 build 下行帧 DI 的 hex 片段（无空格），不用宽泛正则
+#   - 报文一律 build 构造，禁止手拼 hex
+
+version: 1
+name: <test_name>
+timeout_ms: 120000
+
+vars:
+  port: mock://auto
+  conn: cco
+  baudrate: 9600
+  proto: csg
+  wait_timeout_ms: 5000
+
+setup:
+  - id: connect
+    action: serial.connect
+    args:
+      conn: ${conn}
+      port: ${port}
+      baudrate: ${baudrate}
+  # --- Agent: 在此添加 pre-build 响应帧 + auto_rule.add ---
+
+steps:
+  # --- Agent: build / send(timeout:0) / wait-frame / assert / decode ---
+
+teardown:
+  - id: disconnect
+    action: serial.disconnect
+    args:
+      conn: ${conn}

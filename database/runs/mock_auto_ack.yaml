@@ -1,0 +1,97 @@
+# 最小 mock://auto 示例：档案初始化 → 确认帧
+# 完整说明: database/examples/mock_auto_ack.md
+
+version: 1
+name: mock_auto_ack
+timeout_ms: 60000
+
+vars:
+  port: mock://auto
+  conn: cco
+  baudrate: 9600
+  proto: csg
+  wait_timeout_ms: 5000
+
+setup:
+  - id: connect
+    action: serial.connect
+    args:
+      conn: ${conn}
+      port: ${port}
+      baudrate: ${baudrate}
+
+  - id: build_ack_frame
+    action: build
+    args:
+      proto: ${proto}
+      afn: '0x00'
+      di: E8010001
+      dir: uplink
+      wait_time: 0
+    save_as: ack_frame
+
+  - id: build_init_for_match
+    action: build
+    args:
+      proto: ${proto}
+      afn: '0x01'
+      di: E8020102
+      dir: downlink
+    save_as: init_match_frame
+
+  - id: add_rule_init_ack
+    action: auto_rule.add
+    args:
+      id: rule_init_ack
+      match: 020102E8
+      source: serial:${conn}
+      then:
+        - command: /send
+          args:
+            hex: ${ack_frame.frame}
+
+steps:
+  - id: build_init_archive
+    action: build
+    args:
+      proto: ${proto}
+      afn: '0x01'
+      di: E8020102
+      dir: downlink
+    save_as: init_frame
+
+  - id: send_init_archive
+    action: send
+    args:
+      conn: ${conn}
+      hex: ${init_frame.frame_hex}
+      timeout: 0
+
+  - id: wait_init_ack
+    action: wait-frame
+    args:
+      conn: ${conn}
+      proto: ${proto}
+      timeout_ms: ${wait_timeout_ms}
+      expect:
+        afn: '00'
+        di: E8010001
+        dir: uplink
+    save_as: init_ack
+
+  - id: assert_init_ack
+    action: assert
+    args:
+      expect:
+        init_ack.matched: true
+
+teardown:
+  - id: remove_rule
+    action: auto_rule.remove
+    args:
+      id: rule_init_ack
+
+  - id: disconnect
+    action: serial.disconnect
+    args:
+      conn: ${conn}

@@ -266,6 +266,10 @@ def _parse_actions(args: dict) -> list[dict]:
                             k, v = key.split("=", 1)
                             act_args[k] = v
                             i += 1
+                        elif key == "hex" and i + 1 < len(tokens):
+                            # --hex 后可能跟带空格的完整帧，取剩余 tokens
+                            act_args[key] = " ".join(tokens[i + 1:])
+                            i = len(tokens)
                         elif i + 1 < len(tokens) and not tokens[i+1].startswith("--"):
                             act_args[key] = tokens[i+1]
                             i += 2

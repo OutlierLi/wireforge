@@ -20,6 +20,55 @@ python3 scripts/python/wireforge_test_mcp_server.py
 
 Agent reads `ok` / `status` / `error` from `test.run` — do not infer pass/fail from logs. Full logs are under `log/run_reports/<run_id>/` (or custom `report` path).
 
+## TestPlan 编排工作流
+
+编写 TestPlan 前必须先走 **protocol MCP**（`protocol_task_run`），再走 **test MCP**。详细说明见 [`database/examples/TEST_PLAN_AGENT.md`](database/examples/TEST_PLAN_AGENT.md)。
+
+### 两个 MCP 的分工
+
+| 阶段 | MCP | 职责 |
+|------|-----|------|
+| Phase 0 — 编排前 | wireforge `protocol_task_run` | 逐条报文匹配路由、取 `input_schema`、确认必填/默认/推导字段 |
+| Phase 1 — 编写 YAML | （Agent） | 从 [`database/templates/test_plan_mock_auto.yaml`](database/templates/test_plan_mock_auto.yaml) 复制，build args 与 MCP schema 对齐 |
+| Phase 2 — 执行 | wireforge-test `test.validate` … `test.run` | 校验并执行；默认 `mock://auto`，真机用 `options.vars.port` 覆盖 |
+
+**Build Flow 不仅是单次构帧，也是 TestPlan 编排的前置依赖分析** — 禁止跳过 protocol MCP 直接写 YAML 或猜测 build 字段名。
+
+### Phase 0：依赖清单与退出规则
+
+1. 列出测试涉及的所有报文（下行、上行、mock 规则帧）
+2. 对每条调用 `protocol_task_run`（见下方 Build Flow）
+3. 对照 `required_fields`；缺匹配或缺参则**停止**，向用户展示参数表并索要输入
+4. 全部确认后再编写 TestPlan
+
+| 情况 | 行为 |
+|------|------|
+| 无 candidate | `未识别的报文，请补充协议地图描述。` |
+| 同 leaf_id 多 entry | 请用户澄清 dir/add |
+| required_fields 缺失 | 展示参数表，停止编排 |
+| protocol_map 缺失 | 提示运行 bootstrap |
+
+### 串口变量
+
+```yaml
+vars:
+  port: mock://auto   # 默认虚拟串口，验证脚本逻辑
+```
+
+真机：`test.run` 传 `"options": {"vars": {"port": "/dev/ttyUSB0"}}`（或 `COM3`）。
+
+### TestPlan 铁律
+
+- 报文一律 `build` 构造，禁止手拼 hex
+- `send` 后接 `wait-frame` 时 `timeout: 0`
+- `auto_rule.match` 用 build 下行帧的 DI hex 片段，不用宽泛 regex
+- `auto_rule.then` 用 dict 格式（`command` + `args.hex`）
+
+### 示例
+
+- 模版：[`database/templates/test_plan_mock_auto.yaml`](database/templates/test_plan_mock_auto.yaml)
+- 最小 mock 示例：[`database/runs/mock_auto_ack.yaml`](database/runs/mock_auto_ack.yaml)
+
 Before protocol tasks, the repository must be initialized once:
 
 ```bash

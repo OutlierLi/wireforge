@@ -28,6 +28,9 @@ def test_test_schema_returns_plan_schema():
     assert result["version"] == 1
     assert "build" in result["supported_actions"]
     assert result["test_plan_schema"]["required"] == ["version", "name", "steps"]
+    assert result["template"] == "database/templates/test_plan_mock_auto.yaml"
+    assert "prerequisite" in result
+    assert result["conventions"]["default_port"] == "mock://auto"
 
 
 def test_test_validate_rejects_invalid_plan():

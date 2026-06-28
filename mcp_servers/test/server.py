@@ -186,24 +186,64 @@ def _usage_text() -> str:
 
 Tools: `test.schema`, `test.validate`, `test.dry_run`, `test.run`, `test.read_report`
 
+## Prerequisites (read first)
+
+**Before writing TestPlan YAML**, use wireforge MCP `protocol_task_run` to confirm every frame's
+route and `input_schema` (see repo `AGENTS.md` Build Flow). Stop and ask the user if any
+required field is missing. Do not guess build field names.
+
+Then use this test MCP to validate and run the plan.
+
 ## Agent workflow
 
-1. Generate TestPlan
+### Phase 0 — protocol MCP (wireforge)
+
+1. List all frames the test needs (downlink, uplink, mock replies)
+2. Call `protocol_task_run` for each → get `input_schema` / `required_fields`
+3. Stop if unmatched or missing parameters; ask user
+
+### Phase 1 — write YAML
+
+- Copy template: `database/templates/test_plan_mock_auto.yaml`
+- Full guide: `database/examples/TEST_PLAN_AGENT.md`
+- Minimal example: `database/runs/mock_auto_ack.yaml`
+
+### Phase 2 — test MCP (this server)
+
+1. `test.schema` — template, examples, conventions, protocol paths
 2. `test.validate` — fix schema errors
-3. `test.dry_run` — fix variable/action errors
+3. `test.dry_run` — fix variable/action errors (optional `vars` override)
 4. `test.run` — execute; read compact summary
-5. On failure: `test.read_report` with `step_id` for diagnostics
+5. On failure: `test.read_report` with `step_id`
+
+## Serial port
+
+- Default in template: `vars.port: mock://auto` (script self-test with auto_rule)
+- Real device: pass `options.vars.port` e.g. `/dev/ttyUSB0` or `COM3`
 
 ## test.run input
 
-Inline plan or file path, plus optional options:
-
 ```json
 {
-  "file": "database/runs/all_actions.yaml",
-  "options": {"timeout_ms": 120000, "dry_run": false}
+  "file": "database/runs/mock_auto_ack.yaml",
+  "options": {
+    "timeout_ms": 60000,
+    "vars": {"port": "/dev/ttyUSB0"}
+  }
 }
 ```
+
+## Key conventions
+
+- Build all frames via `build` action; never hand-craft hex
+- `send` with `timeout: 0` when followed by `wait-frame`
+- `auto_rule.match`: DI hex substring from build output, not `68.*16`
+- `auto_rule.then`: dict format with `command` and `args.hex`
+
+## Protocol sources
+
+- Map: `compiled/protocol_map.yaml` (run `python3 scripts/bootstrap_protocol_cache.py`)
+- CSG fields: `protocol_tool/protocols/csg_2016/variants/afn_payloads.yaml`
 
 Reports are written to `log/run_reports/<run_id>/` by default.
 """

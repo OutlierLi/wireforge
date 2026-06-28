@@ -1,0 +1,266 @@
+# TestPlan Agent 编写指南
+
+Agent 编排测试流程时的主参考文档。模版文件：[`../templates/test_plan_mock_auto.yaml`](../templates/test_plan_mock_auto.yaml)。
+
+---
+
+## 两个 MCP 的分工
+
+| 阶段 | MCP | 工具 | 职责 |
+|------|-----|------|------|
+| **编排前** | wireforge（protocol） | `protocol_task_run` | 匹配报文、/route 取 `input_schema`、确认必填/默认/推导字段 |
+| **编排后** | wireforge-test | `test.validate` … `test.run` | 校验/展开/执行 TestPlan YAML |
+
+**禁止**跳过 protocol MCP 直接写 TestPlan 或猜测 build 字段名。
+
+---
+
+## Phase 0：编排前置（强制）
+
+### 流程
+
+1. 根据用户需求列出**依赖报文清单**（下行请求、上行响应、mock 规则用帧）
+2. 对清单中每一条调用 `protocol_task_run`（见 [`AGENTS.md`](../../AGENTS.md) Build Flow）
+3. 对照 `input_schema` / `required_fields` / `defaulted_fields` / `derived_fields`
+4. 全部齐备后再复制模版、编写 YAML
+5. `test.validate` → `test.dry_run` → `test.run`
+
+### 依赖清单示例
+
+| 序号 | 角色 | 方向 | 描述 | route_params | required_fields | 来源 |
+|------|------|------|------|--------------|-----------------|------|
+| 1 | 被测 | downlink | 档案初始化 | afn=01 di=E8020102 | — | 用户 |
+| 2 | mock | uplink | 确认帧 | afn=00 di=E8010001 | wait_time | auto_rule |
+
+### 必须停止并询问用户的情况
+
+| 情况 | Agent 行为 |
+|------|------------|
+| 无 candidate 匹配 | 回复：`未识别的报文，请补充协议地图描述。` |
+| 多个 entry 同 leaf_id | 请用户澄清 dir/add |
+| `required_fields` 未提供且无法推断 | 展示参数表，请用户补充 |
+| 用户值与 schema 类型/长度冲突 | 说明冲突，请用户修改 |
+| protocol_map 缺失 | 提示运行 `python3 scripts/bootstrap_protocol_cache.py` |
+
+### MCP schema → TestPlan build
+
+```yaml
+- id: build_init_archive
+  action: build
+  args:
+    proto: csg              # route_params.proto
+    afn: "0x01"             # route_params.afn
+    di: E8020102            # route_params.di
+    dir: downlink           # route_params.dir
+    # 其余字段名必须与 input_schema.name 一致
+  save_as: init_frame
+```
+
+---
+
+## Phase 1：脚本验证（mock://auto）
+
+模版默认变量：
+
+```yaml
+vars:
+  port: mock://auto    # 不传 options.vars.port 时使用
+  conn: cco
+  baudrate: 9600
+  proto: csg
+```
+
+`mock://auto`：写入帧经 auto_rule 匹配后生成 RX，适合验证 TestPlan 逻辑，无需真机。
+
+---
+
+## Phase 2：真机执行
+
+```json
+{
+  "file": "database/runs/my_test.yaml",
+  "options": {
+    "timeout_ms": 120000,
+    "vars": {"port": "/dev/ttyUSB0"}
+  }
+}
+```
+
+Windows 示例：`"port": "COM3"`。未传 `port` 则保持 `mock://auto`。
+
+---
+
+## 命令速查
+
+### build — 构造报文
+
+```yaml
+- id: build_query
+  action: build
+  args:
+    proto: csg
+    afn: "0x03"
+    di: E8000301
+    dir: downlink
+  save_as: query
+```
+
+- 字段名/类型以 protocol MCP 的 `input_schema` 为准
+- `save_as` 后可用 `${query.frame}`、`${query.frame_hex}`
+- 禁止手拼 hex
+
+### send — 发送
+
+```yaml
+- id: send_query
+  action: send
+  args:
+    conn: ${conn}
+    hex: ${query.frame_hex}
+    timeout: 0          # 后接 wait-frame 时必须为 0
+```
+
+`timeout: 0` 表示只发不等；mock 回复留给 `wait-frame` 读取。
+
+### wait-frame — 等待响应
+
+```yaml
+- id: wait_resp
+  action: wait-frame
+  args:
+    conn: ${conn}
+    proto: ${proto}
+    timeout_ms: 5000
+    expect:
+      afn: "03"
+      di: E8000301
+      dir: uplink
+  save_as: resp
+```
+
+assert 示例：`resp.matched: true` 或 `resp.decoded.user_data.slave_total: 1024`
+
+### decode — 解码
+
+```yaml
+- id: decode_resp
+  action: decode
+  args:
+    proto: csg
+    hex: ${resp.frame_hex}
+  save_as: decoded
+```
+
+优先用 `wait-frame` 的 `save_as.decoded.*` 做 assert；decode 步骤用于额外校验。
+
+### assert — 断言
+
+```yaml
+- id: check
+  action: assert
+  args:
+    expect:
+      resp.matched: true
+      resp.decoded.user_data.slave_total: 1024
+```
+
+### auto_rule.add — mock 自动回复
+
+**不推荐**：`68.*16`、`68..00..E8` 等宽泛 regex。
+
+**推荐**：
+
+1. build 要被匹配的**下行帧**
+2. 从 `${frame}` 去空格，取唯一 **DI hex 片段** 作为 `match`
+3. `then` 用 dict 格式引用 pre-build 的上行帧
+
+```yaml
+- id: build_count_resp
+  action: build
+  args:
+    proto: csg
+    afn: "0x03"
+    di: E8000305
+    dir: uplink
+    slave_total: 1024
+  save_as: count_resp
+
+- id: add_rule_count
+  action: auto_rule.add
+  args:
+    id: rule_query_count
+    match: "050300E8"
+    source: serial:${conn}
+    then:
+      - command: /send
+        args:
+          hex: ${count_resp.frame}
+```
+
+DI 片段来源：查询数量下行 `E8000305` → 线上字节 `05 03 00 E8` → match `050300E8`。
+
+**mock://auto 内置兜底**（[`wireforge_serial/transport.py`](../../wireforge_serial/transport.py)）：查询从节点信息（`060303E8`）按 `start_slave_index` 动态生成地址；其它未命中规则的下行为确认帧。优先写显式 auto_rule。
+
+### serial.connect / disconnect
+
+```yaml
+setup:
+  - action: serial.connect
+    args:
+      conn: ${conn}
+      port: ${port}
+      baudrate: ${baudrate}
+
+teardown:
+  - action: serial.disconnect
+    args:
+      conn: ${conn}
+```
+
+---
+
+## 协议信息从哪里查
+
+| 目的 | 路径 |
+|------|------|
+| 协议注册表 | [`protocol_tool/protocols/registry.yaml`](../../protocol_tool/protocols/registry.yaml) |
+| CSG AFN/DI/字段 | [`protocol_tool/protocols/csg_2016/variants/afn_payloads.yaml`](../../protocol_tool/protocols/csg_2016/variants/afn_payloads.yaml) |
+| DLT645 变体 | [`protocol_tool/protocols/dlt645_2007/variants/`](../../protocol_tool/protocols/dlt645_2007/variants/) |
+| 帧结构 | 各协议目录下 `frame.yaml` |
+| **报文索引（首选）** | [`compiled/protocol_map.yaml`](../../compiled/protocol_map.yaml) |
+| IR（build 路由） | [`compiled/csg_2016.ir.json`](../../compiled/csg_2016.ir.json) 等 |
+
+运行 bootstrap 生成索引：
+
+```bash
+python3 scripts/bootstrap_protocol_cache.py
+```
+
+---
+
+## 示例索引
+
+| 示例 | 文件 | 场景 |
+|------|------|------|
+| 最小 mock | [`mock_auto_ack.md`](mock_auto_ack.md) | 单连接 mock://auto + auto_rule |
+| 双端 virtual | [`vendor_code_query.md`](vendor_code_query.md) | CCO + STA 总线 |
+| 动作覆盖 | [`../runs/all_actions.yaml`](../runs/all_actions.yaml) | 全部 action 类型 |
+
+---
+
+## test MCP 工作流
+
+```text
+Phase 0: protocol_task_run（每条报文确认 schema）
+    ↓
+编写 YAML（从模版复制）
+    ↓
+test.schema（可选，了解模版与约定）
+test.validate(plan)
+test.dry_run(plan, vars?)
+test.run(plan, options)
+    ↓ 失败
+test.read_report(report_dir, step_id)
+```
+
+报告默认目录：`log/run_reports/<run_id>/`

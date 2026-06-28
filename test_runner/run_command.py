@@ -84,7 +84,55 @@ class RunCommand:
                 "set_var": "Set a variable in scope",
                 "sleep": "Sleep for specified ms",
             },
-            "example": "database/runs/all_actions.yaml",
+            "example": "database/runs/mock_auto_ack.yaml",
+            "template": "database/templates/test_plan_mock_auto.yaml",
+            "agent_guide": "database/examples/TEST_PLAN_AGENT.md",
+            "examples": [
+                {
+                    "name": "mock_auto_ack",
+                    "file": "database/runs/mock_auto_ack.yaml",
+                    "doc": "database/examples/mock_auto_ack.md",
+                    "scenario": "单连接 mock://auto + auto_rule 确认帧",
+                },
+                {
+                    "name": "vendor_code_query",
+                    "file": "database/runs/vendor_code_query.yaml",
+                    "doc": "database/examples/vendor_code_query.md",
+                    "scenario": "virtual 双端 CCO+STA",
+                },
+                {
+                    "name": "all_actions_coverage",
+                    "file": "database/runs/all_actions.yaml",
+                    "doc": None,
+                    "scenario": "全部 action 类型覆盖",
+                },
+            ],
+            "protocol_sources": {
+                "registry": "protocol_tool/protocols/registry.yaml",
+                "csg_afn_payloads": "protocol_tool/protocols/csg_2016/variants/afn_payloads.yaml",
+                "dlt645_variants": "protocol_tool/protocols/dlt645_2007/variants/",
+                "protocol_map": "compiled/protocol_map.yaml",
+                "bootstrap": "python3 scripts/bootstrap_protocol_cache.py",
+            },
+            "conventions": {
+                "default_port": "mock://auto",
+                "real_port_override": "test.run options.vars.port",
+                "send_before_wait_frame": "send args.timeout must be 0",
+                "auto_rule_match": "use DI hex substring from build downlink frame, not broad regex",
+                "auto_rule_then": "use dict format: then: [{command: /send, args: {hex: ...}}]",
+                "build_fields": "field names from protocol MCP input_schema only",
+            },
+            "prerequisite": {
+                "mcp": "wireforge protocol_task_run",
+                "doc": "AGENTS.md Build Flow",
+                "rule": "Complete protocol MCP dependency check for every frame before writing TestPlan YAML",
+                "stop_on": [
+                    "no protocol candidate match",
+                    "ambiguous entry_id",
+                    "missing required_fields",
+                    "missing protocol_map (run bootstrap)",
+                ],
+            },
         }
 
     @staticmethod
