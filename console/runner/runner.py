@@ -12,6 +12,8 @@ from console.runner.plan import load_plan
 from console.runner.report_writer import ReportWriter, format_summary
 from console.runner.variables import resolve_value
 
+ROOT = Path(__file__).resolve().parent.parent.parent
+
 
 def run_test_plan(
     file: str,
@@ -25,7 +27,7 @@ def run_test_plan(
     plan = load_plan(plan_path)
     plan_name = str(plan["name"])
     now = datetime.now().astimezone()
-    report_dir = Path(report) if report else Path("reports") / f"{plan_name}_{now.strftime('%Y%m%d_%H%M%S')}"
+    report_dir = Path(report) if report else ROOT / "log" / "run_reports" / f"{plan_name}_{now.strftime('%Y%m%d_%H%M%S')}"
     plan_timeout = int(timeout_ms or plan.get("timeout_ms") or 0)
     deadline = time.monotonic() + plan_timeout / 1000.0 if plan_timeout else None
     ctx = RunContext(
