@@ -102,37 +102,64 @@ def handle(args: dict[str, Any]) -> dict:
         return fail("cache missing file_info frame")
 
     info_frame = bytes.fromhex(info_hex)
-    resp = _send_and_wait(transport, info_frame, timeout, retries)
+    info_diag: dict[str, Any] = {}
+    resp = _send_and_wait(transport, info_frame, timeout, retries, diag=info_diag)
     if not resp:
-        return fail("no response to file info", detail=results)
+        detail = {**results, "phase": "file_info", "diagnostics": info_diag}
+        return fail(
+            f"no response to file info: {info_diag.get('last_error', 'timeout')}",
+            detail=detail,
+        )
 
-    if not _parse_ack(resp):
-        return fail("device NAK or no ACK for file info", detail=results)
+    ack_diag: dict[str, Any] = {}
+    if not _parse_ack(resp, diag=ack_diag):
+        detail = {
+            **results, "phase": "file_info",
+            "diagnostics": {**info_diag, "last_recv_hex": resp.hex(" "), **ack_diag},
+        }
+        reason = ack_diag.get("nak_detail") or ack_diag.get("decode_detail") or "device NAK or no ACK for file info"
+        return fail(reason, detail=detail)
     results["file_info_ack"] = True
 
     # Phase 2: 逐段传输 (从缓存查帧)
     sent = 0
-    failed_segments = []
+    failed_segments: list[dict[str, Any]] = []
     start_time = time.monotonic()
+    last_seg_diag: dict[str, Any] = {}
 
     for i in range(1, total_segments + 1):
         seg_hex = cache["frames"].get(str(i))
         if not seg_hex:
-            failed_segments.append(i)
+            failed_segments.append({"segment": i, "reason": "cache miss"})
             continue
 
         seg_frame = bytes.fromhex(seg_hex)
         seg_timeout = timeout * 3 if i == total_segments else timeout
-        resp = _send_and_wait(transport, seg_frame, seg_timeout, retries)
+        seg_diag: dict[str, Any] = {}
+        resp = _send_and_wait(transport, seg_frame, seg_timeout, retries, diag=seg_diag)
+        last_seg_diag = seg_diag
 
-        if resp and _parse_ack(resp):
+        if resp and _parse_ack(resp, diag=seg_diag):
             sent += 1
         else:
-            failed_segments.append(i)
+            failure_entry: dict[str, Any] = {"segment": i}
+            if not resp:
+                failure_entry["reason"] = seg_diag.get("last_error", "no response")
+            else:
+                failure_entry["reason"] = seg_diag.get("nak_detail") or seg_diag.get("decode_detail") or "NAK"
+                failure_entry["last_recv_hex"] = resp.hex(" ")
+            failure_entry["last_send_hex"] = seg_diag.get("last_send_hex", seg_hex)
+            failed_segments.append(failure_entry)
+            last_seg_diag = seg_diag
+
             if len(failed_segments) > retries:
                 results["sent_segments"] = sent
                 results["failed_segments"] = failed_segments
-                return fail(f"too many segment failures ({len(failed_segments)})", detail=results)
+                results["last_diagnostics"] = last_seg_diag
+                return fail(
+                    f"too many segment failures ({len(failed_segments)}/{retries + 1})",
+                    detail=results,
+                )
 
     elapsed = time.monotonic() - start_time
     results["sent_segments"] = sent
@@ -144,6 +171,8 @@ def handle(args: dict[str, Any]) -> dict:
 
     if results["success"]:
         return ok(results)
+    # Include last diagnostics for debugging
+    results["last_diagnostics"] = last_seg_diag
     return fail(f"{len(failed_segments)} segments failed", detail=results)
 
 
@@ -226,25 +255,48 @@ def _crc16_modbus(data: bytes) -> int:
     return crc & 0xFFFF
 
 
-def _send_and_wait(transport, frame: bytes, timeout: float, retries: int) -> bytes | None:
+def _send_and_wait(transport, frame: bytes, timeout: float, retries: int,
+                   diag: dict[str, Any] | None = None) -> bytes | None:
+    """Send frame and wait for response. Populates diag with last send/recv on failure."""
+    last_error = None
     for attempt in range(retries):
         try:
             transport.write(frame)
             resp = transport.read_response(timeout)
             if resp:
                 return resp
-        except Exception:
-            pass
+            last_error = f"no response within {timeout}s (attempt {attempt + 1}/{retries})"
+        except Exception as exc:
+            last_error = f"{type(exc).__name__}: {exc}"
         time.sleep(0.1)
+
+    if diag is not None:
+        diag["last_send_hex"] = frame.hex(" ")
+        diag["last_error"] = last_error or "unknown"
     return None
 
 
-def _parse_ack(data: bytes) -> bool:
+def _parse_ack(data: bytes, diag: dict[str, Any] | None = None) -> bool:
+    """Parse ACK/NAK from response. Populates diag with decode info on failure."""
     try:
         r = exec_cmd("decode", {"proto": "csg", "hex": data.hex(" ")})
         if r.get("status") == "success":
             result = r.get("data", {}).get("values", {}).get("result")
-            return result == 0
-    except Exception:
-        pass
+            if result == 0:
+                return True
+            # NAK — record the error code
+            error_code = r.get("data", {}).get("values", {}).get("error_code")
+            if diag is not None:
+                diag["nak_received"] = True
+                diag["nak_error_code"] = error_code
+                diag["nak_detail"] = f"device NAK (error_code={error_code})"
+            return False
+        # Decode failed — non-ACK response
+        if diag is not None:
+            diag["decode_failed"] = True
+            diag["decode_error"] = r.get("error", "?")
+            diag["decode_detail"] = f"decode failed: {r.get('error', '?')}"
+    except Exception as exc:
+        if diag is not None:
+            diag["parse_exception"] = f"{type(exc).__name__}: {exc}"
     return False

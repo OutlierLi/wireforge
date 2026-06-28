@@ -16,6 +16,7 @@ import json
 import os
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -127,6 +128,9 @@ class SerialTransport:
         self.settings = settings
         self._port: _PortLike | None = None
         self._last_error: str = ""
+        # 实时回调: 每个读取到的 chunk 都会触发
+        self.on_rx_chunk: Callable[[bytes], None] | None = None
+        self.on_tx: Callable[[bytes], None] | None = None
 
     def open(self):
         port = self.settings.port
@@ -163,7 +167,10 @@ class SerialTransport:
         if not self._port:
             raise RuntimeError("port not open")
         try:
-            return self._port.write(data)
+            result = self._port.write(data)
+            if self.on_tx:
+                self.on_tx(data)
+            return result
         except Exception as e:
             self._last_error = str(e)
             raise
@@ -191,7 +198,10 @@ class SerialTransport:
             return False
 
     def read_response(self, timeout: float, idle_timeout: float = 0.05) -> bytes:
-        """轮询读取直到超时，空闲后返回完整响应。"""
+        """轮询读取直到超时，空闲后返回完整响应。
+
+        每收到一个 chunk 触发 on_rx_chunk 回调，用于实时终端显示。
+        """
         deadline = time.monotonic() + timeout
         buf = bytearray()
         idle_deadline = None
@@ -200,6 +210,8 @@ class SerialTransport:
             chunk = self.read_available(4096)
             if chunk:
                 buf.extend(chunk)
+                if self.on_rx_chunk:
+                    self.on_rx_chunk(chunk)
                 idle_deadline = time.monotonic() + idle_timeout
             if idle_deadline and time.monotonic() >= idle_deadline:
                 break

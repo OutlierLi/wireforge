@@ -26,6 +26,7 @@ from wireforge_serial.api import (
     serial_send,
     serial_use,
 )
+from wireforge_serial.logger import log_config_change
 from console.response import ok, fail, missing_param
 
 
@@ -109,6 +110,7 @@ def _set(args: dict) -> dict:
 
     current.update(new_params)
     _last_settings[name] = current
+    log_config_change(name, new_params, current)
     return ok({
         "name": name,
         "updated": new_params,

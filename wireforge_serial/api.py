@@ -11,6 +11,10 @@ import re
 from typing import Any
 
 from wireforge_serial.transport import SerialTransport, SerialSettings
+from wireforge_serial.logger import (
+    log_connect, log_disconnect, log_tx, log_rx, log_rx_timeout, log_rx_error,
+    display_tx, display_rx, display_rx_timeout, display_connect, display_disconnect,
+)
 from protocol_tool.utils.logger import log_serial
 
 # 全局连接实例
@@ -94,9 +98,14 @@ def serial_open(args: dict[str, Any]) -> SerialResult:
         }
         result = SerialResult(True, "open", data={
             "id": cid, "name": cid, "port": port, "baudrate": settings.baudrate,
-            "status": "connected",
+            "bytesize": settings.bytesize, "parity": settings.parity,
+            "stopbits": settings.stopbits, "status": "connected",
         })
         log_serial("open", port=port, data=result.data)
+        log_connect(cid, port, settings.baudrate, settings.bytesize,
+                    settings.parity, settings.stopbits)
+        display_connect(cid, port, settings.baudrate, settings.bytesize,
+                        settings.parity, settings.stopbits)
         return result
     except Exception as e:
         log_serial("open", port=port, success=False, error=str(e))
@@ -130,12 +139,27 @@ def serial_send(args: dict[str, Any]) -> SerialResult:
             reason = getattr(t, '_last_error', '') or "port not open"
             _connections.pop(cid, None)
             _mark_disconnected(cid, reason)
+            log_disconnect(cid, reason)
+            display_disconnect(cid, reason)
             log_serial("disconnect", port="", success=False,
                        error=reason, data={"id": cid, "name": cid, "reason": reason})
             return SerialResult(False, "send", error=reason)
 
+        # 设置实时显示回调
+        t.on_tx = lambda d: (_log_and_display_tx(cid, d))
+        t.on_rx_chunk = lambda d: (_log_and_display_rx(cid, d))
+
         written = t.write(data)
         response = t.read_response(timeout)
+
+        # 清理回调
+        t.on_tx = None
+        t.on_rx_chunk = None
+
+        # 超时提示
+        if not response:
+            log_rx_timeout(cid, timeout)
+            display_rx_timeout(cid, timeout)
 
         # 发送后再次检查连接状态
         disconnect_reason = ""
@@ -143,6 +167,8 @@ def serial_send(args: dict[str, Any]) -> SerialResult:
             disconnect_reason = getattr(t, '_last_error', '') or "port not open"
             _connections.pop(cid, None)
             _mark_disconnected(cid, disconnect_reason)
+            log_disconnect(cid, disconnect_reason)
+            display_disconnect(cid, disconnect_reason)
             log_serial("disconnect", port="", success=False,
                        error=disconnect_reason, data={"id": cid, "name": cid, "reason": disconnect_reason})
 
@@ -164,6 +190,10 @@ def serial_send(args: dict[str, Any]) -> SerialResult:
             result.data["warning"] = f"disconnected: {disconnect_reason}"
         return result
     except Exception as e:
+        # 清理回调
+        t.on_tx = None
+        t.on_rx_chunk = None
+        log_rx_error(cid, str(e))
         _set_last_error(cid, str(e))
         log_serial("send", port="", success=False, error=str(e),
                    data={"id": cid, "name": cid, "reason": str(e)})
@@ -185,6 +215,8 @@ def serial_close(args: dict[str, Any]) -> SerialResult:
         _mark_disconnected(cid, "")
         result = SerialResult(True, "close", data={"id": cid, "name": cid, "status": "closed"})
         log_serial("close", port="", data=result.data)
+        log_disconnect(cid)
+        display_disconnect(cid)
         return result
     except Exception as e:
         log_serial("close", port="", success=False, error=str(e))
@@ -329,3 +361,15 @@ def _format_received(data: bytes, display: str) -> str:
 
 def _now() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def _log_and_display_tx(device: str, data: bytes) -> None:
+    """实时打印 + 日志记录发送数据。"""
+    log_tx(device, data)
+    display_tx(device, data)
+
+
+def _log_and_display_rx(device: str, data: bytes) -> None:
+    """实时打印 + 日志记录接收数据。"""
+    log_rx(device, data)
+    display_rx(device, data)
