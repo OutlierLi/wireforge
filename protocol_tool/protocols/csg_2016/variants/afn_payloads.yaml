@@ -35,9 +35,9 @@ variants:
     body:
       type: struct
       fields:
-        - name: result
-          type: enum
-          values: { 0x00: "确认(ACK)", 0x01: "否认(NAK)" }
+        - name: wait_time
+          type: uint_16_le
+          default: 0
 
   - kind: variant
     id: csg_2016.afn00_nak
@@ -51,6 +51,7 @@ variants:
       fields:
         - name: error_code
           type: uint8
+          default: 0xFF
 
   # ═══════════════════════════════════════════════════════
   # AFN=01H 初始化 → afn01_di_router
@@ -83,7 +84,7 @@ variants:
 
   - kind: variant
     id: csg_2016.afn01_init_archive
-    description: "初始化档案"
+    description: "初始化档案,清楚模块保存的档案信息"
     router: afn01_di_router
     match:
       di: "E8020102"
@@ -95,7 +96,7 @@ variants:
 
   - kind: variant
     id: csg_2016.afn01_init_task
-    description: "初始化任务"
+    description: "初始化任务,清除模块保存的任务信息,初始化成功后处于暂停任务状态"
     router: afn01_di_router
     match:
       di: "E8020103"
@@ -136,11 +137,11 @@ variants:
         - name: task_id
           type: uint16_le
           default: 0
-          description: "任务ID"
+          description: "任务ID,区分不同任务的任务标识,取值范围0x0000-0xEFFF"
         - name: task_mode_word
           type: uint8
           default: 0x10
-          description: "任务模式字"
+          description: "任务模式字,D7为任务响应标识,D3-D0为任务优先级"
         - name: timeout_seconds
           type: uint16_le
           default: 70
@@ -169,7 +170,7 @@ variants:
       fields:
         - name: task_id
           type: uint16_le
-          description: "任务ID"
+          description: "任务ID,区分不同任务的任务标识,取值范围0x0000-0xEFFF"
 
   - kind: variant
     id: csg_2016.afn02_query_remaining
@@ -185,9 +186,10 @@ variants:
 
   - kind: variant
     id: csg_2016.afn02_query_remaining_resp
+    description: "返回查询未完成任务数"
     router: afn02_di_router
     match:
-      di: "E8000203"
+      di: "E8000103"
       control.dir: 1
       control.add: 0
     body:
@@ -210,7 +212,7 @@ variants:
       fields:
         - name: start_task_index
           type: uint16_le
-          description: "起始任务序号"
+          description: "起始任务序号,序号从0开始"
         - name: query_task_count
           type: uint8
           description: "查询任务数量"
@@ -334,7 +336,7 @@ variants:
           description: "任务模式字"
         - name: slave_count
           type: uint16_le
-          description: "从节点数量，0xFFFF 表示广播"
+          description: "从节点数量,0xFFFF 表示广播"
         - name: slave_addrs
           type: array
           count_ref: slave_count
