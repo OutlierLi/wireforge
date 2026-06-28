@@ -461,6 +461,58 @@
       "import": "Import variables from YAML: /var import --file=<path.yaml> [--mode=merge|replace]"
     }
   },
+  "run": {
+    "desc": "Execute a YAML TestPlan with ordered serial/protocol test steps",
+    "module": "console.handlers.run",
+    "handler": "handle",
+    "enabled": true,
+    "params": {
+      "file": {
+        "type": "str",
+        "required": true,
+        "desc": "TestPlan YAML file",
+        "examples": [
+          "tests/sta_join.yaml"
+        ]
+      },
+      "dry-run": {
+        "type": "bool",
+        "required": false,
+        "desc": "Resolve and report steps without executing serial/protocol commands"
+      },
+      "json": {
+        "type": "bool",
+        "required": false,
+        "desc": "Reserved for structured clients; command response is always structured"
+      },
+      "var": {
+        "type": "str",
+        "required": false,
+        "desc": "Override plan variable; may be repeated",
+        "examples": [
+          "cco=COM9",
+          "sta=COM10"
+        ]
+      },
+      "timeout": {
+        "type": "int",
+        "required": false,
+        "desc": "Override total run timeout in ms",
+        "examples": [
+          120000
+        ]
+      },
+      "report": {
+        "type": "str",
+        "required": false,
+        "desc": "Report output directory",
+        "examples": [
+          "reports/sta_join_001"
+        ]
+      }
+    },
+    "sub_commands": {}
+  },
   "upg": {
     "desc": "Firmware upgrade via CSG AFN=07 file transfer",
     "module": "console.handlers.upg",

@@ -160,7 +160,7 @@ class TestMatch:
 
     def test_test_disabled_rule_does_not_match(self):
         # 先加载并禁用
-        exec_cmd("auto_rule", {"sub": "load", "file": "tests/rules.yaml"})
+        exec_cmd("auto_rule", {"sub": "load", "file": "database/rules/auto_reply_rules.yaml"})
         exec_cmd("auto_rule", {"sub": "disable", "id": "csg_query_vendor_ack"})
         r = exec_cmd("auto_rule", {
             "sub": "test", "id": "csg_query_vendor_ack",
@@ -184,7 +184,7 @@ class TestMatch:
 
 class TestLoad:
     def test_load_yaml_success(self):
-        r = exec_cmd("auto_rule", {"sub": "load", "file": "tests/rules.yaml"})
+        r = exec_cmd("auto_rule", {"sub": "load", "file": "database/rules/auto_reply_rules.yaml"})
         _ok(r)
         assert r["data"]["loaded"] > 0
 

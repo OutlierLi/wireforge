@@ -1,0 +1,158 @@
+version: 1
+name: all_actions_coverage
+vars:
+  cco: cco
+  sta: sta
+  proto: csg
+  baudrate: 9600
+  timeout_ms: 5000
+setup:
+- id: connect_cco
+  action: serial.connect
+  args:
+    port: virtual://cov
+    baudrate: 9600
+    name: cco
+    sub: connect
+- id: connect_sta
+  action: serial.connect
+  args:
+    port: virtual://cov
+    baudrate: 9600
+    name: sta
+    sub: connect
+steps:
+- id: build_query
+  action: build
+  args:
+    proto: csg
+    afn: '0x03'
+    di: E8000301
+    dir: downlink
+  save_as: query_frame
+- id: build_resp
+  action: build
+  args:
+    proto: csg
+    afn: '0x03'
+    di: E8000301
+    dir: uplink
+    vendor_code: AB
+    chip_code: CD
+    version_date.year: '25'
+    version_date.month: '06'
+    version_date.day: '28'
+    version: '01'
+  save_as: resp_frame
+- id: assert_frame
+  action: assert
+  args:
+    expect:
+      query_frame.frame_hex: 68 0C 00 40 03 01 01 03 00 E8 30 16
+- id: cco_send
+  action: send
+  args:
+    conn: ${cco}
+    hex: ${query_frame.frame_hex}
+    timeout: 1
+- id: add_rule
+  action: auto_rule.add
+  args:
+    id: test_rule_cov
+    match: 68..16
+    source: serial:sta
+    then: reply_with_ack
+    sub: add
+- id: pause1
+  action: sleep
+  args:
+    ms: 100
+- id: sta_send
+  action: send
+  args:
+    conn: ${sta}
+    hex: ${resp_frame.frame_hex}
+    timeout: 0.5
+- id: wait_resp
+  action: wait-frame
+  args:
+    proto: csg
+    name: cco
+    timeout: 5000
+    expect.afn: '03'
+    expect.di: E8000301
+    expect.dir: uplink
+  save_as: waited
+- id: assert_waited
+  action: assert
+  args:
+    expect:
+      waited.frame_hex: ${resp_frame.frame_hex}
+- id: decode_resp
+  action: decode
+  args:
+    proto: ${proto}
+    hex: ${waited.frame_hex}
+  save_as: decoded
+- id: assert_decode
+  action: assert
+  args:
+    expect:
+      decoded.protocol: csg_2016
+- id: sta_preload
+  action: send
+  args:
+    conn: ${sta}
+    hex: ${resp_frame.frame_hex}
+    timeout: 0.5
+- id: request_test
+  action: request
+  args:
+    proto: csg
+    build:
+      proto: csg
+      afn: '0x03'
+      di: E8000301
+      dir: downlink
+    wait:
+      afn: '03'
+      di: E8000301
+      dir: uplink
+    name: cco
+    timeout: 5000
+  save_as: req
+- id: assert_req
+  action: assert
+  args:
+    expect:
+      req.response.frame_hex: ${resp_frame.frame_hex}
+- id: store
+  action: set_var
+  args:
+    name: final_status
+    value: all_passed
+- id: assert_var
+  action: assert
+  args:
+    expect:
+      final_status: all_passed
+- id: final_sleep
+  action: sleep
+  args:
+    ms: 50
+teardown:
+- id: remove_rule
+  action: auto_rule.remove
+  args:
+    id: test_rule_cov
+    sub: delete
+- id: close_cco
+  action: serial.disconnect
+  args:
+    name: cco
+    sub: disconnect
+- id: close_sta
+  action: serial.disconnect
+  args:
+    name: sta
+    sub: disconnect

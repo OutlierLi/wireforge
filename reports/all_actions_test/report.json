@@ -1,0 +1,1078 @@
+{
+  "run_id": "f6eda15a3465",
+  "name": "all_actions_coverage",
+  "status": "success",
+  "error": "",
+  "started_at": "2026-06-28T16:51:21+08:00",
+  "total_ms": 1894,
+  "steps": [
+    {
+      "id": "connect_cco",
+      "action": "serial.connect",
+      "status": "ok",
+      "elapsed_ms": 2,
+      "error": "",
+      "result": {
+        "schema": "protocol-tui.v1",
+        "status": "success",
+        "data": {
+          "id": "cco",
+          "name": "cco",
+          "port": "virtual://cov",
+          "baudrate": 9600,
+          "bytesize": 8,
+          "parity": "N",
+          "stopbits": 1.0,
+          "status": "connected"
+        }
+      }
+    },
+    {
+      "id": "connect_sta",
+      "action": "serial.connect",
+      "status": "ok",
+      "elapsed_ms": 0,
+      "error": "",
+      "result": {
+        "schema": "protocol-tui.v1",
+        "status": "success",
+        "data": {
+          "id": "sta",
+          "name": "sta",
+          "port": "virtual://cov",
+          "baudrate": 9600,
+          "bytesize": 8,
+          "parity": "N",
+          "stopbits": 1.0,
+          "status": "connected"
+        }
+      }
+    },
+    {
+      "id": "build_query",
+      "action": "build",
+      "status": "ok",
+      "elapsed_ms": 12,
+      "error": "",
+      "result": {
+        "schema": "protocol-tui.v1",
+        "status": "success",
+        "data": {
+          "protocol": "csg_2016",
+          "path": "main[[0,0]]→csg_downlink → afn_router[[3]]→csg_2016.afn03_group → afn03_di_router[[\"E8000301\",0,0]]→csg_2016.afn03_query_vendor",
+          "frame": "68 0C 00 40 03 01 01 03 00 E8 30 16",
+          "resolved": {
+            "message_id": "csg_downlink",
+            "variant_id": "csg_2016.afn03_query_vendor"
+          }
+        }
+      }
+    },
+    {
+      "id": "build_resp",
+      "action": "build",
+      "status": "ok",
+      "elapsed_ms": 1,
+      "error": "",
+      "result": {
+        "schema": "protocol-tui.v1",
+        "status": "success",
+        "data": {
+          "protocol": "csg_2016",
+          "path": "main[[1,0]]→csg_uplink → afn_router[[3]]→csg_2016.afn03_group → afn03_di_router[[\"E8000301\",1,0]]→csg_2016.afn03_query_vendor_resp",
+          "frame": "68 15 00 80 03 01 01 03 00 E8 41 42 43 44 25 06 28 01 00 CE 16",
+          "resolved": {
+            "message_id": "csg_uplink",
+            "variant_id": "csg_2016.afn03_query_vendor_resp"
+          }
+        }
+      }
+    },
+    {
+      "id": "assert_frame",
+      "action": "assert",
+      "status": "ok",
+      "elapsed_ms": 0,
+      "error": "",
+      "result": {
+        "schema": "protocol-tui.v1",
+        "status": "success",
+        "data": {
+          "asserted": 1
+        }
+      }
+    },
+    {
+      "id": "cco_send",
+      "action": "send",
+      "status": "ok",
+      "elapsed_ms": 1011,
+      "error": "",
+      "result": {
+        "schema": "protocol-tui.v1",
+        "status": "success",
+        "data": {
+          "id": "cco",
+          "name": "cco",
+          "sent": "68 0C 00 40 03 01 01 03 00 E8 30 16",
+          "sent_bytes": 12,
+          "received": "",
+          "received_bytes": 0,
+          "display": "hex"
+        }
+      }
+    },
+    {
+      "id": "add_rule",
+      "action": "auto_rule.add",
+      "status": "ok",
+      "elapsed_ms": 2,
+      "error": "",
+      "result": {
+        "schema": "protocol-tui.v1",
+        "status": "success",
+        "data": {
+          "added": "test_rule_cov",
+          "rule": {
+            "id": "test_rule_cov",
+            "name": "",
+            "enabled": true,
+            "trigger": {
+              "source": "serial:sta",
+              "event": "frame_received"
+            },
+            "condition": {
+              "type": "regex",
+              "pattern": "68..16"
+            },
+            "actions": [
+              {
+                "command": "reply_with_ack",
+                "args": {}
+              }
+            ],
+            "execution": {
+              "mode": "sequential",
+              "cooldown_ms": 0,
+              "on_error": "skip"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "pause1",
+      "action": "sleep",
+      "status": "ok",
+      "elapsed_ms": 100,
+      "error": "",
+      "result": {
+        "schema": "protocol-tui.v1",
+        "status": "success",
+        "data": {
+          "elapsed_ms": 100
+        }
+      }
+    },
+    {
+      "id": "sta_send",
+      "action": "send",
+      "status": "ok",
+      "elapsed_ms": 64,
+      "error": "",
+      "result": {
+        "schema": "protocol-tui.v1",
+        "status": "success",
+        "data": {
+          "id": "sta",
+          "name": "sta",
+          "sent": "68 15 00 80 03 01 01 03 00 E8 41 42 43 44 25 06 28 01 00 CE 16",
+          "sent_bytes": 21,
+          "received": "68 0C 00 40 03 01 01 03 00 E8 30 16",
+          "received_bytes": 12,
+          "display": "hex"
+        }
+      }
+    },
+    {
+      "id": "wait_resp",
+      "action": "wait-frame",
+      "status": "ok",
+      "elapsed_ms": 66,
+      "error": "",
+      "result": {
+        "schema": "protocol-tui.v1",
+        "status": "success",
+        "data": {
+          "matched": true,
+          "elapsed_ms": 64,
+          "frame_hex": "68 15 00 80 03 01 01 03 00 E8 41 42 43 44 25 06 28 01 00 CE 16",
+          "decoded": {
+            "dir": "uplink",
+            "add": 0,
+            "afn": "0x03",
+            "di": "E8000301",
+            "seq": 1,
+            "user_data.afn": "3",
+            "user_data.seq": "1",
+            "user_data.di": "E8 00 03 01",
+            "user_data.start": "104",
+            "user_data.total_length": "21",
+            "user_data.vendor_code": "AB",
+            "user_data.chip_code": "CD",
+            "user_data.field_0": "25",
+            "user_data.field_1": "06",
+            "user_data.field_2": "28",
+            "user_data.version": "0001",
+            "protocol": "csg_2016"
+          },
+          "frame_index": 1
+        }
+      }
+    },
+    {
+      "id": "assert_waited",
+      "action": "assert",
+      "status": "ok",
+      "elapsed_ms": 0,
+      "error": "",
+      "result": {
+        "schema": "protocol-tui.v1",
+        "status": "success",
+        "data": {
+          "asserted": 1
+        }
+      }
+    },
+    {
+      "id": "decode_resp",
+      "action": "decode",
+      "status": "ok",
+      "elapsed_ms": 3,
+      "error": "",
+      "result": {
+        "schema": "protocol-tui.v1",
+        "status": "success",
+        "data": {
+          "protocol": "csg_2016",
+          "path": "main[control.dir=0x01, control.add=0x00]→csg_uplink → afn_router[afn=0x03]→csg_2016.afn03_group → afn03_di_router[di=E8 00 03 01, control.dir=0x01, control.add=0x00]→csg_2016.afn03_query_vendor_resp",
+          "frame": "68 15 00 80 03 01 01 03 00 E8 41 42 43 44 25 06 28 01 00 CE 16",
+          "values": {
+            "start": 104,
+            "total_length": 21,
+            "control": {
+              "raw": 128,
+              "dir": 1,
+              "prm": 0,
+              "add": 0,
+              "ver": 0,
+              "reserved": 0
+            },
+            "user_data": {
+              "afn": 3,
+              "seq": 1,
+              "di": "E8 00 03 01",
+              "csg_2016.afn03_group.start": 104,
+              "csg_2016.afn03_group.total_length": 21,
+              "csg_2016.afn03_group.control": {
+                "raw": 128,
+                "dir": 1,
+                "prm": 0,
+                "add": 0,
+                "ver": 0,
+                "reserved": 0
+              },
+              "csg_2016.afn03_group.afn": 3,
+              "csg_2016.afn03_group.seq": 1,
+              "csg_2016.afn03_group.di": "E8 00 03 01",
+              "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.start": 104,
+              "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.total_length": 21,
+              "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.control": {
+                "raw": 128,
+                "dir": 1,
+                "prm": 0,
+                "add": 0,
+                "ver": 0,
+                "reserved": 0
+              },
+              "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.afn": 3,
+              "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.seq": 1,
+              "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.di": "E8 00 03 01",
+              "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.vendor_code": "AB",
+              "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.chip_code": "CD",
+              "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_0": "25",
+              "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_1": "06",
+              "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_2": "28",
+              "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.version_date": {
+                "year": "25",
+                "month": "06",
+                "day": "28"
+              },
+              "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.version": "0001",
+              "csg_2016.afn03_group.di_payload": {
+                "vendor_code": "AB",
+                "chip_code": "CD",
+                "node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_0": "25",
+                "node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_1": "06",
+                "node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_2": "28",
+                "version_date": {
+                  "year": "25",
+                  "month": "06",
+                  "day": "28"
+                },
+                "version": "0001"
+              },
+              "data_content": {
+                "csg_2016.afn03_query_vendor_resp.start": 104,
+                "csg_2016.afn03_query_vendor_resp.total_length": 21,
+                "csg_2016.afn03_query_vendor_resp.control": {
+                  "raw": 128,
+                  "dir": 1,
+                  "prm": 0,
+                  "add": 0,
+                  "ver": 0,
+                  "reserved": 0
+                },
+                "csg_2016.afn03_query_vendor_resp.afn": 3,
+                "csg_2016.afn03_query_vendor_resp.seq": 1,
+                "csg_2016.afn03_query_vendor_resp.di": "E8 00 03 01",
+                "csg_2016.afn03_query_vendor_resp.vendor_code": "AB",
+                "csg_2016.afn03_query_vendor_resp.chip_code": "CD",
+                "csg_2016.afn03_query_vendor_resp.node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_0": "25",
+                "csg_2016.afn03_query_vendor_resp.node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_1": "06",
+                "csg_2016.afn03_query_vendor_resp.node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_2": "28",
+                "csg_2016.afn03_query_vendor_resp.version_date": {
+                  "year": "25",
+                  "month": "06",
+                  "day": "28"
+                },
+                "csg_2016.afn03_query_vendor_resp.version": "0001",
+                "di_payload": {
+                  "vendor_code": "AB",
+                  "chip_code": "CD",
+                  "node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_0": "25",
+                  "node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_1": "06",
+                  "node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_2": "28",
+                  "version_date": {
+                    "year": "25",
+                    "month": "06",
+                    "day": "28"
+                  },
+                  "version": "0001"
+                }
+              }
+            },
+            "checksum": 206,
+            "end": 22
+          }
+        }
+      }
+    },
+    {
+      "id": "assert_decode",
+      "action": "assert",
+      "status": "ok",
+      "elapsed_ms": 0,
+      "error": "",
+      "result": {
+        "schema": "protocol-tui.v1",
+        "status": "success",
+        "data": {
+          "asserted": 1
+        }
+      }
+    },
+    {
+      "id": "sta_preload",
+      "action": "send",
+      "status": "ok",
+      "elapsed_ms": 505,
+      "error": "",
+      "result": {
+        "schema": "protocol-tui.v1",
+        "status": "success",
+        "data": {
+          "id": "sta",
+          "name": "sta",
+          "sent": "68 15 00 80 03 01 01 03 00 E8 41 42 43 44 25 06 28 01 00 CE 16",
+          "sent_bytes": 21,
+          "received": "",
+          "received_bytes": 0,
+          "display": "hex"
+        }
+      }
+    },
+    {
+      "id": "request_test",
+      "action": "request",
+      "status": "ok",
+      "elapsed_ms": 73,
+      "error": "",
+      "result": {
+        "schema": "protocol-tui.v1",
+        "status": "success",
+        "data": {
+          "elapsed_ms": 65,
+          "request": {
+            "frame_hex": "68 0C 00 40 03 01 01 03 00 E8 30 16",
+            "decoded": {
+              "dir": "downlink",
+              "add": 0,
+              "afn": "0x03",
+              "di": "E8000301",
+              "seq": 1,
+              "user_data.afn": "3",
+              "user_data.seq": "1",
+              "user_data.di": "E8 00 03 01",
+              "protocol": "csg_2016"
+            }
+          },
+          "response": {
+            "frame_hex": "68 15 00 80 03 01 01 03 00 E8 41 42 43 44 25 06 28 01 00 CE 16",
+            "decoded": {
+              "dir": "uplink",
+              "add": 0,
+              "afn": "0x03",
+              "di": "E8000301",
+              "seq": 1,
+              "user_data.afn": "3",
+              "user_data.seq": "1",
+              "user_data.di": "E8 00 03 01",
+              "user_data.start": "104",
+              "user_data.total_length": "21",
+              "user_data.vendor_code": "AB",
+              "user_data.chip_code": "CD",
+              "user_data.field_0": "25",
+              "user_data.field_1": "06",
+              "user_data.field_2": "28",
+              "user_data.version": "0001",
+              "protocol": "csg_2016"
+            },
+            "frame_index": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "assert_req",
+      "action": "assert",
+      "status": "ok",
+      "elapsed_ms": 0,
+      "error": "",
+      "result": {
+        "schema": "protocol-tui.v1",
+        "status": "success",
+        "data": {
+          "asserted": 1
+        }
+      }
+    },
+    {
+      "id": "store",
+      "action": "set_var",
+      "status": "ok",
+      "elapsed_ms": 0,
+      "error": "",
+      "result": {
+        "schema": "protocol-tui.v1",
+        "status": "success",
+        "data": {
+          "name": "final_status",
+          "value": "all_passed"
+        }
+      }
+    },
+    {
+      "id": "assert_var",
+      "action": "assert",
+      "status": "ok",
+      "elapsed_ms": 0,
+      "error": "",
+      "result": {
+        "schema": "protocol-tui.v1",
+        "status": "success",
+        "data": {
+          "asserted": 1
+        }
+      }
+    },
+    {
+      "id": "final_sleep",
+      "action": "sleep",
+      "status": "ok",
+      "elapsed_ms": 55,
+      "error": "",
+      "result": {
+        "schema": "protocol-tui.v1",
+        "status": "success",
+        "data": {
+          "elapsed_ms": 50
+        }
+      }
+    },
+    {
+      "id": "remove_rule",
+      "action": "auto_rule.remove",
+      "status": "ok",
+      "elapsed_ms": 0,
+      "error": "",
+      "result": {
+        "schema": "protocol-tui.v1",
+        "status": "success",
+        "data": {
+          "deleted": "test_rule_cov"
+        }
+      }
+    },
+    {
+      "id": "close_cco",
+      "action": "serial.disconnect",
+      "status": "ok",
+      "elapsed_ms": 0,
+      "error": "",
+      "result": {
+        "schema": "protocol-tui.v1",
+        "status": "success",
+        "data": {
+          "id": "cco",
+          "name": "cco",
+          "status": "closed"
+        }
+      }
+    },
+    {
+      "id": "close_sta",
+      "action": "serial.disconnect",
+      "status": "ok",
+      "elapsed_ms": 0,
+      "error": "",
+      "result": {
+        "schema": "protocol-tui.v1",
+        "status": "success",
+        "data": {
+          "id": "sta",
+          "name": "sta",
+          "status": "closed"
+        }
+      }
+    }
+  ],
+  "vars": {
+    "cco": "cco",
+    "sta": "sta",
+    "proto": "csg",
+    "baudrate": 9600,
+    "timeout_ms": 5000,
+    "connect_cco": {
+      "id": "cco",
+      "name": "cco",
+      "port": "virtual://cov",
+      "baudrate": 9600,
+      "bytesize": 8,
+      "parity": "N",
+      "stopbits": 1.0,
+      "status": "connected"
+    },
+    "connect_sta": {
+      "id": "sta",
+      "name": "sta",
+      "port": "virtual://cov",
+      "baudrate": 9600,
+      "bytesize": 8,
+      "parity": "N",
+      "stopbits": 1.0,
+      "status": "connected"
+    },
+    "build_query": {
+      "protocol": "csg_2016",
+      "path": "main[[0,0]]→csg_downlink → afn_router[[3]]→csg_2016.afn03_group → afn03_di_router[[\"E8000301\",0,0]]→csg_2016.afn03_query_vendor",
+      "frame": "68 0C 00 40 03 01 01 03 00 E8 30 16",
+      "resolved": {
+        "message_id": "csg_downlink",
+        "variant_id": "csg_2016.afn03_query_vendor"
+      },
+      "frame_hex": "68 0C 00 40 03 01 01 03 00 E8 30 16"
+    },
+    "query_frame": {
+      "protocol": "csg_2016",
+      "path": "main[[0,0]]→csg_downlink → afn_router[[3]]→csg_2016.afn03_group → afn03_di_router[[\"E8000301\",0,0]]→csg_2016.afn03_query_vendor",
+      "frame": "68 0C 00 40 03 01 01 03 00 E8 30 16",
+      "resolved": {
+        "message_id": "csg_downlink",
+        "variant_id": "csg_2016.afn03_query_vendor"
+      },
+      "frame_hex": "68 0C 00 40 03 01 01 03 00 E8 30 16"
+    },
+    "build_resp": {
+      "protocol": "csg_2016",
+      "path": "main[[1,0]]→csg_uplink → afn_router[[3]]→csg_2016.afn03_group → afn03_di_router[[\"E8000301\",1,0]]→csg_2016.afn03_query_vendor_resp",
+      "frame": "68 15 00 80 03 01 01 03 00 E8 41 42 43 44 25 06 28 01 00 CE 16",
+      "resolved": {
+        "message_id": "csg_uplink",
+        "variant_id": "csg_2016.afn03_query_vendor_resp"
+      },
+      "frame_hex": "68 15 00 80 03 01 01 03 00 E8 41 42 43 44 25 06 28 01 00 CE 16"
+    },
+    "resp_frame": {
+      "protocol": "csg_2016",
+      "path": "main[[1,0]]→csg_uplink → afn_router[[3]]→csg_2016.afn03_group → afn03_di_router[[\"E8000301\",1,0]]→csg_2016.afn03_query_vendor_resp",
+      "frame": "68 15 00 80 03 01 01 03 00 E8 41 42 43 44 25 06 28 01 00 CE 16",
+      "resolved": {
+        "message_id": "csg_uplink",
+        "variant_id": "csg_2016.afn03_query_vendor_resp"
+      },
+      "frame_hex": "68 15 00 80 03 01 01 03 00 E8 41 42 43 44 25 06 28 01 00 CE 16"
+    },
+    "assert_frame": {
+      "asserted": 1
+    },
+    "cco_send": {
+      "id": "cco",
+      "name": "cco",
+      "sent": "68 0C 00 40 03 01 01 03 00 E8 30 16",
+      "sent_bytes": 12,
+      "received": "",
+      "received_bytes": 0,
+      "display": "hex"
+    },
+    "add_rule": {
+      "added": "test_rule_cov",
+      "rule": {
+        "id": "test_rule_cov",
+        "name": "",
+        "enabled": true,
+        "trigger": {
+          "source": "serial:sta",
+          "event": "frame_received"
+        },
+        "condition": {
+          "type": "regex",
+          "pattern": "68..16"
+        },
+        "actions": [
+          {
+            "command": "reply_with_ack",
+            "args": {}
+          }
+        ],
+        "execution": {
+          "mode": "sequential",
+          "cooldown_ms": 0,
+          "on_error": "skip"
+        }
+      }
+    },
+    "pause1": {
+      "elapsed_ms": 100
+    },
+    "sta_send": {
+      "id": "sta",
+      "name": "sta",
+      "sent": "68 15 00 80 03 01 01 03 00 E8 41 42 43 44 25 06 28 01 00 CE 16",
+      "sent_bytes": 21,
+      "received": "68 0C 00 40 03 01 01 03 00 E8 30 16",
+      "received_bytes": 12,
+      "display": "hex"
+    },
+    "wait_resp": {
+      "matched": true,
+      "elapsed_ms": 64,
+      "frame_hex": "68 15 00 80 03 01 01 03 00 E8 41 42 43 44 25 06 28 01 00 CE 16",
+      "decoded": {
+        "dir": "uplink",
+        "add": 0,
+        "afn": "0x03",
+        "di": "E8000301",
+        "seq": 1,
+        "user_data.afn": "3",
+        "user_data.seq": "1",
+        "user_data.di": "E8 00 03 01",
+        "user_data.start": "104",
+        "user_data.total_length": "21",
+        "user_data.vendor_code": "AB",
+        "user_data.chip_code": "CD",
+        "user_data.field_0": "25",
+        "user_data.field_1": "06",
+        "user_data.field_2": "28",
+        "user_data.version": "0001",
+        "protocol": "csg_2016"
+      },
+      "frame_index": 1
+    },
+    "waited": {
+      "matched": true,
+      "elapsed_ms": 64,
+      "frame_hex": "68 15 00 80 03 01 01 03 00 E8 41 42 43 44 25 06 28 01 00 CE 16",
+      "decoded": {
+        "dir": "uplink",
+        "add": 0,
+        "afn": "0x03",
+        "di": "E8000301",
+        "seq": 1,
+        "user_data.afn": "3",
+        "user_data.seq": "1",
+        "user_data.di": "E8 00 03 01",
+        "user_data.start": "104",
+        "user_data.total_length": "21",
+        "user_data.vendor_code": "AB",
+        "user_data.chip_code": "CD",
+        "user_data.field_0": "25",
+        "user_data.field_1": "06",
+        "user_data.field_2": "28",
+        "user_data.version": "0001",
+        "protocol": "csg_2016"
+      },
+      "frame_index": 1
+    },
+    "assert_waited": {
+      "asserted": 1
+    },
+    "decode_resp": {
+      "protocol": "csg_2016",
+      "path": "main[control.dir=0x01, control.add=0x00]→csg_uplink → afn_router[afn=0x03]→csg_2016.afn03_group → afn03_di_router[di=E8 00 03 01, control.dir=0x01, control.add=0x00]→csg_2016.afn03_query_vendor_resp",
+      "frame": "68 15 00 80 03 01 01 03 00 E8 41 42 43 44 25 06 28 01 00 CE 16",
+      "values": {
+        "start": 104,
+        "total_length": 21,
+        "control": {
+          "raw": 128,
+          "dir": 1,
+          "prm": 0,
+          "add": 0,
+          "ver": 0,
+          "reserved": 0
+        },
+        "user_data": {
+          "afn": 3,
+          "seq": 1,
+          "di": "E8 00 03 01",
+          "csg_2016.afn03_group.start": 104,
+          "csg_2016.afn03_group.total_length": 21,
+          "csg_2016.afn03_group.control": {
+            "raw": 128,
+            "dir": 1,
+            "prm": 0,
+            "add": 0,
+            "ver": 0,
+            "reserved": 0
+          },
+          "csg_2016.afn03_group.afn": 3,
+          "csg_2016.afn03_group.seq": 1,
+          "csg_2016.afn03_group.di": "E8 00 03 01",
+          "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.start": 104,
+          "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.total_length": 21,
+          "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.control": {
+            "raw": 128,
+            "dir": 1,
+            "prm": 0,
+            "add": 0,
+            "ver": 0,
+            "reserved": 0
+          },
+          "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.afn": 3,
+          "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.seq": 1,
+          "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.di": "E8 00 03 01",
+          "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.vendor_code": "AB",
+          "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.chip_code": "CD",
+          "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_0": "25",
+          "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_1": "06",
+          "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_2": "28",
+          "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.version_date": {
+            "year": "25",
+            "month": "06",
+            "day": "28"
+          },
+          "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.version": "0001",
+          "csg_2016.afn03_group.di_payload": {
+            "vendor_code": "AB",
+            "chip_code": "CD",
+            "node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_0": "25",
+            "node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_1": "06",
+            "node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_2": "28",
+            "version_date": {
+              "year": "25",
+              "month": "06",
+              "day": "28"
+            },
+            "version": "0001"
+          },
+          "data_content": {
+            "csg_2016.afn03_query_vendor_resp.start": 104,
+            "csg_2016.afn03_query_vendor_resp.total_length": 21,
+            "csg_2016.afn03_query_vendor_resp.control": {
+              "raw": 128,
+              "dir": 1,
+              "prm": 0,
+              "add": 0,
+              "ver": 0,
+              "reserved": 0
+            },
+            "csg_2016.afn03_query_vendor_resp.afn": 3,
+            "csg_2016.afn03_query_vendor_resp.seq": 1,
+            "csg_2016.afn03_query_vendor_resp.di": "E8 00 03 01",
+            "csg_2016.afn03_query_vendor_resp.vendor_code": "AB",
+            "csg_2016.afn03_query_vendor_resp.chip_code": "CD",
+            "csg_2016.afn03_query_vendor_resp.node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_0": "25",
+            "csg_2016.afn03_query_vendor_resp.node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_1": "06",
+            "csg_2016.afn03_query_vendor_resp.node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_2": "28",
+            "csg_2016.afn03_query_vendor_resp.version_date": {
+              "year": "25",
+              "month": "06",
+              "day": "28"
+            },
+            "csg_2016.afn03_query_vendor_resp.version": "0001",
+            "di_payload": {
+              "vendor_code": "AB",
+              "chip_code": "CD",
+              "node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_0": "25",
+              "node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_1": "06",
+              "node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_2": "28",
+              "version_date": {
+                "year": "25",
+                "month": "06",
+                "day": "28"
+              },
+              "version": "0001"
+            }
+          }
+        },
+        "checksum": 206,
+        "end": 22
+      },
+      "frame_hex": "68 15 00 80 03 01 01 03 00 E8 41 42 43 44 25 06 28 01 00 CE 16"
+    },
+    "decoded": {
+      "protocol": "csg_2016",
+      "path": "main[control.dir=0x01, control.add=0x00]→csg_uplink → afn_router[afn=0x03]→csg_2016.afn03_group → afn03_di_router[di=E8 00 03 01, control.dir=0x01, control.add=0x00]→csg_2016.afn03_query_vendor_resp",
+      "frame": "68 15 00 80 03 01 01 03 00 E8 41 42 43 44 25 06 28 01 00 CE 16",
+      "values": {
+        "start": 104,
+        "total_length": 21,
+        "control": {
+          "raw": 128,
+          "dir": 1,
+          "prm": 0,
+          "add": 0,
+          "ver": 0,
+          "reserved": 0
+        },
+        "user_data": {
+          "afn": 3,
+          "seq": 1,
+          "di": "E8 00 03 01",
+          "csg_2016.afn03_group.start": 104,
+          "csg_2016.afn03_group.total_length": 21,
+          "csg_2016.afn03_group.control": {
+            "raw": 128,
+            "dir": 1,
+            "prm": 0,
+            "add": 0,
+            "ver": 0,
+            "reserved": 0
+          },
+          "csg_2016.afn03_group.afn": 3,
+          "csg_2016.afn03_group.seq": 1,
+          "csg_2016.afn03_group.di": "E8 00 03 01",
+          "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.start": 104,
+          "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.total_length": 21,
+          "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.control": {
+            "raw": 128,
+            "dir": 1,
+            "prm": 0,
+            "add": 0,
+            "ver": 0,
+            "reserved": 0
+          },
+          "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.afn": 3,
+          "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.seq": 1,
+          "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.di": "E8 00 03 01",
+          "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.vendor_code": "AB",
+          "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.chip_code": "CD",
+          "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_0": "25",
+          "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_1": "06",
+          "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_2": "28",
+          "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.version_date": {
+            "year": "25",
+            "month": "06",
+            "day": "28"
+          },
+          "csg_2016.afn03_group.csg_2016.afn03_query_vendor_resp.version": "0001",
+          "csg_2016.afn03_group.di_payload": {
+            "vendor_code": "AB",
+            "chip_code": "CD",
+            "node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_0": "25",
+            "node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_1": "06",
+            "node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_2": "28",
+            "version_date": {
+              "year": "25",
+              "month": "06",
+              "day": "28"
+            },
+            "version": "0001"
+          },
+          "data_content": {
+            "csg_2016.afn03_query_vendor_resp.start": 104,
+            "csg_2016.afn03_query_vendor_resp.total_length": 21,
+            "csg_2016.afn03_query_vendor_resp.control": {
+              "raw": 128,
+              "dir": 1,
+              "prm": 0,
+              "add": 0,
+              "ver": 0,
+              "reserved": 0
+            },
+            "csg_2016.afn03_query_vendor_resp.afn": 3,
+            "csg_2016.afn03_query_vendor_resp.seq": 1,
+            "csg_2016.afn03_query_vendor_resp.di": "E8 00 03 01",
+            "csg_2016.afn03_query_vendor_resp.vendor_code": "AB",
+            "csg_2016.afn03_query_vendor_resp.chip_code": "CD",
+            "csg_2016.afn03_query_vendor_resp.node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_0": "25",
+            "csg_2016.afn03_query_vendor_resp.node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_1": "06",
+            "csg_2016.afn03_query_vendor_resp.node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_2": "28",
+            "csg_2016.afn03_query_vendor_resp.version_date": {
+              "year": "25",
+              "month": "06",
+              "day": "28"
+            },
+            "csg_2016.afn03_query_vendor_resp.version": "0001",
+            "di_payload": {
+              "vendor_code": "AB",
+              "chip_code": "CD",
+              "node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_0": "25",
+              "node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_1": "06",
+              "node:csg_2016.csg_2016.afn03_query_vendor_resp.version_date.field_2": "28",
+              "version_date": {
+                "year": "25",
+                "month": "06",
+                "day": "28"
+              },
+              "version": "0001"
+            }
+          }
+        },
+        "checksum": 206,
+        "end": 22
+      },
+      "frame_hex": "68 15 00 80 03 01 01 03 00 E8 41 42 43 44 25 06 28 01 00 CE 16"
+    },
+    "assert_decode": {
+      "asserted": 1
+    },
+    "sta_preload": {
+      "id": "sta",
+      "name": "sta",
+      "sent": "68 15 00 80 03 01 01 03 00 E8 41 42 43 44 25 06 28 01 00 CE 16",
+      "sent_bytes": 21,
+      "received": "",
+      "received_bytes": 0,
+      "display": "hex"
+    },
+    "request_test": {
+      "elapsed_ms": 65,
+      "request": {
+        "frame_hex": "68 0C 00 40 03 01 01 03 00 E8 30 16",
+        "decoded": {
+          "dir": "downlink",
+          "add": 0,
+          "afn": "0x03",
+          "di": "E8000301",
+          "seq": 1,
+          "user_data.afn": "3",
+          "user_data.seq": "1",
+          "user_data.di": "E8 00 03 01",
+          "protocol": "csg_2016"
+        }
+      },
+      "response": {
+        "frame_hex": "68 15 00 80 03 01 01 03 00 E8 41 42 43 44 25 06 28 01 00 CE 16",
+        "decoded": {
+          "dir": "uplink",
+          "add": 0,
+          "afn": "0x03",
+          "di": "E8000301",
+          "seq": 1,
+          "user_data.afn": "3",
+          "user_data.seq": "1",
+          "user_data.di": "E8 00 03 01",
+          "user_data.start": "104",
+          "user_data.total_length": "21",
+          "user_data.vendor_code": "AB",
+          "user_data.chip_code": "CD",
+          "user_data.field_0": "25",
+          "user_data.field_1": "06",
+          "user_data.field_2": "28",
+          "user_data.version": "0001",
+          "protocol": "csg_2016"
+        },
+        "frame_index": 1
+      }
+    },
+    "req": {
+      "elapsed_ms": 65,
+      "request": {
+        "frame_hex": "68 0C 00 40 03 01 01 03 00 E8 30 16",
+        "decoded": {
+          "dir": "downlink",
+          "add": 0,
+          "afn": "0x03",
+          "di": "E8000301",
+          "seq": 1,
+          "user_data.afn": "3",
+          "user_data.seq": "1",
+          "user_data.di": "E8 00 03 01",
+          "protocol": "csg_2016"
+        }
+      },
+      "response": {
+        "frame_hex": "68 15 00 80 03 01 01 03 00 E8 41 42 43 44 25 06 28 01 00 CE 16",
+        "decoded": {
+          "dir": "uplink",
+          "add": 0,
+          "afn": "0x03",
+          "di": "E8000301",
+          "seq": 1,
+          "user_data.afn": "3",
+          "user_data.seq": "1",
+          "user_data.di": "E8 00 03 01",
+          "user_data.start": "104",
+          "user_data.total_length": "21",
+          "user_data.vendor_code": "AB",
+          "user_data.chip_code": "CD",
+          "user_data.field_0": "25",
+          "user_data.field_1": "06",
+          "user_data.field_2": "28",
+          "user_data.version": "0001",
+          "protocol": "csg_2016"
+        },
+        "frame_index": 1
+      }
+    },
+    "assert_req": {
+      "asserted": 1
+    },
+    "final_status": "all_passed",
+    "store": {
+      "name": "final_status",
+      "value": "all_passed"
+    },
+    "assert_var": {
+      "asserted": 1
+    },
+    "final_sleep": {
+      "elapsed_ms": 50
+    },
+    "remove_rule": {
+      "deleted": "test_rule_cov"
+    },
+    "close_cco": {
+      "id": "cco",
+      "name": "cco",
+      "status": "closed"
+    },
+    "close_sta": {
+      "id": "sta",
+      "name": "sta",
+      "status": "closed"
+    }
+  }
+}

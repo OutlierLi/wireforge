@@ -344,18 +344,29 @@ def parse_command_text(text: str) -> tuple[str, dict[str, Any]]:
             raw = token[2:]
             if "=" in raw:
                 key, value = raw.split("=", 1)
-                args[key] = value
+                _add_arg(args, key, value)
             elif i + 1 < len(parts) and not parts[i + 1].startswith("--"):
-                args[raw] = parts[i + 1]
+                _add_arg(args, raw, parts[i + 1])
                 i += 1
             else:
-                args[raw] = True
+                _add_arg(args, raw, True)
         else:
             positional.append(token)
         i += 1
     if positional:
         args["_"] = positional
     return command, _normalize_args(args)
+
+
+def _add_arg(args: dict[str, Any], key: str, value: Any) -> None:
+    if key not in args:
+        args[key] = value
+        return
+    existing = args[key]
+    if isinstance(existing, list):
+        existing.append(value)
+    else:
+        args[key] = [existing, value]
 
 
 def _normalize_args(args: dict[str, Any]) -> dict[str, Any]:

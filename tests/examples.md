@@ -105,7 +105,7 @@
 @expect success
 
 ### Load YAML rules
-/auto_rule load --file tests/rules.yaml
+/auto_rule load --file database/rules/auto_reply_rules.yaml
 @expect success
 
 ### History

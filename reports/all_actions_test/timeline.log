@@ -1,0 +1,44 @@
+[2026-06-28T16:51:21+08:00] START connect_cco action=serial.connect
+[2026-06-28T16:51:21+08:00] OK connect_cco action=serial.connect elapsed_ms=2
+[2026-06-28T16:51:21+08:00] START connect_sta action=serial.connect
+[2026-06-28T16:51:21+08:00] OK connect_sta action=serial.connect elapsed_ms=0
+[2026-06-28T16:51:21+08:00] START build_query action=build
+[2026-06-28T16:51:21+08:00] OK build_query action=build elapsed_ms=12
+[2026-06-28T16:51:21+08:00] START build_resp action=build
+[2026-06-28T16:51:21+08:00] OK build_resp action=build elapsed_ms=1
+[2026-06-28T16:51:21+08:00] START assert_frame action=assert
+[2026-06-28T16:51:21+08:00] OK assert_frame action=assert elapsed_ms=0
+[2026-06-28T16:51:21+08:00] START cco_send action=send
+[2026-06-28T16:51:22+08:00] OK cco_send action=send elapsed_ms=1011
+[2026-06-28T16:51:22+08:00] START add_rule action=auto_rule.add
+[2026-06-28T16:51:22+08:00] OK add_rule action=auto_rule.add elapsed_ms=2
+[2026-06-28T16:51:22+08:00] START pause1 action=sleep
+[2026-06-28T16:51:22+08:00] OK pause1 action=sleep elapsed_ms=100
+[2026-06-28T16:51:22+08:00] START sta_send action=send
+[2026-06-28T16:51:22+08:00] OK sta_send action=send elapsed_ms=64
+[2026-06-28T16:51:22+08:00] START wait_resp action=wait-frame
+[2026-06-28T16:51:22+08:00] OK wait_resp action=wait-frame elapsed_ms=66
+[2026-06-28T16:51:22+08:00] START assert_waited action=assert
+[2026-06-28T16:51:22+08:00] OK assert_waited action=assert elapsed_ms=0
+[2026-06-28T16:51:22+08:00] START decode_resp action=decode
+[2026-06-28T16:51:22+08:00] OK decode_resp action=decode elapsed_ms=3
+[2026-06-28T16:51:22+08:00] START assert_decode action=assert
+[2026-06-28T16:51:22+08:00] OK assert_decode action=assert elapsed_ms=0
+[2026-06-28T16:51:22+08:00] START sta_preload action=send
+[2026-06-28T16:51:23+08:00] OK sta_preload action=send elapsed_ms=505
+[2026-06-28T16:51:23+08:00] START request_test action=request
+[2026-06-28T16:51:23+08:00] OK request_test action=request elapsed_ms=73
+[2026-06-28T16:51:23+08:00] START assert_req action=assert
+[2026-06-28T16:51:23+08:00] OK assert_req action=assert elapsed_ms=0
+[2026-06-28T16:51:23+08:00] START store action=set_var
+[2026-06-28T16:51:23+08:00] OK store action=set_var elapsed_ms=0
+[2026-06-28T16:51:23+08:00] START assert_var action=assert
+[2026-06-28T16:51:23+08:00] OK assert_var action=assert elapsed_ms=0
+[2026-06-28T16:51:23+08:00] START final_sleep action=sleep
+[2026-06-28T16:51:23+08:00] OK final_sleep action=sleep elapsed_ms=55
+[2026-06-28T16:51:23+08:00] START remove_rule action=auto_rule.remove
+[2026-06-28T16:51:23+08:00] OK remove_rule action=auto_rule.remove elapsed_ms=0
+[2026-06-28T16:51:23+08:00] START close_cco action=serial.disconnect
+[2026-06-28T16:51:23+08:00] OK close_cco action=serial.disconnect elapsed_ms=0
+[2026-06-28T16:51:23+08:00] START close_sta action=serial.disconnect
+[2026-06-28T16:51:23+08:00] OK close_sta action=serial.disconnect elapsed_ms=0

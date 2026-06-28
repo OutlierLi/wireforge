@@ -66,6 +66,46 @@ wireforge-terminal
 /exit
 ```
 
+### TestPlan 编排运行
+
+`/run` 用于执行一份 YAML TestPlan，适合把串口连接、构造、发送、等待报文、断言和清理步骤串成一次可追踪测试。
+
+```bash
+python3 -m console.terminal
+```
+
+```text
+/run --file=tests/sta_join.yaml
+/run --file=tests/sta_join.yaml --dry-run
+/run --file=tests/sta_join.yaml --var cco=COM9 --var sta=COM10 --timeout=120000
+/run --file=tests/sta_join.yaml --report=reports/sta_join_001
+```
+
+最小 TestPlan：
+
+```yaml
+version: 1
+name: smoke_build
+vars:
+  proto: csg
+steps:
+  - id: build_vendor_query
+    action: build
+    save_as: vendor_query
+    args:
+      proto: ${proto}
+      afn: "0x03"
+      dir: downlink
+      di: E8000301
+  - id: check_frame
+    action: assert
+    args:
+      expect:
+        vendor_query.frame_hex: "68 0C 00 40 03 01 01 03 00 E8 30 16"
+```
+
+第一版只支持顺序步骤，失败即停，并始终执行 `teardown`。报告会写入 `reports/<plan_name>_<timestamp>/`，包含 `plan.yaml`、`resolved_plan.yaml`、`report.json`、`timeline.log`、`frames.log` 和 `summary.txt`。
+
 ### OpenCode MCP 服务
 
 WireForge 提供一个面向 Agent 的 MCP Server，用于处理“自然语言 → 协议任务 → JSON 请求 → 执行结果”。MCP 内部维护可恢复状态机，不要求 Agent 拼接 `/build ...` 或 `/serial ...` 命令文本。
