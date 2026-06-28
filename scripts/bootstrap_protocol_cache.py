@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agent_protocol.protocol_map import build_protocol_map_from_ir, compact_protocol_map
+from agent_protocol.protocol_map import build_protocol_map_from_ir, compact_protocol_map, write_protocol_map_cache
 from protocol_tool.compiler.pipeline import compile_protocol
 from protocol_tool.utils.graph import generate_svg
 
@@ -45,11 +45,7 @@ def main(argv: list[str] | None = None) -> int:
         ir_by_protocol[protocol] = compile_protocol(str(REGISTRY), protocol, output_dir=str(COMPILED_DIR))
 
     protocol_map = compact_protocol_map(build_protocol_map_from_ir(COMPILED_DIR))
-    PROTOCOL_MAP_JSON.write_text(
-        json.dumps(protocol_map, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    PROTOCOL_MAP_YAML.write_text(_to_yaml(protocol_map), encoding="utf-8")
+    json_path, yaml_path = write_protocol_map_cache(protocol_map, COMPILED_DIR)
     for protocol, ir in ir_by_protocol.items():
         svg_path = COMPILED_DIR / f"{protocol}_routes.svg"
         generate_svg(ir, svg_path)
@@ -57,8 +53,8 @@ def main(argv: list[str] | None = None) -> int:
 
     total = sum(len(proto.get("entries") or []) for proto in (protocol_map.get("protocols") or {}).values())
     print(f"prepared {len(protocols)} protocols")
-    print(f"generated {PROTOCOL_MAP_JSON} ({total} entries)")
-    print(f"generated {PROTOCOL_MAP_YAML}")
+    print(f"generated {json_path} ({total} entries)")
+    print(f"generated {yaml_path}")
     return 0
 
 
@@ -85,28 +81,6 @@ def _enabled_protocols() -> list[str]:
         if item.get("enabled", True):
             protocols.append(str(item["id"]))
     return protocols
-
-
-def _to_yaml(data: dict[str, Any]) -> str:
-    lines = [f"version: {data.get('version', 1)}", "", "protocols:"]
-    for proto, info in (data.get("protocols") or {}).items():
-        lines.append(f"  {proto}:")
-        lines.append(f'    name: "{info.get("name", proto)}"')
-        lines.append("    entries:")
-        for entry in info.get("entries") or []:
-            path = ", ".join(entry.get("path") or [])
-            fields = ", ".join(entry.get("fields") or [])
-            route_params = json.dumps(entry.get("route_params") or {}, ensure_ascii=False, sort_keys=True)
-            lines.append(f"      - id: {entry.get('id')}")
-            lines.append(f"        entry_id: {entry.get('entry_id')}")
-            lines.append(f"        leaf_id: {entry.get('leaf_id')}")
-            lines.append(f'        name: "{entry.get("name", "")}"')
-            lines.append(f'        description: "{entry.get("description", "")}"')
-            lines.append(f"        path: [{path}]")
-            lines.append(f"        route_params: {route_params}")
-            if fields:
-                lines.append(f"        fields: [{fields}]")
-    return "\n".join(lines) + "\n"
 
 
 if __name__ == "__main__":

@@ -72,6 +72,54 @@ def compact_protocol_map(protocol_map: dict[str, Any]) -> dict[str, Any]:
     return {"version": protocol_map.get("version", 1), "protocols": protocols}
 
 
+def protocol_map_to_yaml(protocol_map: dict[str, Any]) -> str:
+    """Serialize compact protocol map to the bootstrap YAML format."""
+    lines = [f"version: {protocol_map.get('version', 1)}", "", "protocols:"]
+    for proto, info in (protocol_map.get("protocols") or {}).items():
+        lines.append(f"  {proto}:")
+        lines.append(f'    name: "{info.get("name", proto)}"')
+        lines.append("    entries:")
+        for entry in info.get("entries") or []:
+            path = ", ".join(entry.get("path") or [])
+            fields = ", ".join(entry.get("fields") or [])
+            route_params = json.dumps(entry.get("route_params") or {}, ensure_ascii=False, sort_keys=True)
+            lines.append(f"      - id: {entry.get('id')}")
+            lines.append(f"        entry_id: {entry.get('entry_id')}")
+            lines.append(f"        leaf_id: {entry.get('leaf_id')}")
+            lines.append(f'        name: "{entry.get("name", "")}"')
+            lines.append(f'        description: "{entry.get("description", "")}"')
+            lines.append(f"        path: [{path}]")
+            lines.append(f"        route_params: {route_params}")
+            if fields:
+                lines.append(f"        fields: [{fields}]")
+    return "\n".join(lines) + "\n"
+
+
+def write_protocol_map_cache(
+    protocol_map: dict[str, Any],
+    compiled_dir: str | Path | None = None,
+) -> tuple[Path, Path]:
+    """Write ``protocol_map.json`` and ``protocol_map.yaml`` under compiled dir."""
+    base = Path(compiled_dir) if compiled_dir else COMPILED_DIR
+    base.mkdir(parents=True, exist_ok=True)
+    json_path = base / "protocol_map.json"
+    yaml_path = base / "protocol_map.yaml"
+    json_path.write_text(
+        json.dumps(protocol_map, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    yaml_path.write_text(protocol_map_to_yaml(protocol_map), encoding="utf-8")
+    return json_path, yaml_path
+
+
+def refresh_protocol_map_cache(compiled_dir: str | Path | None = None) -> dict[str, Any]:
+    """Rebuild map from compiled IR and persist json+yaml caches."""
+    base = Path(compiled_dir) if compiled_dir else COMPILED_DIR
+    protocol_map = compact_protocol_map(build_protocol_map_from_ir(base))
+    write_protocol_map_cache(protocol_map, base)
+    return protocol_map
+
+
 def find_entry(protocol_map: dict[str, Any], entry_id: str) -> dict[str, Any] | None:
     leaf_matches: list[dict[str, Any]] = []
     for proto in (protocol_map.get("protocols") or {}).values():

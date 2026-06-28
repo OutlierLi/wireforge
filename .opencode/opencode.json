@@ -13,6 +13,12 @@
       "command": ["python3", "scripts/python/wireforge_test_mcp_server.py"],
       "enabled": true,
       "timeout": 120000
+    },
+    "wireforge-extend": {
+      "type": "local",
+      "command": ["python3", "scripts/python/wireforge_extend_mcp_server.py"],
+      "enabled": true,
+      "timeout": 120000
     }
   },
   "permission": {

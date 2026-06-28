@@ -2,6 +2,14 @@
 
 Use the MCP tool `protocol_task_run` for natural-language protocol build/decode/send tasks.
 
+Use the MCP tool `protocol_extend_run` to add CSG 2016 variant extensions (new DI under AFN 00–07) into `variants/extensions/` without editing `afn_payloads.yaml`. Start with:
+
+```bash
+wireforge-extend-mcp-server
+# or
+python3 scripts/python/wireforge_extend_mcp_server.py
+```
+
 Use the test MCP tools (`test.schema`, `test.validate`, `test.dry_run`, `test.run`, `test.read_report`) for YAML TestPlan execution. Start the test MCP server with:
 
 ```bash
@@ -198,6 +206,48 @@ One-shot (same turn):
 If decode fails (invalid or unrecognized frame), MCP returns `FAILED` with `from_frame decode failed`.
 
 For greenfield builds without a source frame, use the standard [Build Flow](#build-flow) above (`need: "protocol_match"`).
+
+## Protocol Extend Flow
+
+Use `protocol_extend_run` when the user wants to **add a new CSG 2016 message variant** (typically new DI under existing AFN 00–07). Extensions are written only to [`protocol_tool/protocols/csg_2016/variants/extensions/`](protocol_tool/protocols/csg_2016/variants/extensions/).
+
+1. Call MCP with natural language:
+
+```json
+{"raw_input": "扩展 CSG 报文 AFN03 DI=E80304FF，查询延时时长"}
+```
+
+2. If `dir` or `add` is missing, MCP returns `need: "params"` with `missing_fields` — ask the user and resume:
+
+```json
+{
+  "run_id": "<run_id>",
+  "user_input": {
+    "dir": "downlink",
+    "add": false,
+    "description": "查询通信延时时长",
+    "fields": [{"name": "timeout", "type": "uint16_le", "desc": "超时(秒)"}]
+  }
+}
+```
+
+3. MCP returns `need: "confirm"` with `yaml_preview`. After user approval:
+
+```json
+{"run_id": "<run_id>", "user_input": {"confirm": true}}
+```
+
+4. On `SUCCEEDED`, MCP has already compiled the protocol and written **both** `compiled/protocol_map.json` and `compiled/protocol_map.yaml`, then verified `/route` resolves the new variant. Check `map_ok: true`, `map_files`, and `route_entries`. Re-run bootstrap only when SVG/cache cleanup is needed:
+
+```bash
+python3 scripts/bootstrap_protocol_cache.py
+```
+
+Limitations (v1):
+
+- AFN must be 00–07 (existing routers). AFN 08+ returns `FAILED` with manual router hint.
+- Duplicate DI+dir+add conflicts with existing variants are rejected.
+- Do not edit `afn_payloads.yaml` directly; use this MCP flow instead.
 
 ## Decode Flow
 

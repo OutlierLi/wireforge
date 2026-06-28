@@ -25,13 +25,14 @@ protocolctl = "protocol_tool.cli.main:app"
 wireforge-terminal = "console.terminal:main"
 wireforge-mcp-server = "mcp_servers.protocol.server:main"
 wireforge-test-mcp-server = "mcp_servers.test.server:main"
+wireforge-extend-mcp-server = "mcp_servers.extend.server:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["protocol_tool", "console", "wireforge_serial", "agent_protocol", "mcp_servers", "test_runner", "runtime"]
+packages = ["protocol_tool", "console", "wireforge_serial", "agent_protocol", "protocol_extend", "mcp_servers", "test_runner", "runtime"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
