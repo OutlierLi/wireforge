@@ -31,10 +31,22 @@ WireForge 只保留普通终端 CLI，不接管鼠标或全屏缓冲区，适合
 python3 -m console.terminal
 ```
 
+也可以使用仓库内启动脚本：
+
+```bash
+python3 scripts/python/wireforge_terminal.py
+```
+
 Windows 可使用：
 
 ```powershell
 py -m console.terminal
+```
+
+或：
+
+```powershell
+py scripts\python\wireforge_terminal.py
 ```
 
 安装后也可以运行脚本入口：
