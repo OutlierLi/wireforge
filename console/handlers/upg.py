@@ -58,15 +58,15 @@ def handle(args: dict[str, Any]) -> dict:
 
     # Phase 0: 构建帧缓存
     if use_cache and cache_path.exists():
-        cache = json.loads(cache_path.read_text())
+        cache = json.loads(cache_path.read_text(encoding="utf-8"))
         if cache.get("file_hash") != file_hash or cache.get("segment_size") != segment_size:
             use_cache = False
 
     if not use_cache or not cache_path.exists():
         cache = _build_cache(fp.name, file_data, segment_size, file_hash, file_size)
-        cache_path.write_text(json.dumps(cache, ensure_ascii=False))
+        cache_path.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
     else:
-        cache = json.loads(cache_path.read_text())
+        cache = json.loads(cache_path.read_text(encoding="utf-8"))
 
     total_segments = cache["total_segments"]
 

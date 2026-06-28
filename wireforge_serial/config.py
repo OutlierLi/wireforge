@@ -25,7 +25,7 @@ class BatchConfig:
 def load_batch_config(path: str) -> BatchConfig:
     """从 YAML 文件加载批量配置。"""
     import yaml
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         data = yaml.safe_load(f)
     defaults = data.get("defaults", {})
     messages = []

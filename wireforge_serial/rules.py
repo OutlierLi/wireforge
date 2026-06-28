@@ -59,7 +59,7 @@ class RuleEngine:
     @classmethod
     def from_file(cls, path: str, schema_root: str | None = None) -> RuleEngine:
         import yaml
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         return cls(data.get("rules", []), schema_root)
 

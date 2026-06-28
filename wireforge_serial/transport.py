@@ -94,14 +94,14 @@ class _VirtualBusPort:
 
     def write(self, data: bytes) -> int:
         record = json.dumps({"client": self._client_id, "data": data.hex()})
-        with open(self._file, "a") as f:
+        with open(self._file, "a", encoding="utf-8") as f:
             f.write(record + "\n")
         return len(data)
 
     def read(self, size: int = 1) -> bytes:
         if not self._file.exists():
             return b""
-        with open(self._file) as f:
+        with open(self._file, encoding="utf-8") as f:
             f.seek(self._offset)
             buf = bytearray()
             for line in f:

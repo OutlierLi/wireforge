@@ -161,7 +161,7 @@ def _load(args: dict) -> dict:
         return fail("file path required")
 
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
     except Exception as e:
         return fail(f"failed to load: {e}")

@@ -51,7 +51,7 @@ class Registry:
 
     def load_file(self, path: str):
         """从单个 JSON 文件加载所有命令 (key=命令名, value=定义)。"""
-        data = json.loads(Path(path).read_text())
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
         for name, entry in data.items():
             cmd = Command(
                 name=name,

@@ -11,7 +11,7 @@ from console.api import exec_cmd
 
 def _parse_examples(path: str) -> list[tuple[str, str]]:
     """解析 examples.md，返回 [(命令文本, 期望状态)]。"""
-    lines = Path(path).read_text().split("\n")
+    lines = Path(path).read_text(encoding="utf-8").split("\n")
     cases = []
     for line in lines:
         line = line.strip()
