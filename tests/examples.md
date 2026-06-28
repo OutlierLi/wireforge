@@ -23,7 +23,7 @@
 @expect success
 
 ### CSG uplink ACK
-/build --proto csg --afn 0x00 --dir uplink --di E8010001 --result 0
+/build --proto csg --afn 0x00 --dir uplink --di E8010001 --wait_time 0
 @expect success
 
 ### CSG with address area
@@ -53,7 +53,7 @@
 @expect success
 
 ### CSG uplink ACK
-/decode --proto csg --hex 680D00800001010001E8006B16
+/decode --proto csg --hex 680E00800001010001E800006B16
 @expect success
 
 ## /serial — Serial port management

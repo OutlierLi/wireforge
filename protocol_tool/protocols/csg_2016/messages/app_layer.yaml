@@ -55,13 +55,11 @@ messages:
               length: 6
               default: "000000000000"
               byte_order: little
-              canonical_format: decimal_string
               description: "源地址"
             - name: adst
               type: bcd
               length: 6
               byte_order: little
-              canonical_format: decimal_string
               description: "目的地址"
         - name: afn
           type: uint8
@@ -123,13 +121,11 @@ messages:
               type: bcd
               length: 6
               byte_order: little
-              canonical_format: decimal_string
             - name: adst
               type: bcd
               length: 6
               default: "000000000000"
               byte_order: little
-              canonical_format: decimal_string
         - name: afn
           type: uint8
         - name: seq

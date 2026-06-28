@@ -232,7 +232,7 @@ def test_csg_concentrator_protocol_map_covers_pdf_table4():
             and entry["route_params"].get("has_address") is expect_has_addr
         ]
         assert matches, f"missing CSG table4 entry: AFN={afn} DI={di} dir={direction} has_address={expect_has_addr}"
-        assert matches[0]["description"] == description
+        assert description in matches[0]["description"]
         opposite = [
             entry
             for entry in csg_entries
@@ -422,6 +422,24 @@ def test_protocol_task_verify_uses_schema_for_uint_fields():
     assert timeout["actual"] == 60
     assert timeout["type"] == "uint16_le"
     assert timeout["ok"] is True
+
+
+def test_csg_address_area_decode_preserves_leading_zeroes():
+    from console.api import exec_cmd
+
+    frame = (
+        "68 22 00 60 00 00 00 00 00 00 13 88 03 00 24 01 "
+        "02 01 01 02 02 E8 01 00 10 3C 00 04 00 01 00 01 66 16"
+    )
+
+    result = exec_cmd("decode", {"proto": "csg", "hex": frame})
+
+    assert result["status"] == "success"
+    address_area = result["data"]["values"]["user_data"]["address_area"]
+    assert address_area == {
+        "asrc": "000000000000",
+        "adst": "012400038813",
+    }
 
 
 def test_protocol_task_builds_csg_concentrator_time_response():

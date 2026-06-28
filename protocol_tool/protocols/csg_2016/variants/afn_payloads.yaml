@@ -36,7 +36,7 @@ variants:
       type: struct
       fields:
         - name: wait_time
-          type: uint_16_le
+          type: uint16_le
           default: 0
 
   - kind: variant

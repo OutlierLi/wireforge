@@ -140,7 +140,7 @@ class TestBuildSuccess:
     def test_build_csg_uplink_ack(self):
         r = exec_cmd("build", {
             "proto": "csg", "afn": "0x00", "di": "E8010001", "dir": "uplink",
-            "result": "0x00",
+            "wait_time": "0",
         })
         _ok(r, "CSG 上行ACK")
 

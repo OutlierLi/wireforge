@@ -150,7 +150,7 @@ class TestUpgFrameBuild:
         """E8010001 ACK 帧可构造 (用于理解设备响应)"""
         r = exec_cmd("build", {
             "proto": "csg", "afn": "0x00", "di": "E8010001",
-            "dir": "uplink", "result": "0x00",
+            "dir": "uplink", "wait_time": "0",
         })
         _ok(r)
 
