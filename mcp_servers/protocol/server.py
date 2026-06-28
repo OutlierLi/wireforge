@@ -139,7 +139,7 @@ Tool: `protocol_task_run`
 - Default responses are compact. Use `debug: true` per call, or `WIREFORGE_MCP_DEBUG=1`, to return full waiting/results/log paths.
 - Build runs first return `need: "protocol_match"` plus compact `candidates`; the Agent selects one candidate and sends `entry_id` or `route_params`.
 - MCP then returns `need: "values"` plus field names; the Agent sends `fields`.
-- The MCP persists state in `agent_protocol_runs/<run_id>/`.
+- The MCP persists state in `log/agent_protocol_runs/<run_id>/`.
 - It calls Build/Decode/Send modules with structured JSON dictionaries, not CLI strings.
 - Route selection is deterministic and based on the generated protocol map.
 """

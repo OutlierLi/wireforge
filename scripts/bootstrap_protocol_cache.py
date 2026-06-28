@@ -24,7 +24,6 @@ PROTOCOL_MAP_YAML = COMPILED_DIR / "protocol_map.yaml"
 
 GENERATED_DIRS = [
     COMPILED_DIR,
-    ROOT / "agent_protocol_runs",
     ROOT / "log",
     ROOT / "tests" / "check_output",
     ROOT / "tests" / "roundtrip_test" / "logs",

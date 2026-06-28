@@ -18,7 +18,7 @@ from console.handlers.route import handle as route_handle
 from wireforge_serial.api import get_connection, serial_open, serial_send
 
 ROOT = Path(__file__).resolve().parent.parent
-RUNS_DIR = ROOT / "agent_protocol_runs"
+RUNS_DIR = ROOT / "log" / "agent_protocol_runs"
 LOG_DIR = ROOT / "log"
 WORKFLOW_LOG = LOG_DIR / "agent_protocol_workflow.log"
 MAX_BUILD_RETRIES = 3

@@ -15,7 +15,8 @@ from typing import Any, TextIO
 from console.api import complete_cmd, exec_text
 
 
-HISTORY_FILE = Path.cwd() / ".wireforge_terminal_history"
+_ROOT = Path(__file__).resolve().parent.parent
+HISTORY_FILE = _ROOT / "log" / ".wireforge_terminal_history"
 
 
 def run_terminal(
