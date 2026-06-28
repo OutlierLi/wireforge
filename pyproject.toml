@@ -10,7 +10,6 @@ authors = [
 dependencies = [
     "pyyaml>=6.0",
     "typer>=0.9",
-    "rich>=13.0",
     "prompt_toolkit>=3.0",
     "pyserial>=3.5",
 ]

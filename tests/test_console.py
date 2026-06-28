@@ -928,7 +928,7 @@ class TestBuildFromFrame:
     def test_from_frame_with_set_multiple(self):
         """--from-frame --set 多个字段"""
         hex_frame = "FE FE FE FE 68 01 00 00 00 00 00 68 91 08 33 33 34 33 59 39 54 53 70 16"
-        # 只测试单个字段（TUI shell 对多个 --set 的处理不同）
+        # 只测试单个字段（命令解析对多个 --set 的处理不同）
         r = exec_cmd("build", {"from_frame": hex_frame, "set": "freeze_day=25"})
         _ok(r, "from-frame --set single field")
         assert r["data"]["frame"] != hex_frame

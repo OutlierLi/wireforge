@@ -23,7 +23,7 @@ uv sync
 
 ### 普通终端控制台
 
-不需要 TUI，也不接管鼠标或全屏缓冲区，适合 Windows Terminal、PowerShell、cmd 和普通 SSH 终端。
+WireForge 只保留普通终端 CLI，不接管鼠标或全屏缓冲区，适合 Windows Terminal、PowerShell、cmd 和普通 SSH 终端。
 
 开发环境直接运行：
 

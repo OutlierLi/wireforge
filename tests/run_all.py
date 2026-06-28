@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""全量测试 — pytest 单元测试 + check.py 往返验证 + TUI batch 测试。
+"""全量测试 — pytest 单元测试 + check.py 往返验证 + NDJSON 集成测试。
 
 用法: python3 tests/run_all.py
 """

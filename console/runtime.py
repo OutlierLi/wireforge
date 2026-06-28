@@ -1,6 +1,6 @@
 """command-runtime — 统一命令执行引擎。
 
-所有前端 (CLI / TUI / Web) 通过此层调用业务模块。
+所有前端入口通过此层调用业务模块。
 runtime 管理多轮交互状态，返回 protocol-tui.v1 契约响应。
 
 变量引用解析：

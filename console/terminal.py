@@ -1,8 +1,7 @@
 """Plain terminal console for WireForge.
 
-This is intentionally simpler than the Node TUI: it stays in the normal
-terminal buffer, uses line input, and falls back cleanly when prompt_toolkit is
-not installed.
+It stays in the normal terminal buffer, uses line input, and falls back cleanly
+when prompt_toolkit is not installed.
 """
 
 from __future__ import annotations
