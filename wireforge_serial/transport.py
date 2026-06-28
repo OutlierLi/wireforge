@@ -81,6 +81,71 @@ class _MockLoopPort:
         self._buf.clear()
 
 
+# ── Auto Rule Loopback ─────────────────────────────────────────────────
+
+class _AutoRulePort:
+    """自动规则回环：写入 → auto_rule 匹配 → 匹配到的 reply 变成 RX。
+
+    与 mock://loop 的区别：不是直接回显，而是经过 auto_rule 引擎处理。
+    如果规则匹配成功且有 reply 动作，reply 帧作为 RX；否则 RX 为空。
+
+    规则格式（与 auto_rule 模块一致）:
+      condition.type: regex | decoded | any
+      condition.pattern: 正则或 hex 匹配模式
+      actions: [{command: "/send", args: {hex: "68..."}}, ...]
+    """
+
+    def __init__(self):
+        self._rx_buf = bytearray()
+
+    def write(self, data: bytes) -> int:
+        try:
+            from console.handlers.auto_rule import _rules, _match_rule
+            import re
+
+            hex_str = data.hex().upper()
+            for rule in _rules.values():
+                if not rule.get("enabled", True):
+                    continue
+                match_result = _match_rule(rule, data)
+                if match_result:
+                    for action in match_result.actions:
+                        cmd = action.get("command", "")
+                        act_args = action.get("args", {})
+                        # 支持 /send --hex ... 格式的回复
+                        if cmd in ("/send", "send"):
+                            reply_hex = act_args.get("hex", "")
+                            if reply_hex:
+                                try:
+                                    reply = bytes.fromhex(reply_hex.replace(" ", ""))
+                                    self._rx_buf.extend(reply)
+                                except ValueError:
+                                    pass
+                        # 支持 /serial send --hex ... 格式
+                        elif cmd in ("/serial", "serial") and act_args.get("sub") == "send":
+                            reply_hex = act_args.get("hex", "")
+                            if reply_hex:
+                                try:
+                                    reply = bytes.fromhex(reply_hex.replace(" ", ""))
+                                    self._rx_buf.extend(reply)
+                                except ValueError:
+                                    pass
+        except Exception:
+            pass
+        return len(data)
+
+    def read(self, size: int = 1) -> bytes:
+        if not self._rx_buf:
+            return b""
+        n = min(size, len(self._rx_buf))
+        result = bytes(self._rx_buf[:n])
+        self._rx_buf = self._rx_buf[n:]
+        return result
+
+    def close(self):
+        self._rx_buf.clear()
+
+
 # ── Virtual Bus (跨进程) ──────────────────────────────────────────────
 
 class _VirtualBusPort:
@@ -136,6 +201,8 @@ class SerialTransport:
         port = self.settings.port
         if port == "mock://loop":
             self._port = _MockLoopPort()
+        elif port == "mock://auto":
+            self._port = _AutoRulePort()
         elif port.startswith("mock://"):
             raise RuntimeError("unknown mock port. Supported mock port: mock://loop")
         elif port.startswith("virtual://"):
@@ -221,7 +288,7 @@ class SerialTransport:
 
     @staticmethod
     def available_ports() -> list[str]:
-        ports = ["mock://loop", "virtual://demo"]
+        ports = ["mock://loop", "mock://auto", "virtual://demo"]
         try:
             import serial.tools.list_ports
             for p in serial.tools.list_ports.comports():
