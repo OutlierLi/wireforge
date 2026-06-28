@@ -52,17 +52,17 @@ def test_csg_graph_projection_has_multi_stage_routes_and_time_payload():
 
     assert graph.routes["main"].keys == ("control.dir", "control.add")
     assert graph.routes["afn_router"].keys == ("afn",)
-    assert graph.routes["afn06_di_router"].keys == ("di", "control.dir")
+    assert graph.routes["afn06_di_router"].keys == ("di", "control.dir", "control.add")
 
     request_payload = graph.payloads["node:csg_2016.csg_2016.afn06_request_time"]
     assert [field.name for field in request_payload.fields] == []
     assert request_payload.router_id == "afn06_di_router"
-    assert request_payload.route_key == '["E8060601",0]'
+    assert request_payload.route_key == '["E8060601",0,0]'
 
     payload = graph.payloads["node:csg_2016.csg_2016.afn06_request_time_resp"]
     assert [field.name for field in payload.fields] == ["datetime"]
     assert payload.router_id == "afn06_di_router"
-    assert payload.route_key == '["E8060601",1]'
+    assert payload.route_key == '["E8060601",1,0]'
 
 
 def test_dlt645_build_and_decode_broadcast_time_request():

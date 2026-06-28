@@ -124,23 +124,34 @@ def resolve(target_info: dict[str, Any]) -> BuildTarget:
         info["afn"] = int(str(target_info["afn"]).replace("0x", ""), 16)
     if "di" in target_info:
         info["di"] = str(target_info["di"])
-    if "has_address" in target_info:
-        info["has_address"] = target_info["has_address"]
+    has_addr = target_info.get("has_address")
+    if has_addr is None:
+        has_addr = target_info.get("addr")  # shorthand: --addr true/false
+    if has_addr is not None:
+        # Coerce string "true"/"false" → bool
+        if isinstance(has_addr, str):
+            has_addr = has_addr.lower() in ("true", "1", "yes")
+        info["has_address"] = bool(has_addr)
 
     # 路由查找
     path_info = be.resolve_path(info)
+    if "control.add" in path_info.get("route_vals", {}):
+        info["has_address"] = bool(path_info["route_vals"]["control.add"])
     dn = _direction_from_path(path_info, info)
     target_info = dict(target_info)
     if dn:
         target_info.setdefault("dir", dn)
         target_info.setdefault("direction", dn)
+    target_info.setdefault("has_address", info.get("has_address", False))
     leaf_id = path_info["leaf_id"]
     leaf = ir.leaves.get(leaf_id)
     if not leaf:
         raise ValueError(f"leaf not found: {leaf_id}")
 
     # 收集 input_schema: 遍历从叶子到根的所有字段
-    input_fields = _collect_input_fields(ir, leaf, leaf_id)
+    msg_name = path_info.get("message_id", "")
+    msg_leaf = next((l for l in ir.leaves.values() if l.name == msg_name), None)
+    input_fields = _collect_input_fields(ir, leaf, leaf_id, parent_leaf=msg_leaf)
     frame_defaults = _collect_frame_defaults(ir, proto, info)
 
     # 派生字段 (帧级自动计算)
@@ -164,9 +175,40 @@ def resolve(target_info: dict[str, Any]) -> BuildTarget:
     )
 
 
-def _collect_input_fields(ir, leaf, leaf_id) -> list[InputField]:
-    """递归收集叶子节点及其子路由的所有用户输入字段。"""
+def _collect_input_fields(ir, leaf, leaf_id, parent_leaf=None) -> list[InputField]:
+    """递归收集叶子节点及其子路由的所有用户输入字段。
+
+    同时收集父级消息的非路由字段（如 CSG 地址域 address_area）。
+    """
     fields: list[InputField] = []
+    seen_names: set[str] = set()
+
+    def _add_field(f: InputField) -> None:
+        if f.name not in seen_names:
+            seen_names.add(f.name)
+            fields.append(f)
+
+    # 先收集父级消息的非路由字段
+    if parent_leaf is not None:
+        for lf in parent_leaf.fields:
+            t = lf.type_ref
+            if t == "routed_payload":
+                continue  # 路由字段走子路由
+            if t in ("const", "const_repeat", "checksum",
+                     "sum8", "xor8", "crc16_modbus", "crc16_ccitt", "crc8"):
+                continue
+            if t == "struct":
+                for sf in lf.params.get("fields", []):
+                    _add_field(InputField(
+                        name=f"{lf.name}.{sf.get('name', '?')}",
+                        type=sf.get("type", "uint8"),
+                        required=False,  # 父级 struct 字段可选（有默认值）
+                        length=sf.get("length"),
+                        desc=sf.get("description", ""),
+                    ))
+            else:
+                # afn, seq, di 等 — 由 derived_fields 处理，这里跳过
+                pass
 
     for lf in leaf.fields:
         if lf.optional and not lf.condition:  # 有条件的不跳过，只是标记为可选
@@ -181,7 +223,8 @@ def _collect_input_fields(ir, leaf, leaf_id) -> list[InputField]:
                 for target_id in rnode.route_table.values():
                     if target_id in ir.leaves:
                         sub_leaf = ir.leaves[target_id]
-                        fields.extend(_collect_input_fields(ir, sub_leaf, target_id))
+                        for f in _collect_input_fields(ir, sub_leaf, target_id):
+                            _add_field(f)
         elif t in ("const", "const_repeat", "checksum",
                    "sum8", "xor8", "crc16_modbus", "crc16_ccitt", "crc8"):
             continue  # 固定/计算字段
@@ -189,7 +232,7 @@ def _collect_input_fields(ir, leaf, leaf_id) -> list[InputField]:
             # 展开 struct 子字段为扁平 dotted name (如 datetime.second)
             # 如果 struct 有条件，子字段标记为不必填
             for sf in lf.params.get("fields", []):
-                fields.append(InputField(
+                _add_field(InputField(
                     name=f"{lf.name}.{sf.get('name', '?')}",
                     type=sf.get("type", "uint8"),
                     required=not has_condition,
@@ -203,7 +246,7 @@ def _collect_input_fields(ir, leaf, leaf_id) -> list[InputField]:
                 extra["enum_values"] = lf.params.get("values")
             if t == "bcd_numeric":
                 extra["unit"] = lf.params.get("unit", "")
-            fields.append(InputField(
+            _add_field(InputField(
                 name=lf.name, type=t, required=required,
                 desc=lf.params.get("description", ""),
                 length=lf.length,
@@ -241,6 +284,10 @@ def _collect_frame_defaults(ir, proto: str, info: dict) -> dict[str, Any]:
         dv = 0 if info.get("direction") == "downlink" else 1
         if dv == 0:
             defaults["address"] = "AAAAAAAAAAAA"
+    # CSG 地址域默认值
+    if proto == "csg_2016" and info.get("has_address"):
+        defaults["address_area.asrc"] = "000000000001"
+        defaults["address_area.adst"] = "000000000001"
     return defaults
 
 
@@ -379,6 +426,13 @@ def encode(target: BuildTarget, user_values: dict[str, Any]) -> str:
         info["afn"] = int(str(ti["afn"]).replace("0x", ""), 16)
     if "di" in ti:
         info["di"] = str(ti["di"])
+    has_addr = ti.get("has_address")
+    if has_addr is None:
+        has_addr = ti.get("addr")
+    if has_addr is not None:
+        if isinstance(has_addr, str):
+            has_addr = has_addr.lower() in ("true", "1", "yes")
+        info["has_address"] = bool(has_addr)
 
     # 将 dotted key 嵌套为 struct: datetime.second → {datetime: {second: ...}}
     fv = _nest_dotted(fv)

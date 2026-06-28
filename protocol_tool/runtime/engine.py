@@ -401,6 +401,27 @@ class BuildEngine:
         """
         import json
 
+        if "has_address" not in info:
+            inferred: list[dict] = []
+            errors: list[str] = []
+            for has_address in (False, True):
+                try:
+                    inferred.append(self.resolve_path({**info, "has_address": has_address}))
+                except ValueError as exc:
+                    errors.append(str(exc))
+            unique: dict[str, dict] = {item["leaf_id"]: item for item in inferred}
+            if len(unique) == 1:
+                return next(iter(unique.values()))
+            if len(unique) > 1:
+                options = [
+                    item.get("route_vals", {}).get("control.add")
+                    for item in unique.values()
+                ]
+                raise ValueError(
+                    "Address domain is ambiguous. Provide has_address/addr. "
+                    f"Available control.add values: {options}"
+                )
+
         # Find the frame-level router
         frame_router_id = None
         for field in self.ir.frame.fields:
@@ -417,8 +438,8 @@ class BuildEngine:
         if direction == "downlink":  dir_val = 0
         elif direction == "uplink": dir_val = 1
 
-        has_addr = info.get("has_address", False)
-        add_val = 1 if has_addr else 0
+        has_addr = info.get("has_address")
+        add_val = None if has_addr is None else (1 if has_addr else 0)
 
         route_vals: dict[str, Any] = {}
         path_steps: list[dict] = []

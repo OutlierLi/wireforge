@@ -800,6 +800,30 @@ def _compact_candidate(entry: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in public.items() if value not in (None, "", [], {})}
 
 
+def _compact_decode_values(values: dict[str, Any] | None, depth: int = 0) -> dict[str, Any] | None:
+    """Compact decoded values to a reasonable size for agent consumption.
+
+    Depth 0: keep all top-level keys, recurse into dicts.
+    Depth >= 2: replace dicts with their key count summary.
+    """
+    if not isinstance(values, dict):
+        return values
+    if depth >= 2:
+        return {"_keys": sorted(values.keys()), "_count": len(values)}
+    result: dict[str, Any] = {}
+    for key, val in values.items():
+        if isinstance(val, dict):
+            result[key] = _compact_decode_values(val, depth + 1)
+        elif isinstance(val, list):
+            if len(val) <= 20:
+                result[key] = val
+            else:
+                result[key] = val[:20] + [f"... ({len(val) - 20} more)"]
+        else:
+            result[key] = val
+    return result
+
+
 def _compact_success(record: RunRecord) -> dict[str, Any]:
     public: dict[str, Any] = {}
     build = record.results.get("build") if isinstance(record.results, dict) else None
@@ -831,6 +855,7 @@ def _compact_success(record: RunRecord) -> dict[str, Any]:
                 "protocol": decode.get("protocol"),
                 "path": decode.get("path"),
                 "frame": decode.get("frame"),
+                "values": _compact_decode_values(decode.get("values")),
             }.items()
             if value not in (None, "", [], {})
         }

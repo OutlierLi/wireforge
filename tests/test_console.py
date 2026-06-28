@@ -1074,8 +1074,6 @@ class TestCrossProtocol:
 
     def test_csg_all_afns_resolve(self):
         """CSG 全部 AFN 都能找到路径"""
-        import random
-        addr = "000000000001"
         # AFN 00-07
         di_map = {
             0: "E8010001", 1: "E8020101", 2: "E8020201", 3: "E8000301",
@@ -1084,8 +1082,39 @@ class TestCrossProtocol:
         for afn in range(8):
             di = di_map.get(afn, f"E800{afn:02X}01")
             direction = "uplink" if afn == 5 else "downlink"
-            r = exec_cmd("build", {
+            args = {
                 "proto": "csg", "afn": f"0x{afn:02X}", "di": di,
                 "dir": direction, "resolve": True,
-            })
+            }
+            r = exec_cmd("build", args)
             _ok(r, f"CSG AFN=0x{afn:02X}")
+
+    def test_csg_address_domain_is_inferred_from_route(self):
+        """添加任务/上报任务数据强制带地址域，普通写参数强制不带地址域。"""
+        add_task = exec_cmd("build", {
+            "proto": "csg", "afn": "0x02", "di": "E8020201",
+            "dir": "downlink", "resolve": True,
+        })
+        _ok(add_task, "CSG 添加任务自动推断地址域")
+        assert add_task["data"]["target_info"]["has_address"] is True
+        assert "main[[0,1]]" in add_task["data"]["path"]
+
+        add_task_wrong = exec_cmd("build", {
+            "proto": "csg", "afn": "0x02", "di": "E8020201",
+            "dir": "downlink", "addr": False, "resolve": True,
+        })
+        assert add_task_wrong["status"] == "no_route"
+
+        add_slave = exec_cmd("build", {
+            "proto": "csg", "afn": "0x04", "di": "E8020402",
+            "dir": "downlink", "resolve": True,
+        })
+        _ok(add_slave, "CSG 添加从节点自动推断无地址域")
+        assert add_slave["data"]["target_info"]["has_address"] is False
+        assert "main[[0,0]]" in add_slave["data"]["path"]
+
+        add_slave_wrong = exec_cmd("build", {
+            "proto": "csg", "afn": "0x04", "di": "E8020402",
+            "dir": "downlink", "addr": True, "resolve": True,
+        })
+        assert add_slave_wrong["status"] == "no_route"

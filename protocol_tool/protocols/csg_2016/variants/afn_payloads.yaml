@@ -31,6 +31,7 @@ variants:
     router: afn00_di_router
     match:
       di: "E8010001"
+      control.add: 0
     body:
       type: struct
       fields:
@@ -44,6 +45,7 @@ variants:
     router: afn00_di_router
     match:
       di: "E8010002"
+      control.add: 0
     body:
       type: struct
       fields:
@@ -74,6 +76,7 @@ variants:
     match:
       di: "E8020101"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields: []
@@ -85,6 +88,7 @@ variants:
     match:
       di: "E8020102"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields: []
@@ -96,6 +100,7 @@ variants:
     match:
       di: "E8020103"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields: []
@@ -124,6 +129,7 @@ variants:
     match:
       di: "E8020201"
       control.dir: 0
+      control.add: 1
     body:
       type: struct
       fields:
@@ -151,6 +157,7 @@ variants:
     match:
       di: "E8020202"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields:
@@ -165,6 +172,7 @@ variants:
     match:
       di: "E8000203"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields: []
@@ -175,6 +183,7 @@ variants:
     match:
       di: "E8000203"
       control.dir: 1
+      control.add: 0
     body:
       type: struct
       fields:
@@ -189,6 +198,7 @@ variants:
     match:
       di: "E8030204"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields:
@@ -206,6 +216,7 @@ variants:
     match:
       di: "E8040204"
       control.dir: 1
+      control.add: 0
     body:
       type: struct
       fields:
@@ -226,6 +237,7 @@ variants:
     match:
       di: "E8030205"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields:
@@ -240,6 +252,7 @@ variants:
     match:
       di: "E8040205"
       control.dir: 1
+      control.add: 0
     body:
       type: struct
       fields:
@@ -276,6 +289,7 @@ variants:
     match:
       di: "E8000206"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields: []
@@ -287,6 +301,7 @@ variants:
     match:
       di: "E8000206"
       control.dir: 1
+      control.add: 0
     body:
       type: struct
       fields:
@@ -301,6 +316,7 @@ variants:
     match:
       di: "E8020207"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields:
@@ -340,6 +356,7 @@ variants:
     match:
       di: "E8020208"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields: []
@@ -351,6 +368,7 @@ variants:
     match:
       di: "E8020209"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields: []
@@ -379,6 +397,7 @@ variants:
     match:
       di: "E8000301"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields: []
@@ -390,6 +409,7 @@ variants:
     match:
       di: "E8000301"
       control.dir: 1
+      control.add: 0
     body:
       type: struct
       fields:
@@ -426,6 +446,7 @@ variants:
     match:
       di: "E8000302"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields: []
@@ -437,6 +458,7 @@ variants:
     match:
       di: "E8000302"
       control.dir: 1
+      control.add: 0
     body:
       type: struct
       fields:
@@ -509,6 +531,7 @@ variants:
     match:
       di: "E8000303"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields: []
@@ -520,6 +543,7 @@ variants:
     match:
       di: "E8000303"
       control.dir: 1
+      control.add: 0
     body:
       type: struct
       fields:
@@ -537,6 +561,7 @@ variants:
     match:
       di: "E8030304"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields:
@@ -556,6 +581,7 @@ variants:
     match:
       di: "E8040304"
       control.dir: 1
+      control.add: 0
     body:
       type: struct
       fields:
@@ -578,6 +604,7 @@ variants:
     match:
       di: "E8000305"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields: []
@@ -589,6 +616,7 @@ variants:
     match:
       di: "E8000305"
       control.dir: 1
+      control.add: 0
     body:
       type: struct
       fields:
@@ -603,6 +631,7 @@ variants:
     match:
       di: "E8030306"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields:
@@ -620,6 +649,7 @@ variants:
     match:
       di: "E8040306"
       control.dir: 1
+      control.add: 0
     body:
       type: struct
       fields:
@@ -646,6 +676,7 @@ variants:
     match:
       di: "E8000307"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields: []
@@ -657,6 +688,7 @@ variants:
     match:
       di: "E8000307"
       control.dir: 1
+      control.add: 0
     body:
       type: struct
       fields:
@@ -671,6 +703,7 @@ variants:
     match:
       di: "E8030308"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields:
@@ -687,6 +720,7 @@ variants:
     match:
       di: "E8040308"
       control.dir: 1
+      control.add: 0
     body:
       type: struct
       fields:
@@ -728,6 +762,7 @@ variants:
     match:
       di: "E8020404"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields:
@@ -742,6 +777,7 @@ variants:
     match:
       di: "E8020401"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields:
@@ -758,6 +794,7 @@ variants:
     match:
       di: "E8020402"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields:
@@ -781,6 +818,7 @@ variants:
     match:
       di: "E8020403"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields:
@@ -804,6 +842,7 @@ variants:
     match:
       di: "E8020405"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields: []
@@ -815,6 +854,7 @@ variants:
     match:
       di: "E8020406"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields: []
@@ -843,6 +883,7 @@ variants:
     match:
       di: "E8050501"
       control.dir: 1
+      control.add: 1
     body:
       type: struct
       fields:
@@ -864,6 +905,7 @@ variants:
     match:
       di: "E8050502"
       control.dir: 1
+      control.add: 1
     body:
       type: struct
       fields:
@@ -882,6 +924,7 @@ variants:
     match:
       di: "E8050503"
       control.dir: 1
+      control.add: 0
     body:
       type: struct
       fields:
@@ -905,6 +948,7 @@ variants:
     match:
       di: "E8050504"
       control.dir: 1
+      control.add: 0
     body:
       type: struct
       fields: []
@@ -916,6 +960,7 @@ variants:
     match:
       di: "E8050505"
       control.dir: 1
+      control.add: 0
     body:
       type: struct
       fields:
@@ -955,6 +1000,7 @@ variants:
     match:
       di: "E8060601"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields: []
@@ -966,6 +1012,7 @@ variants:
     match:
       di: "E8060601"
       control.dir: 1
+      control.add: 0
     body:
       type: struct
       fields:
@@ -1022,6 +1069,7 @@ variants:
     match:
       di: "E8020701"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields:
@@ -1056,6 +1104,7 @@ variants:
     match:
       di: "E8020702"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields:
@@ -1080,6 +1129,7 @@ variants:
     match:
       di: "E8000703"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields: []
@@ -1091,6 +1141,7 @@ variants:
     match:
       di: "E8000703"
       control.dir: 1
+      control.add: 0
     body:
       type: struct
       fields:
@@ -1125,6 +1176,7 @@ variants:
     match:
       di: "E8000704"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields: []
@@ -1136,6 +1188,7 @@ variants:
     match:
       di: "E8000704"
       control.dir: 1
+      control.add: 0
     body:
       type: struct
       fields:
@@ -1156,6 +1209,7 @@ variants:
     match:
       di: "E8030704"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields:
@@ -1173,6 +1227,7 @@ variants:
     match:
       di: "E8030705"
       control.dir: 0
+      control.add: 0
     body:
       type: struct
       fields:
@@ -1190,6 +1245,7 @@ variants:
     match:
       di: "E8040704"
       control.dir: 1
+      control.add: 0
     body:
       type: struct
       fields:
@@ -1216,6 +1272,7 @@ variants:
     match:
       di: "E8040705"
       control.dir: 1
+      control.add: 0
     body:
       type: struct
       fields:

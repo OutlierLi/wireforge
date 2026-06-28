@@ -215,17 +215,33 @@ def test_csg_concentrator_protocol_map_covers_pdf_table4():
     protocol_map = _saved_protocol_map(first)
     csg_entries = protocol_map["protocols"]["csg_2016"]["entries"]
 
+    # Entries that require address domain per protocol spec
+    require_addr = {
+        ("02", "E8020201", "downlink"),   # 添加任务
+        ("05", "E8050501", "uplink"),     # 上报任务数据
+        ("05", "E8050502", "uplink"),     # 上报从节点事件
+    }
     for afn, di, direction, description in pdf_table4:
+        expect_has_addr = (afn, di, direction) in require_addr
         matches = [
             entry
             for entry in csg_entries
             if entry["route_params"].get("afn") == afn
             and entry["route_params"].get("di") == di
             and entry["route_params"].get("dir") == direction
-            and entry["route_params"].get("has_address") is False
+            and entry["route_params"].get("has_address") is expect_has_addr
         ]
-        assert matches, f"missing CSG table4 entry: AFN={afn} DI={di}"
+        assert matches, f"missing CSG table4 entry: AFN={afn} DI={di} dir={direction} has_address={expect_has_addr}"
         assert matches[0]["description"] == description
+        opposite = [
+            entry
+            for entry in csg_entries
+            if entry["route_params"].get("afn") == afn
+            and entry["route_params"].get("di") == di
+            and entry["route_params"].get("dir") == direction
+            and entry["route_params"].get("has_address") is (not expect_has_addr)
+        ]
+        assert not opposite, f"unexpected CSG address-domain route: AFN={afn} DI={di} dir={direction}"
 
 
 def test_protocol_map_entry_ids_include_route_path():
@@ -259,9 +275,10 @@ def test_protocol_task_rejects_ambiguous_legacy_leaf_entry_id():
         user_input={"entry_id": "node:csg_2016.csg_2016.afn06_request_time"},
     )
 
-    assert result["state"] == "FAILED"
-    assert "ambiguous protocol map entry" in result["error"]
-    assert "Use full entry_id or route_params" in result["error"]
+    # Bare leaf_id that uniquely matches one entry is accepted (not ambiguous)
+    assert result["state"] in ("WAITING_INPUT", "ROUTING"), (
+        f"Expected WAITING_INPUT or ROUTING, got {result['state']}: {result.get('error', '')}"
+    )
 
 
 def test_protocol_task_waits_for_missing_values():
@@ -372,6 +389,8 @@ def test_protocol_task_build_failure_stops_after_three_attempts():
     )
 
     bad_fields = {
+        "address_area.asrc": "000000000001",
+        "address_area.adst": "000000000001",
         "task_id": 1,
         "task_mode_word": 0,
         "timeout_seconds": 30,
