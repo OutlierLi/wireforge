@@ -417,7 +417,11 @@ def _execute_decode_verify(record: RunRecord) -> bool:
         record.results["decode_verify"] = response
         return False
     data = dict(response.get("data") or {})
-    check = _verify_build_against_decode(data, dict(record.results.get("build_request") or {}))
+    check = _verify_build_against_decode(
+        data,
+        dict(record.results.get("build_request") or {}),
+        list(record.route_result.get("input_schema") or []),
+    )
     record.results["decode_verify"] = {
         "decode": data,
         "differences": check["differences"],
@@ -532,14 +536,27 @@ def _ensure_send_ready(record: RunRecord) -> bool:
     return True
 
 
-def _verify_build_against_decode(decode: dict[str, Any], build_request: dict[str, Any]) -> dict[str, Any]:
+def _verify_build_against_decode(
+    decode: dict[str, Any],
+    build_request: dict[str, Any],
+    input_schema: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     differences: list[str] = []
     checked_fields: list[dict[str, Any]] = []
     values = decode.get("values") if isinstance(decode.get("values"), dict) else {}
+    schema_by_name = {
+        str(item.get("name")): item
+        for item in (input_schema or [])
+        if isinstance(item, dict) and item.get("name")
+    }
     for field, expected in _verifiable_build_fields(build_request).items():
         actual = _find_decoded_field(values, field)
-        ok = _values_match(expected, actual)
-        checked_fields.append({"field": field, "expected": expected, "actual": actual, "ok": ok})
+        schema = schema_by_name.get(field)
+        ok = _values_match(expected, actual, schema)
+        checked = {"field": field, "expected": expected, "actual": actual, "ok": ok}
+        if schema and schema.get("type"):
+            checked["type"] = schema.get("type")
+        checked_fields.append(checked)
         if not ok:
             differences.append(f"field mismatch: {field} expected={expected} actual={actual}")
     return {"differences": differences, "checked_fields": checked_fields}
@@ -594,14 +611,40 @@ def _compact_value(value: Any) -> Any:
     return value
 
 
-def _values_match(expected: Any, actual: Any) -> bool:
+def _values_match(expected: Any, actual: Any, schema: dict[str, Any] | None = None) -> bool:
     if actual is None:
         return False
     if str(expected).lower() == "uplink":
         return _normalize_compare_value(actual) in {"1", "uplink"}
     if str(expected).lower() == "downlink":
         return _normalize_compare_value(actual) in {"0", "downlink"}
+    field_type = str((schema or {}).get("type") or "")
+    if field_type.startswith("uint"):
+        return _parse_decimal_or_prefixed_int(expected) == _parse_decimal_or_prefixed_int(actual)
+    if field_type in {"hex", "bytes"}:
+        return _normalize_hex_compare_value(expected) == _normalize_hex_compare_value(actual)
+    expected_text = re.sub(r"\s+", "", str(expected).strip())
+    actual_text = re.sub(r"\s+", "", str(actual).strip())
+    if expected_text.isdigit() and actual_text.isdigit() and max(len(expected_text), len(actual_text)) > 2:
+        return int(expected_text) == int(actual_text)
     return _normalize_compare_value(expected) == _normalize_compare_value(actual)
+
+
+def _parse_decimal_or_prefixed_int(value: Any) -> int:
+    if isinstance(value, int):
+        return value
+    text = re.sub(r"\s+", "", str(value).strip())
+    if re.fullmatch(r"0x[0-9a-fA-F]+", text):
+        return int(text, 16)
+    return int(text, 10)
+
+
+def _normalize_hex_compare_value(value: Any) -> str:
+    if isinstance(value, bytes):
+        return value.hex().lower()
+    if isinstance(value, dict) and "raw" in value:
+        return _normalize_hex_compare_value(value["raw"])
+    return re.sub(r"[^0-9A-Fa-f]", "", str(value)).lower()
 
 
 def _normalize_compare_value(value: Any) -> str:
@@ -666,7 +709,24 @@ def _normalize_user_input(user_input: dict[str, Any]) -> dict[str, Any]:
         normalized["proto"] = normalized.pop("protocol")
     if "hex" in normalized and "frame_hex" not in normalized:
         normalized["frame_hex"] = normalized.pop("hex")
+    if "add" in normalized and "has_address" not in normalized:
+        normalized["has_address"] = _coerce_bool(normalized.pop("add"))
+    if isinstance(normalized.get("route_params"), dict):
+        route_params = dict(normalized["route_params"])
+        if "add" in route_params and "has_address" not in route_params:
+            route_params["has_address"] = _coerce_bool(route_params.pop("add"))
+        normalized["route_params"] = route_params
     return normalized
+
+
+def _coerce_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "y", "on")
+    return bool(value)
 
 
 def _is_waiting_for_protocol_match(record: RunRecord) -> bool:
@@ -681,7 +741,7 @@ def _is_waiting_for_protocol_match(record: RunRecord) -> bool:
 def _has_route_input(user_input: dict[str, Any]) -> bool:
     if user_input.get("entry_id") or user_input.get("route_params"):
         return True
-    return any(key in user_input for key in ("proto", "protocol", "func", "afn", "di", "dir", "has_address"))
+    return any(key in user_input for key in ("proto", "protocol", "func", "afn", "di", "dir", "has_address", "add"))
 
 
 def _complete_task(record: RunRecord, task: TaskType) -> None:
@@ -774,10 +834,34 @@ def _compact_waiting_input(waiting_input: dict[str, Any]) -> dict[str, Any]:
         route = waiting_input.get("route") if isinstance(waiting_input.get("route"), dict) else {}
         public["variant_id"] = route.get("variant_id")
         public["route"] = waiting_input.get("route_params") or route.get("locator") or {}
+        public["route_detail"] = _public_route(route)
         fields = waiting_input.get("required_fields") or waiting_input.get("missing_fields")
         if not fields and isinstance(waiting_input.get("input_schema"), list):
             fields = [item.get("name") for item in waiting_input["input_schema"] if isinstance(item, dict) and item.get("name")]
         public["fields"] = fields or []
+        schema = waiting_input.get("input_schema") if isinstance(waiting_input.get("input_schema"), list) else []
+        public["input_schema"] = schema
+        public["required_fields"] = [
+            item.get("name")
+            for item in schema
+            if isinstance(item, dict) and item.get("required") and item.get("name")
+        ]
+        defaulted = {
+            item.get("name"): item.get("default")
+            for item in schema
+            if isinstance(item, dict) and item.get("name") and "default" in item
+        }
+        if defaulted:
+            public["defaulted_fields"] = defaulted
+        derived = route.get("derived_fields") if isinstance(route.get("derived_fields"), dict) else {}
+        if derived:
+            public["derived_fields"] = {
+                key: value
+                for key, value in derived.items()
+                if isinstance(value, dict) and value.get("method")
+            }
+        elif isinstance(route.get("derived_fields"), dict):
+            public["derived_fields"] = route.get("derived_fields") or {}
         if waiting_input.get("missing_fields"):
             public["missing_fields"] = waiting_input["missing_fields"]
         for key in ("attempt", "max_attempts", "error"):

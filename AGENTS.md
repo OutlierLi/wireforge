@@ -38,9 +38,35 @@ If several entries share the same `leaf_id`, do not use the leaf id. Choose the 
 }
 ```
 
-5. MCP calls `/route` and returns `need: "values"` plus `fields`.
+5. MCP calls `/route` and returns `need: "values"` plus the full parameter schema.
 
-6. Fill `fields` from the user text and deterministic context. If a value is missing, ask the user instead of guessing.
+When `need` is `"values"`, read these fields from the MCP result:
+
+- `input_schema`: all parameters, including `name`, `type`, `required`, `desc`, `length`, and optional `default`.
+- `required_fields`: fields that must be filled by the Agent or user.
+- `defaulted_fields`: fields MCP/build will fill from deterministic defaults.
+- `derived_fields`: fields MCP/build will compute from other fields.
+
+When asking the user for missing values, do not only list `fields`. Show a concise parameter table with all parameters:
+
+```text
+需要补充的参数：
+- address_area.adst | bcd(6) | 必填 | 目的地址
+- payload           | hex    | 必填 | 原始报文内容
+
+已使用默认值：
+- address_area.asrc | bcd(6)    | 默认 000000000000 | 源地址
+- task_id           | uint16_le | 默认 0            | 任务ID
+- task_mode_word    | uint8     | 默认 16           | 任务模式字
+- timeout_seconds   | uint16_le | 默认 70           | 任务执行超时时间(秒)
+
+自动推导：
+- payload_length = byte_length(payload)
+```
+
+If `input_schema` is present, it is authoritative. Use it to explain parameter names, descriptions, data types, defaults, and whether each value is required.
+
+6. Fill `required_fields` from the user text and deterministic context. Use `input_schema` to validate names and types. Do not ask the user for values listed in `defaulted_fields` or `derived_fields` unless the user explicitly wants to override a default. If a required value is missing, ask the user and include the full parameter table described above.
 
 ```json
 {

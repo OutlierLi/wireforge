@@ -38,12 +38,14 @@ class InputField:
     unit: str = ""
     # struct sub-fields
     children: list[InputField] = field(default_factory=list)
+    derived: dict[str, Any] | None = None
 
     def to_dict(self) -> dict:
         d: dict[str, Any] = {"name": self.name, "type": self.type, "required": self.required}
         if self.desc: d["desc"] = self.desc
         if self.length: d["length"] = self.length
         if self.default is not None: d["default"] = self.default
+        if self.derived: d["derived"] = self.derived
         if self.enum_values: d["values"] = self.enum_values
         if self.unit: d["unit"] = self.unit
         if self.children: d["children"] = [c.to_dict() for c in self.children]
@@ -162,6 +164,8 @@ def resolve(target_info: dict[str, Any]) -> BuildTarget:
     else:
         derived["control"] = {"dir": dv, "prm": 0x01 if dv == 0 else 0x00, "add": info.get("has_address", False)}
         derived["afn"] = info.get("afn", 0x00)
+    if proto == "csg_2016" and leaf.name == "csg_2016.afn02_add_task":
+        derived["payload_length"] = {"from": "payload", "method": "byte_length"}
 
     return BuildTarget(
         protocol=proto,
@@ -199,12 +203,14 @@ def _collect_input_fields(ir, leaf, leaf_id, parent_leaf=None) -> list[InputFiel
                 continue
             if t == "struct":
                 for sf in lf.params.get("fields", []):
+                    default = sf.get("default")
                     _add_field(InputField(
                         name=f"{lf.name}.{sf.get('name', '?')}",
                         type=sf.get("type", "uint8"),
-                        required=False,  # 父级 struct 字段可选（有默认值）
+                        required=default is None,
                         length=sf.get("length"),
                         desc=sf.get("description", ""),
+                        default=default,
                     ))
             else:
                 # afn, seq, di 等 — 由 derived_fields 处理，这里跳过
@@ -232,15 +238,20 @@ def _collect_input_fields(ir, leaf, leaf_id, parent_leaf=None) -> list[InputFiel
             # 展开 struct 子字段为扁平 dotted name (如 datetime.second)
             # 如果 struct 有条件，子字段标记为不必填
             for sf in lf.params.get("fields", []):
+                default = sf.get("default")
                 _add_field(InputField(
                     name=f"{lf.name}.{sf.get('name', '?')}",
                     type=sf.get("type", "uint8"),
-                    required=not has_condition,
+                    required=not has_condition and default is None,
                     length=sf.get("length"),
                     desc=sf.get("description", ""),
+                    default=default,
                 ))
         else:
-            required = not lf.optional and not has_condition
+            derive = lf.params.get("derive")
+            if derive:
+                continue
+            required = not lf.optional and not has_condition and lf.default is None
             extra: dict[str, Any] = {}
             if t == "enum":
                 extra["enum_values"] = lf.params.get("values")
@@ -286,8 +297,7 @@ def _collect_frame_defaults(ir, proto: str, info: dict) -> dict[str, Any]:
             defaults["address"] = "AAAAAAAAAAAA"
     # CSG 地址域默认值
     if proto == "csg_2016" and info.get("has_address"):
-        defaults["address_area.asrc"] = "000000000001"
-        defaults["address_area.adst"] = "000000000001"
+        defaults["address_area.asrc"] = "000000000000"
     return defaults
 
 
@@ -409,6 +419,8 @@ def encode(target: BuildTarget, user_values: dict[str, Any]) -> str:
             pass
         # required but missing → BuildEngine will raise
 
+    fv.update(_derive_field_values(target, fv))
+
     # target_info 中的 di / func 等
     ti = target.target_info
     if "di" in ti:
@@ -440,6 +452,24 @@ def encode(target: BuildTarget, user_values: dict[str, Any]) -> str:
     r = be.build(fv, info=info)
     de.decode(r.frame)  # 验证
     return r.frame_hex
+
+
+def _derive_field_values(target: BuildTarget, values: dict[str, Any]) -> dict[str, Any]:
+    if target.protocol == "csg_2016" and target.variant_id == "csg_2016.afn02_add_task":
+        if "payload" in values:
+            return {"payload_length": _hex_byte_length(values["payload"])}
+    return {}
+
+
+def _hex_byte_length(value: Any) -> int:
+    if isinstance(value, bytes):
+        return len(value)
+    if isinstance(value, dict) and "raw" in value:
+        value = value["raw"]
+    if isinstance(value, str):
+        clean = value.replace(" ", "").replace("\n", "").replace("\t", "")
+        return len(clean) // 2
+    raise ValueError(f"cannot derive byte length from {type(value).__name__}")
 
 
 def _nest_dotted(values: dict[str, Any]) -> dict[str, Any]:

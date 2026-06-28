@@ -132,11 +132,8 @@ class TestBuildSuccess:
         r = exec_cmd("build", {
             "proto": "csg", "afn": "0x02", "di": "E8020201", "dir": "downlink",
             "addr": True,
-            "task_id": 1,
-            "task_mode_word": 0,
-            "timeout_seconds": 30,
-            "payload_length": 0,
-            "payload": "",
+            "address_area.adst": "012400038813",
+            "payload": "FFFFFFFFFF",
         })
         _ok(r, "CSG 带地址域")
 

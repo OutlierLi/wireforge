@@ -304,12 +304,124 @@ def test_protocol_task_waits_for_missing_values():
         "datetime.month",
         "datetime.year",
     ]
+    assert [item["name"] for item in second["input_schema"]] == second["fields"]
+    assert all({"name", "type", "required"}.issubset(item) for item in second["input_schema"])
 
     third = run_agent_protocol(run_id=first["run_id"], user_input={"fields": {"datetime.second": "06"}})
 
     assert third["state"] == "WAITING_INPUT"
     assert third["need"] == "values"
     assert "datetime.minute" in third["missing_fields"]
+    assert [item["name"] for item in third["input_schema"]] == second["fields"]
+
+
+def test_protocol_task_normalizes_add_alias_in_route_params():
+    first = run_agent_protocol("构造添加任务报文")
+    entry = _find_entry(
+        _saved_protocol_map(first),
+        "afn02_add_task",
+        proto="csg",
+        dir="downlink",
+        has_address=True,
+    )
+    route_params = {
+        "proto": "csg",
+        "afn": "02",
+        "di": "E8020201",
+        "dir": "downlink",
+        "add": "1",
+    }
+
+    result = run_agent_protocol(
+        run_id=first["run_id"],
+        user_input={"entry_id": entry["id"], "route_params": route_params},
+    )
+
+    assert result["state"] == "WAITING_INPUT"
+    assert result["route"]["has_address"] is True
+    assert result["fields"] == ["address_area.adst", "payload"]
+
+
+def test_protocol_task_builds_csg_add_task_with_defaults_and_derived_length():
+    first = run_agent_protocol("构造添加任务报文")
+    entry = _find_entry(
+        _saved_protocol_map(first),
+        "afn02_add_task",
+        proto="csg",
+        dir="downlink",
+        has_address=True,
+    )
+    second = run_agent_protocol(
+        run_id=first["run_id"],
+        user_input={"entry_id": entry["id"], "route_params": entry["route_params"]},
+    )
+
+    assert second["state"] == "WAITING_INPUT"
+    assert second["fields"] == ["address_area.adst", "payload"]
+    assert [item["name"] for item in second["input_schema"]] == [
+        "address_area.asrc",
+        "address_area.adst",
+        "task_id",
+        "task_mode_word",
+        "timeout_seconds",
+        "payload",
+    ]
+    assert second["required_fields"] == ["address_area.adst", "payload"]
+    defaults = second["defaulted_fields"]
+    assert defaults["address_area.asrc"] == "000000000000"
+    assert defaults["task_id"] == 0
+    assert defaults["task_mode_word"] == 0x10
+    assert defaults["timeout_seconds"] == 70
+    assert second["derived_fields"]["payload_length"] == {"from": "payload", "method": "byte_length"}
+
+    result = run_agent_protocol(
+        run_id=first["run_id"],
+        user_input={"fields": {
+            "address_area.adst": "012400038813",
+            "payload": "FFFFFFFFFF",
+        }},
+    )
+
+    assert result["state"] == "SUCCEEDED"
+    assert result["variant_id"] == "csg_2016.afn02_add_task"
+    assert result["decode_verified"] is True
+    assert ["address_area.adst", True] in result["checks"]
+    assert ["payload", True] in result["checks"]
+
+
+def test_protocol_task_verify_uses_schema_for_uint_fields():
+    first = run_agent_protocol("构造添加任务报文")
+    entry = _find_entry(
+        _saved_protocol_map(first),
+        "afn02_add_task",
+        proto="csg",
+        dir="downlink",
+        has_address=True,
+    )
+    run_agent_protocol(
+        run_id=first["run_id"],
+        user_input={"entry_id": entry["id"], "route_params": entry["route_params"]},
+    )
+
+    result = run_agent_protocol(
+        run_id=first["run_id"],
+        user_input={"fields": {
+            "address_area.adst": "012400038813",
+            "task_id": "01",
+            "task_mode_word": "16",
+            "timeout_seconds": "60",
+            "payload": "00010001",
+        }},
+        debug=True,
+    )
+
+    assert result["state"] == "SUCCEEDED"
+    checked = result["results"]["decode_verify"]["checked_fields"]
+    timeout = next(item for item in checked if item["field"] == "timeout_seconds")
+    assert timeout["expected"] == "60"
+    assert timeout["actual"] == 60
+    assert timeout["type"] == "uint16_le"
+    assert timeout["ok"] is True
 
 
 def test_protocol_task_builds_csg_concentrator_time_response():

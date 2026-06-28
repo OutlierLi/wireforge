@@ -27,7 +27,7 @@
 @expect success
 
 ### CSG with address area
-/build --proto csg --afn 0x02 --dir downlink --di E8020201 --addr true --task_id 1 --task_mode_word 0 --timeout_seconds 30 --payload_length 0 --payload ""
+/build --proto csg --afn 0x02 --dir downlink --di E8020201 --addr true --address_area.adst 012400038813 --payload FFFFFFFFFF
 @expect success
 
 ### DLT645 resolve (show input schema)

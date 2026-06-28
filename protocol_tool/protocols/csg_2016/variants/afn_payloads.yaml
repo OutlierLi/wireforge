@@ -135,15 +135,21 @@ variants:
       fields:
         - name: task_id
           type: uint16_le
+          default: 0
           description: "任务ID"
         - name: task_mode_word
           type: uint8
+          default: 0x10
           description: "任务模式字"
         - name: timeout_seconds
           type: uint16_le
+          default: 70
           description: "任务执行超时时间(秒)"
         - name: payload_length
           type: uint8
+          derive:
+            from: payload
+            method: byte_length
           description: "报文长度"
         - name: payload
           type: hex

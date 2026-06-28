@@ -53,6 +53,7 @@ messages:
             - name: asrc
               type: bcd
               length: 6
+              default: "000000000000"
               byte_order: little
               canonical_format: decimal_string
               description: "源地址"
@@ -126,6 +127,7 @@ messages:
             - name: adst
               type: bcd
               length: 6
+              default: "000000000000"
               byte_order: little
               canonical_format: decimal_string
         - name: afn
