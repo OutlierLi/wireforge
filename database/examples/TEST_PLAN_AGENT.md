@@ -219,6 +219,109 @@ teardown:
 
 ---
 
+## 控制流与复合变量
+
+### 结构体 / 数组 vars
+
+```yaml
+vars:
+  batches:
+    - start_index: 0
+      addrs: ["01 00 00 00 00 00", "02 00 00 00 00 00"]
+  device:
+    port: mock://auto
+```
+
+路径示例：
+
+- `${batches.0.start_index}`、`${batches[0].addrs.1}`
+- `${device.port}`
+- 整对象：`value: ${batches.0}`（保留 dict/list 类型，用于 `set_var`）
+
+### loop — 遍历数组或计数
+
+```yaml
+- id: loop_batches
+  action: loop
+  args:
+    over: ${batches}    # 或 vars 名 batches
+    as: batch           # 当前元素，默认 item
+    index_as: i         # 可选下标
+  steps:
+    - id: use_batch
+      action: set_var
+      args:
+        name: idx
+        value: ${batch.start_index}
+
+- id: loop_n
+  action: loop
+  args:
+    count: 32
+    start: 0            # 可选，默认 0
+    index_as: i
+  steps:
+    - action: set_var
+      args: {name: n, value: ${i}}
+```
+
+重复步骤用 `loop`，避免复制粘贴上百个 step。
+
+### if — 条件分支
+
+```yaml
+- id: only_on_mock
+  action: if
+  args:
+    when:
+      eq:
+        port: mock://auto
+  steps:
+    - action: auto_rule.add
+      ...
+  else_steps:
+    - action: sleep
+      args: {ms: 100}
+```
+
+`when` 语法：
+
+- `eq: {path: expected}` — 同 assert
+- `not: {eq: {...}}` — 取反
+- `all: [{eq:...}, {not:...}]` — 全部满足
+
+### expr — 算术表达式
+
+```yaml
+- id: calc_start
+  action: expr
+  args:
+    name: start_index
+    expr: qi * 32
+
+- id: inline_expr
+  action: set_var
+  args:
+    name: start_index
+    value: ${qi * 32 + 1}
+```
+
+支持运算符：`+`、`-`、`*`、`//`、`%`；变量须为数值（或数字字符串）。
+
+### loop 作用域
+
+- 每轮迭代从外层 vars 重新开始，迭代间互不污染
+- 循环结束后保留**最后一轮**写入的 vars（如 `save_as` / `set_var`）
+- 外层 vars 不会被中间轮次修改
+
+### dry_run loop 预览
+
+当 `over` / `count` 在编译期可解析时，`test.dry_run` 在对应 loop step 上附加 `loop_preview`（最多展开 32 轮），便于 Agent 检查子步骤变量是否解析正确。
+
+示例：[`../runs/loop_batch_demo.yaml`](../runs/loop_batch_demo.yaml)
+
+---
+
 ## 协议信息从哪里查
 
 | 目的 | 路径 |
@@ -243,6 +346,7 @@ python3 scripts/bootstrap_protocol_cache.py
 | 示例 | 文件 | 场景 |
 |------|------|------|
 | 最小 mock | [`mock_auto_ack.md`](mock_auto_ack.md) | 单连接 mock://auto + auto_rule |
+| loop/if 演示 | [`../runs/loop_batch_demo.yaml`](../runs/loop_batch_demo.yaml) | 数组/结构体 vars + loop + if |
 | 双端 virtual | [`vendor_code_query.md`](vendor_code_query.md) | CCO + STA 总线 |
 | 动作覆盖 | [`../runs/all_actions.yaml`](../runs/all_actions.yaml) | 全部 action 类型 |
 

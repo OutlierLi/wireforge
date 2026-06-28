@@ -62,12 +62,12 @@ vars:
 - 报文一律 `build` 构造，禁止手拼 hex
 - `send` 后接 `wait-frame` 时 `timeout: 0`
 - `auto_rule.match` 用 build 下行帧的 DI hex 片段，不用宽泛 regex
-- `auto_rule.then` 用 dict 格式（`command` + `args.hex`）
-
-### 示例
+- 重复步骤用 `loop`，分支用 `if`（见 TEST_PLAN_AGENT.md）
+- 数组/结构体 vars 用 `${batch.addrs.0}`、`${device.port}` 访问
+- 算术用 `expr` action 或 `${qi * 32}` 表达式
 
 - 模版：[`database/templates/test_plan_mock_auto.yaml`](database/templates/test_plan_mock_auto.yaml)
-- 最小 mock 示例：[`database/runs/mock_auto_ack.yaml`](database/runs/mock_auto_ack.yaml)
+- loop/if 示例：[`database/runs/loop_batch_demo.yaml`](database/runs/loop_batch_demo.yaml)
 
 Before protocol tasks, the repository must be initialized once:
 

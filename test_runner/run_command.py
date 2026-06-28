@@ -24,6 +24,7 @@ from test_runner.error_codes import (
 from test_runner.plan_loader import PlanError, load_plan, load_plan_dict
 from test_runner.plan_resolver import dry_resolve, resolve_plan_for_report
 from test_runner.plan_validator import validate_plan
+from test_runner.control_flow import execute_steps
 from test_runner.report_writer import ReportWriter, format_summary
 from test_runner.step_executor import StepExecutor
 
@@ -82,7 +83,10 @@ class RunCommand:
                 "auto_rule.remove": "Remove auto-reply rule",
                 "assert": "Compare expect values against vars",
                 "set_var": "Set a variable in scope",
+                "expr": "Evaluate arithmetic expression and store in vars",
                 "sleep": "Sleep for specified ms",
+                "loop": "Repeat nested steps over a list or count",
+                "if": "Run nested steps when when-condition matches",
             },
             "example": "database/runs/mock_auto_ack.yaml",
             "template": "database/templates/test_plan_mock_auto.yaml",
@@ -93,6 +97,12 @@ class RunCommand:
                     "file": "database/runs/mock_auto_ack.yaml",
                     "doc": "database/examples/mock_auto_ack.md",
                     "scenario": "单连接 mock://auto + auto_rule 确认帧",
+                },
+                {
+                    "name": "loop_batch_demo",
+                    "file": "database/runs/loop_batch_demo.yaml",
+                    "doc": "database/examples/TEST_PLAN_AGENT.md",
+                    "scenario": "loop/if + 数组结构体 vars",
                 },
                 {
                     "name": "vendor_code_query",
@@ -121,6 +131,12 @@ class RunCommand:
                 "auto_rule_match": "use DI hex substring from build downlink frame, not broad regex",
                 "auto_rule_then": "use dict format: then: [{command: /send, args: {hex: ...}}]",
                 "build_fields": "field names from protocol MCP input_schema only",
+                "repeat_steps": "use action: loop with args.over or args.count",
+                "conditional_steps": "use action: if with args.when (eq/not/all)",
+                "composite_vars": "arrays and structs in vars; paths like batches.0.addrs[1]",
+                "expressions": "use action: expr or ${i * 32} for arithmetic (+ - * // %)",
+                "loop_scope": "each loop iteration is isolated; last iteration vars remain after loop",
+                "dry_run_loop_preview": "dry_run adds loop_preview with expanded steps when over/count is static",
             },
             "prerequisite": {
                 "mcp": "wireforge protocol_task_run",
@@ -361,31 +377,22 @@ def _execute_section(
     ignore_error: bool = False,
     stop_on_error: bool = True,
 ) -> None:
-    for step in steps:
-        if ctx.deadline_monotonic is not None and time.monotonic() > ctx.deadline_monotonic:
-            ctx.failed_step = ctx.failed_step or str(step.get("id") or "")
-            run_err = RunError(RUN_TIMEOUT, "run timeout", step_id=ctx.failed_step)
-            ctx.primary_error = run_err
-            writer.record_run_error(run_err)
-            raise RuntimeError("run timeout")
+    if ctx.deadline_monotonic is not None and time.monotonic() > ctx.deadline_monotonic:
+        ctx.failed_step = ctx.failed_step or ""
+        run_err = RunError(RUN_TIMEOUT, "run timeout", step_id=ctx.failed_step)
+        ctx.primary_error = run_err
+        writer.record_run_error(run_err)
+        raise RuntimeError("run timeout")
 
-        step_id = str(step["id"])
-        action = str(step["action"])
-        writer.record_step_start(step_id, action)
-        record = executor.execute(step, ctx)
-        ctx.records.append(record)
-        writer.record_step_end(record)
-
-        if record.status != "ok":
-            run_err = classify_step_failure(step_id, action, record.result, message=record.error)
-            if section == "teardown":
-                ctx.teardown_errors.append(run_err.to_dict())
-                continue
-            ctx.failed_step = step_id
-            if ctx.primary_error is None:
-                ctx.primary_error = run_err
-            if not ignore_error and stop_on_error:
-                raise RuntimeError(record.error or f"step failed: {step_id}")
+    execute_steps(
+        steps,
+        ctx,
+        executor,
+        writer,
+        section=section,
+        ignore_error=ignore_error,
+        stop_on_error=stop_on_error,
+    )
 
 
 def _compact_result(

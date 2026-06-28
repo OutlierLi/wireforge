@@ -8,7 +8,9 @@ from typing import Any
 
 from runtime.command_runtime import execute as runtime_execute
 from test_runner.context import RunContext, StepRecord
-from test_runner.variables import resolve_value
+from test_runner.conditions import values_equal
+from test_runner.expressions import eval_expression
+from test_runner.variables import VariableError, resolve_value
 
 
 class StepFailed(RuntimeError):
@@ -37,11 +39,33 @@ class StepExecutor:
             elapsed = int((time.monotonic() - start) * 1000)
             return StepRecord(step_id, action, "fail", elapsed, str(exc), result={"error": str(exc)})
 
-    def resolve_step(self, step: dict[str, Any], ctx: RunContext | Any) -> dict[str, Any]:
+    def resolve_step(
+        self,
+        step: dict[str, Any],
+        ctx: RunContext | Any,
+        *,
+        soft: bool = False,
+    ) -> dict[str, Any]:
         resolved = deepcopy(step)
+        action = str(resolved.get("action", ""))
         if "args" in resolved:
-            resolved["args"] = resolve_value(resolved["args"], self._scope(ctx))
-            _, resolved["args"] = self._to_command(str(resolved["action"]), dict(resolved["args"] or {}))
+            if soft:
+                resolved["args"] = resolve_value(resolved["args"], self._scope(ctx), soft=True)
+            else:
+                resolved["args"] = resolve_value(resolved["args"], self._scope(ctx))
+            if action not in {"loop", "if", "expr", "set_var", "assert"}:
+                try:
+                    _, resolved["args"] = self._to_command(action, dict(resolved["args"] or {}))
+                except VariableError:
+                    if not soft:
+                        raise
+        nested = resolved.get("steps")
+        child_soft = soft or action in {"loop", "if"}
+        if action in {"loop", "if"} and isinstance(nested, list):
+            resolved["steps"] = [self.resolve_step(child, ctx, soft=child_soft) for child in nested]
+        else_steps = resolved.get("else_steps")
+        if action == "if" and isinstance(else_steps, list):
+            resolved["else_steps"] = [self.resolve_step(child, ctx, soft=True) for child in else_steps]
         return resolved
 
     def _execute(self, step: dict[str, Any], ctx: RunContext) -> dict[str, Any]:
@@ -65,6 +89,18 @@ class StepExecutor:
                 return self._failure("set_var requires args.name")
             ctx.vars[str(name)] = args.get("value")
             return {"schema": "protocol-tui.v1", "status": "success", "data": {"name": str(name), "value": args.get("value")}}
+
+        if action == "expr":
+            name = args.get("name")
+            expr = args.get("expr")
+            if not name or expr is None or expr == "":
+                return self._failure("expr requires args.name and args.expr")
+            try:
+                value = eval_expression(str(expr), self._scope(ctx))
+            except Exception as exc:
+                return self._failure(f"expr failed: {exc}")
+            ctx.vars[str(name)] = value
+            return {"schema": "protocol-tui.v1", "status": "success", "data": {"name": str(name), "value": value, "expr": str(expr)}}
 
         if action == "assert":
             result = self._assert(args, ctx)
@@ -166,7 +202,7 @@ class StepExecutor:
                 actual = resolve_value("${" + path + "}", scope)
             except Exception:
                 actual = None
-            if str(actual) != str(expected):
+            if not values_equal(actual, expected):
                 failures.append({"path": path, "expected": expected, "actual": actual})
         if failures:
             return self._failure("assert failed", {"failures": failures})

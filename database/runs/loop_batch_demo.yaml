@@ -1,0 +1,146 @@
+# loop + if + struct/array vars 演示
+
+version: 1
+name: loop_batch_demo
+timeout_ms: 60000
+
+vars:
+  port: mock://auto
+  conn: cco
+  baudrate: 9600
+  proto: csg
+  wait_timeout_ms: 5000
+  batches:
+    - label: batch_a
+      addrs:
+        - 01 00 00 00 00 00
+        - 02 00 00 00 00 00
+    - label: batch_b
+      addrs:
+        - 03 00 00 00 00 00
+        - 04 00 00 00 00 00
+
+setup:
+  - id: connect
+    action: serial.connect
+    args:
+      conn: ${conn}
+      port: ${port}
+      baudrate: ${baudrate}
+
+  - id: build_ack_frame
+    action: build
+    args:
+      proto: ${proto}
+      afn: '0x00'
+      di: E8010001
+      dir: uplink
+      wait_time: 0
+    save_as: ack_frame
+
+  - id: add_rule_init_ack
+    action: if
+    args:
+      when:
+        eq:
+          port: mock://auto
+    steps:
+      - id: register_ack_rule
+        action: auto_rule.add
+        args:
+          id: rule_init_ack
+          match: 020102E8
+          source: serial:${conn}
+          then:
+            - command: /send
+              args:
+                hex: ${ack_frame.frame}
+
+steps:
+  - id: loop_count_demo
+    action: loop
+    args:
+      count: 3
+      index_as: i
+    steps:
+      - id: store_index
+        action: set_var
+        args:
+          name: last_index
+          value: ${i}
+
+  - id: assert_loop_count
+    action: assert
+    args:
+      expect:
+        last_index: 2
+
+  - id: loop_batches
+    action: loop
+    args:
+      over: ${batches}
+      as: batch
+      index_as: bi
+    steps:
+      - id: store_first_addr
+        action: set_var
+        args:
+          name: last_batch_label
+          value: ${batch.label}
+      - id: store_first_addr_value
+        action: set_var
+        args:
+          name: last_first_addr
+          value: ${batch.addrs.0}
+
+  - id: assert_batch_loop
+    action: assert
+    args:
+      expect:
+        last_batch_label: batch_b
+        last_first_addr: 03 00 00 00 00 00
+
+  - id: build_init_archive
+    action: build
+    args:
+      proto: ${proto}
+      afn: '0x01'
+      di: E8020102
+      dir: downlink
+    save_as: init_frame
+
+  - id: send_init_archive
+    action: send
+    args:
+      conn: ${conn}
+      hex: ${init_frame.frame_hex}
+      timeout: 0
+
+  - id: wait_init_ack
+    action: wait-frame
+    args:
+      conn: ${conn}
+      proto: ${proto}
+      timeout_ms: ${wait_timeout_ms}
+      expect:
+        afn: '00'
+        di: E8010001
+        dir: uplink
+    save_as: init_ack
+
+  - id: assert_init_ack
+    action: assert
+    args:
+      expect:
+        init_ack.matched: true
+
+teardown:
+  - id: remove_rule
+    action: auto_rule.remove
+    args:
+      id: rule_init_ack
+
+  - id: disconnect
+    action: serial.disconnect
+    args:
+      conn: ${conn}

@@ -31,6 +31,9 @@ def test_test_schema_returns_plan_schema():
     assert result["template"] == "database/templates/test_plan_mock_auto.yaml"
     assert "prerequisite" in result
     assert result["conventions"]["default_port"] == "mock://auto"
+    assert "loop" in result["supported_actions"]
+    assert "if" in result["supported_actions"]
+    assert "expr" in result["supported_actions"]
 
 
 def test_test_validate_rejects_invalid_plan():

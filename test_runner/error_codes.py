@@ -62,6 +62,9 @@ KNOWN_ACTIONS = {
     "assert",
     "set_var",
     "sleep",
+    "expr",
+    "loop",
+    "if",
 }
 
 

@@ -17,6 +17,7 @@
 | 说明 | TestPlan | 文档 |
 |------|----------|------|
 | mock 确认帧（最小） | [`../runs/mock_auto_ack.yaml`](../runs/mock_auto_ack.yaml) | [`mock_auto_ack.md`](mock_auto_ack.md) |
+| loop/if 演示 | [`../runs/loop_batch_demo.yaml`](../runs/loop_batch_demo.yaml) | [`TEST_PLAN_AGENT.md`](TEST_PLAN_AGENT.md) |
 | virtual 双端查询 | [`../runs/vendor_code_query.yaml`](../runs/vendor_code_query.yaml) | [`vendor_code_query.md`](vendor_code_query.md) |
 | 全 action 覆盖 | [`../runs/all_actions.yaml`](../runs/all_actions.yaml) | — |
 

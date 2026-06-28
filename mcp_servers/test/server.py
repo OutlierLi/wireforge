@@ -239,6 +239,11 @@ Then use this test MCP to validate and run the plan.
 - `send` with `timeout: 0` when followed by `wait-frame`
 - `auto_rule.match`: DI hex substring from build output, not `68.*16`
 - `auto_rule.then`: dict format with `command` and `args.hex`
+- Repeat steps: `action: loop` with `args.over` (list) or `args.count`
+- Conditional steps: `action: if` with `args.when` (`eq` / `not` / `all`)
+- Arithmetic: `action: expr` or `${qi * 32 + 1}` in values
+- Composite vars: `${batches.0.addrs[1]}`, `${device.port}`
+- dry_run adds `loop_preview` when loop bounds are statically known (max 32 iterations)
 
 ## Protocol sources
 
