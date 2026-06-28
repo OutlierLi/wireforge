@@ -523,5 +523,114 @@
       }
     },
     "sub_commands": {}
+  },
+  "wait-frame": {
+    "desc": "Listen on serial port, decode frames, and match against expect conditions",
+    "module": "console.handlers.wait_frame",
+    "handler": "handle",
+    "enabled": true,
+    "params": {
+      "name": {
+        "type": "str",
+        "required": false,
+        "desc": "Serial connection name",
+        "examples": ["default", "cco"]
+      },
+      "timeout": {
+        "type": "int",
+        "required": false,
+        "desc": "Max wait time in ms",
+        "examples": [5000, 10000],
+        "default": 5000
+      },
+      "proto": {
+        "type": "choice",
+        "required": false,
+        "desc": "Protocol to decode (auto-detect if omitted)",
+        "examples": ["csg", "dlt645"]
+      },
+      "expect.afn": {
+        "type": "str",
+        "required": false,
+        "desc": "Expected AFN value"
+      },
+      "expect.di": {
+        "type": "str",
+        "required": false,
+        "desc": "Expected DI value"
+      },
+      "expect.dir": {
+        "type": "choice",
+        "required": false,
+        "desc": "Expected direction",
+        "examples": ["uplink", "downlink"]
+      },
+      "expect": {
+        "type": "str",
+        "required": false,
+        "desc": "Full expect JSON: {\"all\":[{\"path\":\"$.afn\",\"op\":\"eq\",\"value\":\"04\"}]}"
+      },
+      "*": {
+        "type": "dynamic",
+        "required": false,
+        "desc": "Additional expect paths: --expect.user_data.result=success"
+      }
+    },
+    "sub_commands": {}
+  },
+  "request": {
+    "desc": "Send a frame and wait for matching response (automated test primitive)",
+    "module": "console.handlers.request",
+    "handler": "handle",
+    "enabled": true,
+    "params": {
+      "name": {
+        "type": "str",
+        "required": false,
+        "desc": "Serial connection name",
+        "examples": ["default", "cco"]
+      },
+      "send": {
+        "type": "str",
+        "required": true,
+        "desc": "Hex frame to send",
+        "examples": ["68 0C 00 40 03 01 01 03 00 E8 30 16"]
+      },
+      "timeout": {
+        "type": "int",
+        "required": false,
+        "desc": "Max wait time in ms",
+        "examples": [3000, 5000],
+        "default": 5000
+      },
+      "proto": {
+        "type": "choice",
+        "required": false,
+        "desc": "Protocol for decode (auto-detect if omitted)",
+        "examples": ["csg", "dlt645"]
+      },
+      "wait.afn": {
+        "type": "str",
+        "required": false,
+        "desc": "Expected AFN in response"
+      },
+      "wait.di": {
+        "type": "str",
+        "required": false,
+        "desc": "Expected DI in response"
+      },
+      "wait.dir": {
+        "type": "choice",
+        "required": false,
+        "desc": "Expected direction in response",
+        "examples": ["uplink", "downlink"]
+      },
+      "*": {
+        "type": "dynamic",
+        "required": false,
+        "desc": "Additional wait paths: --wait.user_data.result=success"
+      }
+    },
+    "sub_commands": {}
   }
 }
