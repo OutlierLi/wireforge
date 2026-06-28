@@ -190,13 +190,19 @@ def _apply_user_input(record: RunRecord, user_input: dict[str, Any]) -> None:
             route_params[key] = normalized[key]
     if route_params:
         record.facts.update(route_params)
-        record.state = "PROTOCOL_MATCH"
-        record.waiting_input = {}
+        if record.state != "INIT":
+            record.state = "PROTOCOL_MATCH"
+            record.waiting_input = {}
 
     if "fields" in normalized:
         record.facts["fields"] = dict(normalized.get("fields") or {})
-        record.state = "WAITING_VALUES"
-        record.waiting_input = {}
+        if record.state != "INIT":
+            record.state = "WAITING_VALUES"
+            record.waiting_input = {}
+
+    if "from_frame_hex" in normalized:
+        record.facts["from_frame_hex"] = str(normalized["from_frame_hex"]).strip()
+        record.facts["build_mode"] = "from_frame"
 
     if "frame_hex" in normalized:
         record.facts["frame_hex"] = normalized["frame_hex"]
@@ -254,6 +260,10 @@ def _initialize_run(record: RunRecord) -> None:
             _append_event(record, "decode_ready", {"frame_hex": frame_hex})
             return
         _wait(record, "hex", "解析需要完整 HEX 报文。", examples=["FE FE 68 ... 16"])
+        return
+
+    if "BUILD" in tasks and _is_from_frame_build(record.raw_input, tasks, record.facts):
+        _initialize_from_frame_build(record)
         return
 
     try:
@@ -319,7 +329,97 @@ def _wait_for_values(record: RunRecord) -> None:
     _append_event(record, "mcp_exit_waiting_values", record.waiting_input)
 
 
+def _wait_for_from_frame_values(record: RunRecord) -> None:
+    schema = list(record.route_result.get("input_schema") or [])
+    record.state = "WAITING_INPUT"
+    record.waiting_input = {
+        "field": "values",
+        "source_mode": "from_frame",
+        "message": "基于源报文构造；fields 仅填需覆盖的字段，原样重建传 {}。",
+        "from_frame_hex": record.facts.get("from_frame_hex"),
+        "route_params": _route_args(record.facts),
+        "route": record.route_result,
+        "input_schema": schema,
+        "decoded_values": dict(record.facts.get("decoded_values") or {}),
+        "required_fields": [],
+    }
+    _append_event(record, "mcp_exit_from_frame_values", record.waiting_input)
+
+
+def _initialize_from_frame_build(record: RunRecord) -> None:
+    from console.build_resolver import decode_frame, resolve
+    from console.handlers.build import _flatten_values
+
+    hex_text = _source_frame_hex(record)
+    if not hex_text:
+        record.state = "FAILED"
+        record.error = "from_frame build requires source hex in raw_input or user_input.from_frame"
+        _append_event(record, "from_frame_missing_hex", {})
+        return
+
+    user_proto = str(record.facts.get("proto") or "").strip()
+    try:
+        decoded = decode_frame(hex_text, proto=user_proto or None)
+    except Exception as exc:
+        record.state = "FAILED"
+        record.error = f"from_frame decode failed: {exc}"
+        _append_event(record, "from_frame_decode_failed", {"error": str(exc)})
+        return
+
+    target_info = dict(decoded.get("target_info") or {})
+    _append_event(record, "from_frame_decode", {
+        "target_info": target_info,
+        "path": decoded.get("path"),
+    })
+
+    try:
+        target = resolve(target_info)
+    except Exception as exc:
+        record.state = "FAILED"
+        record.error = f"from_frame resolve failed: {exc}"
+        _append_event(record, "from_frame_resolve_failed", {"error": str(exc)})
+        return
+
+    record.facts["from_frame_hex"] = decoded["frame_hex"]
+    record.facts["build_mode"] = "from_frame"
+    record.facts["decoded_values"] = _flatten_values(decoded["values"])
+
+    route_dict = target.to_dict()
+    record.route_result = route_dict
+    record.results["from_frame"] = {"decoded": decoded, "route": route_dict}
+    _write_json(record, "route", route_dict)
+
+    ti = target.target_info
+    for key in ("proto", "func", "afn", "di", "dir", "has_address"):
+        if key in ti and ti[key] not in ("", None):
+            val = ti[key]
+            if key == "proto":
+                val = "dlt645" if "dlt645" in str(val) else "csg" if "csg" in str(val) else val
+            record.facts[key] = val
+
+    record.context = {"provider": "FromFrame", "build_mode": "from_frame"}
+    _append_event(record, "from_frame_ready", {
+        "from_frame_hex": record.facts["from_frame_hex"],
+        "variant_id": route_dict.get("variant_id"),
+    })
+    if "fields" in record.facts:
+        record.state = "WAITING_VALUES"
+        record.waiting_input = {}
+    else:
+        _wait_for_from_frame_values(record)
+
+
+def _is_from_frame_mode(record: RunRecord) -> bool:
+    return record.facts.get("build_mode") == "from_frame"
+
+
 def _ensure_values(record: RunRecord) -> bool:
+    if _is_from_frame_mode(record):
+        if "fields" not in record.facts:
+            _wait_for_from_frame_values(record)
+            return False
+        return True
+
     schema = list(record.route_result.get("input_schema") or [])
     required = _required_schema_fields(schema)
     fields = dict(record.facts.get("fields") or {})
@@ -377,7 +477,8 @@ def _execute_until_blocked(record: RunRecord) -> None:
 def _execute_build(record: RunRecord) -> bool:
     request = _build_request(record.facts)
     record.results["build_request"] = request
-    _append_event(record, "build_request", request)
+    event = "from_frame_build_request" if record.facts.get("build_mode") == "from_frame" else "build_request"
+    _append_event(record, event, request)
     response = build_handler.handle(request)
     _append_event(record, "build_result", {"summary": _handler_summary(response), "result": response})
     if not response.get("success"):
@@ -479,6 +580,14 @@ def _decode_response(record: RunRecord) -> dict[str, Any]:
 
 
 def _build_request(facts: dict[str, Any]) -> dict[str, Any]:
+    if facts.get("build_mode") == "from_frame":
+        request: dict[str, Any] = {"from_frame": facts["from_frame_hex"]}
+        request.update(dict(facts.get("fields") or {}))
+        for key in ("address", "preamble", "seq", "addr", "name", "port", "proto"):
+            if key in facts and facts[key] not in ("", None):
+                request[key] = facts[key]
+        return request
+
     request = _route_args(facts)
     for key, value in dict(facts.get("fields") or {}).items():
         request[key] = value
@@ -563,7 +672,7 @@ def _verify_build_against_decode(
 
 
 def _verifiable_build_fields(build_request: dict[str, Any]) -> dict[str, Any]:
-    skipped = {"proto", "protocol", "intent", "name", "port", "baudrate", "timeout", "has_address"}
+    skipped = {"proto", "protocol", "intent", "name", "port", "baudrate", "timeout", "has_address", "from_frame"}
     fields = {
         str(key): value for key, value in build_request.items()
         if key not in skipped and value not in ("", None)
@@ -621,6 +730,8 @@ def _values_match(expected: Any, actual: Any, schema: dict[str, Any] | None = No
     field_type = str((schema or {}).get("type") or "")
     if field_type.startswith("uint"):
         return _parse_decimal_or_prefixed_int(expected) == _parse_decimal_or_prefixed_int(actual)
+    if field_type in {"bcd", "bcd_numeric"}:
+        return str(expected).zfill(2)[-2:] == str(actual).zfill(2)[-2:]
     if field_type in {"hex", "bytes"}:
         return _normalize_hex_compare_value(expected) == _normalize_hex_compare_value(actual)
     expected_text = re.sub(r"\s+", "", str(expected).strip())
@@ -666,7 +777,16 @@ def _normalize_compare_value(value: Any) -> str:
 def _detect_tasks(raw_input: str) -> list[TaskType]:
     text = raw_input.lower()
     has_hex = bool(_extract_hex(raw_input))
-    wants_build = any(word in raw_input for word in ["构造", "生成", "组帧", "回复", "响应", "添加", "设置", "查询", "读取"]) or "build" in text
+    frame_hex = _extract_hex(raw_input)
+    frame_like = bool(frame_hex and _looks_like_protocol_frame(frame_hex))
+    from_frame_intent = frame_like and any(
+        word in raw_input for word in ["旧报文", "基于", "根据", "修改", "重建", "from_frame", "from-frame"]
+    )
+    wants_build = (
+        any(word in raw_input for word in ["构造", "生成", "组帧", "回复", "响应", "添加", "设置", "查询", "读取", "重建"])
+        or "build" in text
+        or from_frame_intent
+    )
     wants_decode = any(word in raw_input for word in ["解析", "解码"]) or "decode" in text
     wants_send = any(word in raw_input for word in ["发送", "下发", "写入", "执行"]) or "send" in text or bool(re.search(r"通过\s*COM\d+", raw_input, re.I))
 
@@ -691,6 +811,43 @@ def _extract_hex(raw_input: str) -> str:
     return " ".join(clean[index:index + 2].upper() for index in range(0, len(clean), 2))
 
 
+def _is_from_frame_build(
+    raw_input: str,
+    tasks: list[TaskType],
+    facts: dict[str, Any] | None = None,
+) -> bool:
+    if "BUILD" not in tasks:
+        return False
+    if facts and facts.get("from_frame_hex"):
+        return True
+    hex_text = _extract_hex(raw_input)
+    if not hex_text or not _looks_like_protocol_frame(hex_text):
+        return False
+    if any(word in raw_input for word in ["旧报文", "基于", "根据", "修改", "重建", "from_frame", "from-frame"]):
+        return True
+    return any(word in raw_input for word in ["构造", "生成", "组帧", "回复", "响应", "添加", "设置", "查询", "读取"]) or "build" in raw_input.lower()
+
+
+def _looks_like_protocol_frame(hex_text: str) -> bool:
+    clean = re.sub(r"\s+", "", hex_text).upper()
+    if len(clean) < 16:
+        return False
+    no_fe = clean
+    while no_fe.startswith("FE"):
+        no_fe = no_fe[2:]
+    if no_fe.startswith("68") and len(no_fe) >= 24 and no_fe[14:16] == "68":
+        return True
+    if no_fe.startswith("68") and len(no_fe) >= 12:
+        return True
+    return False
+
+
+def _source_frame_hex(record: RunRecord) -> str:
+    if record.facts.get("from_frame_hex"):
+        return str(record.facts["from_frame_hex"]).strip()
+    return _extract_hex(record.raw_input)
+
+
 def _detect_protocol(frame_hex: str) -> str:
     clean = re.sub(r"\s+", "", frame_hex).upper()
     no_fe = clean
@@ -709,6 +866,8 @@ def _normalize_user_input(user_input: dict[str, Any]) -> dict[str, Any]:
         normalized["proto"] = normalized.pop("protocol")
     if "hex" in normalized and "frame_hex" not in normalized:
         normalized["frame_hex"] = normalized.pop("hex")
+    if "from_frame" in normalized and "from_frame_hex" not in normalized:
+        normalized["from_frame_hex"] = normalized.pop("from_frame")
     if "add" in normalized and "has_address" not in normalized:
         normalized["has_address"] = _coerce_bool(normalized.pop("add"))
     if isinstance(normalized.get("route_params"), dict):
@@ -832,6 +991,11 @@ def _compact_waiting_input(waiting_input: dict[str, Any]) -> dict[str, Any]:
         return public
     if field == "values":
         route = waiting_input.get("route") if isinstance(waiting_input.get("route"), dict) else {}
+        if waiting_input.get("source_mode") == "from_frame":
+            public["source_mode"] = "from_frame"
+            decoded = _compact_decode_values(waiting_input.get("decoded_values"))
+            if decoded:
+                public["decoded_values"] = decoded
         public["variant_id"] = route.get("variant_id")
         public["route"] = waiting_input.get("route_params") or route.get("locator") or {}
         public["route_detail"] = _public_route(route)
@@ -841,11 +1005,15 @@ def _compact_waiting_input(waiting_input: dict[str, Any]) -> dict[str, Any]:
         public["fields"] = fields or []
         schema = waiting_input.get("input_schema") if isinstance(waiting_input.get("input_schema"), list) else []
         public["input_schema"] = schema
-        public["required_fields"] = [
-            item.get("name")
-            for item in schema
-            if isinstance(item, dict) and item.get("required") and item.get("name")
-        ]
+        if waiting_input.get("source_mode") == "from_frame":
+            public["required_fields"] = []
+            public["fields"] = []
+        else:
+            public["required_fields"] = [
+                item.get("name")
+                for item in schema
+                if isinstance(item, dict) and item.get("required") and item.get("name")
+            ]
         defaulted = {
             item.get("name"): item.get("default")
             for item in schema

@@ -600,3 +600,87 @@ def test_mcp_stdio_json_lines_framing_matches_client():
     response = json.loads(output.getvalue().decode("utf-8"))
     names = [tool["name"] for tool in response["result"]["tools"]]
     assert "protocol_task_run" in names
+
+
+HEX_645_DATA = "FE FE FE FE 68 01 00 00 00 00 00 68 91 08 33 33 34 33 59 39 54 53 70 16"
+HEX_645_READ_ADDR = "FE FE FE FE 68 AA AA AA AA AA AA 68 13 00 DF 16"
+
+
+def test_from_frame_build_skips_protocol_match():
+    raw = f"根据旧报文构造 {HEX_645_DATA}"
+    result = run_agent_protocol(raw)
+
+    assert result["state"] == "WAITING_INPUT"
+    assert result["need"] == "values"
+    assert result.get("need") != "protocol_match"
+    assert result["source_mode"] == "from_frame"
+    assert "candidates" not in result
+    assert result.get("decoded_values")
+
+
+def test_from_frame_rebuild_identical_645():
+    raw = f"基于旧报文重建 {HEX_645_DATA}"
+    first = run_agent_protocol(raw)
+    result = run_agent_protocol(run_id=first["run_id"], user_input={"fields": {}})
+
+    assert result["state"] == "SUCCEEDED"
+    assert result["final_frame"] == HEX_645_DATA
+    assert result["decode_verified"] is True
+
+
+def test_from_frame_modify_field_645():
+    raw = f"根据旧报文修改字段 {HEX_645_DATA}"
+    first = run_agent_protocol(raw)
+    result = run_agent_protocol(
+        run_id=first["run_id"],
+        user_input={"fields": {"freeze_year": 27}},
+    )
+
+    assert result["state"] == "SUCCEEDED"
+    assert result["final_frame"] != HEX_645_DATA
+    assert result["decode_verified"] is True
+
+
+def test_from_frame_one_shot_with_fields():
+    raw = f"根据旧报文修改 freeze_year {HEX_645_DATA}"
+    result = run_agent_protocol(raw, user_input={"fields": {"freeze_year": 27}})
+
+    assert result["state"] == "SUCCEEDED"
+    assert result["final_frame"] != HEX_645_DATA
+
+
+def test_from_frame_invalid_hex_fails():
+    result = run_agent_protocol(
+        "根据旧报文构造 FE FE FE FE 68 AA AA AA AA AA AA 68 99 99 99 99 16"
+    )
+
+    assert result["state"] == "FAILED"
+    assert "from_frame decode failed" in result["error"]
+
+
+def test_from_frame_build_retry_on_bad_field():
+    raw = f"根据旧报文构造 {HEX_645_DATA}"
+    first = run_agent_protocol(raw)
+    bad = {"fields": {"di": "XXXX"}}
+
+    one = run_agent_protocol(run_id=first["run_id"], user_input=bad)
+    two = run_agent_protocol(run_id=first["run_id"], user_input=bad)
+    three = run_agent_protocol(run_id=first["run_id"], user_input=bad)
+
+    assert one["state"] == "WAITING_INPUT"
+    assert one.get("attempt") == 1
+    assert two["state"] == "WAITING_INPUT"
+    assert two.get("attempt") == 2
+    assert three["state"] == "FAILED"
+    assert "build failed after 3 attempts" in three["error"]
+
+
+def test_mcp_call_from_frame_build():
+    called = call_tool("protocol_task_run", {
+        "raw_input": f"根据旧报文重建 {HEX_645_READ_ADDR}",
+        "user_input": {"fields": {}},
+    })
+
+    assert called["state"] == "SUCCEEDED"
+    assert called["final_frame"] == HEX_645_READ_ADDR
+    assert called["decode_verified"] is True

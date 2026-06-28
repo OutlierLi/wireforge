@@ -157,6 +157,48 @@ If build fails, MCP returns `WAITING_INPUT` with the build error. Rebuild fields
 
 For troubleshooting only, pass `"debug": true` in the tool call or start the MCP server with `WIREFORGE_MCP_DEBUG=1`. Debug mode returns full `waiting_input`, `results`, and log paths; default mode should stay compact.
 
+## From-Frame Build Flow
+
+Use this when the user wants to **construct a new frame from an existing hex frame** (modify a few fields or rebuild unchanged). MCP detects `BUILD` intent plus a frame-like hex in `raw_input` (or `user_input.from_frame`).
+
+This path **skips** `protocol_match` — route and defaults come from decoding the source frame.
+
+1. Call MCP with source frame embedded in natural language:
+
+```json
+{"raw_input": "根据旧报文修改 freeze_year，源报文 FE FE FE FE 68 01 00 00 00 00 00 68 91 08 33 33 34 33 59 39 54 53 70 16"}
+```
+
+2. MCP returns `state: "WAITING_INPUT"`, `need: "values"`, `source_mode: "from_frame"`, plus `input_schema` and compact `decoded_values`.
+
+3. Resume with field overrides only (empty object rebuilds the same frame):
+
+```json
+{
+  "run_id": "<run_id>",
+  "user_input": {
+    "fields": {
+      "freeze_year": "27"
+    }
+  }
+}
+```
+
+One-shot (same turn):
+
+```json
+{
+  "raw_input": "根据旧报文重建 FE FE FE FE 68 AA AA AA AA AA AA 68 13 00 DF 16",
+  "user_input": {"fields": {}}
+}
+```
+
+4. MCP runs `/build --from-frame` internally, then decode verification. Success returns `final_frame` and `decode_verified`.
+
+If decode fails (invalid or unrecognized frame), MCP returns `FAILED` with `from_frame decode failed`.
+
+For greenfield builds without a source frame, use the standard [Build Flow](#build-flow) above (`need: "protocol_match"`).
+
 ## Decode Flow
 
 For complete HEX decode requests, call MCP once with `raw_input`. MCP may detect the protocol and return `SUCCEEDED`.
