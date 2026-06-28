@@ -15,7 +15,6 @@ from wireforge_serial.logger import (
     log_connect, log_disconnect, log_tx, log_rx, log_rx_timeout, log_rx_error,
     display_tx, display_rx, display_rx_timeout, display_connect, display_disconnect,
 )
-from protocol_tool.utils.logger import log_serial
 
 # 全局连接实例 — 所有串口后台运行，无 active 概念
 _connections: dict[str, SerialTransport] = {}
@@ -100,14 +99,12 @@ def serial_open(args: dict[str, Any]) -> SerialResult:
             "bytesize": settings.bytesize, "parity": settings.parity,
             "stopbits": settings.stopbits, "status": "connected",
         })
-        log_serial("open", port=port, data=result.data)
         log_connect(cid, port, settings.baudrate, settings.bytesize,
                     settings.parity, settings.stopbits)
         display_connect(cid, port, settings.baudrate, settings.bytesize,
                         settings.parity, settings.stopbits)
         return result
     except Exception as e:
-        log_serial("open", port=port, success=False, error=str(e))
         return SerialResult(False, "open", error=str(e))
 
 
@@ -140,8 +137,6 @@ def serial_send(args: dict[str, Any]) -> SerialResult:
             _mark_disconnected(cid, reason)
             log_disconnect(cid, reason)
             display_disconnect(cid, reason)
-            log_serial("disconnect", port="", success=False,
-                       error=reason, data={"id": cid, "name": cid, "reason": reason})
             return SerialResult(False, "send", error=reason)
 
         # 设置实时显示回调
@@ -168,8 +163,6 @@ def serial_send(args: dict[str, Any]) -> SerialResult:
             _mark_disconnected(cid, disconnect_reason)
             log_disconnect(cid, disconnect_reason)
             display_disconnect(cid, disconnect_reason)
-            log_serial("disconnect", port="", success=False,
-                       error=disconnect_reason, data={"id": cid, "name": cid, "reason": disconnect_reason})
 
         display = (_connection_meta.get(cid, {}).get("display") or
                    args.get("display", "hex"))
@@ -180,11 +173,6 @@ def serial_send(args: dict[str, Any]) -> SerialResult:
             "received_bytes": len(response),
             "display": display,
         })
-        log_serial("send", port="", data=result.data)
-        if response:
-            log_serial("recv", port="", data={
-                "hex": response.hex(" ").upper(), "bytes": len(response),
-            })
         if disconnect_reason:
             result.data["warning"] = f"disconnected: {disconnect_reason}"
         return result
@@ -194,8 +182,6 @@ def serial_send(args: dict[str, Any]) -> SerialResult:
         t.on_rx_chunk = None
         log_rx_error(cid, str(e))
         _set_last_error(cid, str(e))
-        log_serial("send", port="", success=False, error=str(e),
-                   data={"id": cid, "name": cid, "reason": str(e)})
         return SerialResult(False, "send", error=str(e))
 
 
@@ -213,12 +199,10 @@ def serial_close(args: dict[str, Any]) -> SerialResult:
         t.close()
         _mark_disconnected(cid, "")
         result = SerialResult(True, "close", data={"id": cid, "name": cid, "status": "closed"})
-        log_serial("close", port="", data=result.data)
         log_disconnect(cid)
         display_disconnect(cid)
         return result
     except Exception as e:
-        log_serial("close", port="", success=False, error=str(e))
         return SerialResult(False, "close", error=str(e))
 
 

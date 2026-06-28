@@ -25,8 +25,6 @@ from typing import Any
 
 from console.handlers.frame_splitter import split_frames
 from console.response import ok, fail
-from protocol_tool.utils.logger import log_serial
-
 ROOT = Path(__file__).resolve().parent.parent.parent
 
 
@@ -46,11 +44,6 @@ def handle(args: dict[str, Any]) -> dict:
     if not expect:
         return fail("no expect conditions provided. Use --expect.afn, --expect.di, --expect.dir, --expect.user_data.* etc.")
 
-    log_serial("wait_frame_start", port=name, data={
-        "timeout_ms": timeout_ms, "protocol": protocol,
-        "expect": expect,
-    })
-
     deadline = time.monotonic() + timeout_ms / 1000.0
     buffer = bytearray()
     received_count = 0
@@ -59,61 +52,63 @@ def handle(args: dict[str, Any]) -> dict:
     mismatch_summary: list[str] = []
     poll_interval = 0.02  # 20ms poll
 
-    while time.monotonic() < deadline:
-        remaining = deadline - time.monotonic()
-        chunk = transport.read_response(min(0.2, remaining))
-        if chunk:
-            buffer.extend(chunk)
+    # 设置实时显示回调 — 和 serial_send 一样打印 [name] RX: ...
+    from wireforge_serial.logger import log_rx, display_rx
+    transport.on_rx_chunk = lambda d: _log_and_display_rx(name, d)
 
-        # Split frames
-        data = bytes(buffer)
-        frames, remainder = split_frames(data)
-        buffer = bytearray(remainder)
+    try:
+        while time.monotonic() < deadline:
+            remaining = deadline - time.monotonic()
+            chunk = transport.read_response(min(0.2, remaining))
+            if chunk:
+                buffer.extend(chunk)
 
-        for frame_bytes in frames:
-            received_count += 1
-            frame_hex = frame_bytes.hex(" ").upper()
+            # Split frames
+            data = bytes(buffer)
+            frames, remainder = split_frames(data)
+            buffer = bytearray(remainder)
 
-            # Try decode with specified protocol, or auto-detect
-            decoded = _try_decode(frame_bytes, protocol)
-            if decoded is None:
-                mismatch_summary.append(f"frame[{received_count}]: decode failed")
-                continue
+            for frame_bytes in frames:
+                received_count += 1
+                frame_hex = frame_bytes.hex(" ").upper()
 
-            decoded_count += 1
-            last_decoded = decoded
+                # Try decode with specified protocol, or auto-detect
+                decoded = _try_decode(frame_bytes, protocol)
+                if decoded is None:
+                    mismatch_summary.append(f"frame[{received_count}]: decode failed")
+                    continue
 
-            # Match against expect conditions
-            match_result = _match_expect(decoded, expect, received_count)
-            if match_result is True:
-                elapsed_ms = int((time.monotonic() - (deadline - timeout_ms / 1000.0)) * 1000)
-                result_data = {
-                    "matched": True,
-                    "elapsed_ms": elapsed_ms,
-                    "frame_hex": frame_hex,
-                    "decoded": decoded,
-                    "frame_index": received_count,
-                }
-                log_serial("wait_frame_match", port=name, data=result_data)
-                return ok(result_data)
+                decoded_count += 1
+                last_decoded = decoded
 
-            mismatch_summary.append(match_result)
+                # Match against expect conditions
+                match_result = _match_expect(decoded, expect, received_count)
+                if match_result is True:
+                    elapsed_ms = int((time.monotonic() - (deadline - timeout_ms / 1000.0)) * 1000)
+                    result_data = {
+                        "matched": True,
+                        "elapsed_ms": elapsed_ms,
+                        "frame_hex": frame_hex,
+                        "decoded": decoded,
+                        "frame_index": received_count,
+                    }
+                    return ok(result_data)
 
-        time.sleep(poll_interval)
+                mismatch_summary.append(match_result)
 
-    # Timeout
-    log_serial("wait_frame_timeout", port=name, data={
-        "timeout_ms": timeout_ms, "received_frames": received_count,
-        "decoded_frames": decoded_count,
-    })
-    return fail("timeout: no frame matched expect conditions", detail={
-        "matched": False,
-        "timeout_ms": timeout_ms,
-        "received_frames": received_count,
-        "decoded_frames": decoded_count,
-        "last_decoded": last_decoded,
-        "mismatch_summary": mismatch_summary,
-    })
+            time.sleep(poll_interval)
+
+        # Timeout
+        return fail("timeout: no frame matched expect conditions", detail={
+            "matched": False,
+            "timeout_ms": timeout_ms,
+            "received_frames": received_count,
+            "decoded_frames": decoded_count,
+            "last_decoded": last_decoded,
+            "mismatch_summary": mismatch_summary,
+        })
+    finally:
+        transport.on_rx_chunk = None
 
 
 # ── expect 解析 ────────────────────────────────────────────────────────
@@ -338,3 +333,10 @@ def _get_by_path(data: dict[str, Any], path: str) -> Any:
         else:
             return None
     return current
+
+
+def _log_and_display_rx(device: str, data: bytes) -> None:
+    """实时打印 + 日志记录接收数据。"""
+    from wireforge_serial.logger import log_rx, display_rx
+    log_rx(device, data)
+    display_rx(device, data)

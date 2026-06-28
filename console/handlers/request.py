@@ -30,7 +30,6 @@ from console.handlers.wait_frame import (
     _parse_expect, _try_decode, _flatten_decode_values, _match_expect,
 )
 from console.response import ok, fail
-from protocol_tool.utils.logger import log_serial
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -79,11 +78,6 @@ def handle(args: dict[str, Any]) -> dict:
     request_decoded = _try_decode(send_frame, protocol)
 
     # ── 等待响应 ──
-    log_serial("request_start", port=name, data={
-        "timeout_ms": timeout_ms, "send_hex": send_hex,
-        "wait_conditions": wait_conditions,
-    })
-
     deadline = time.monotonic() + timeout_ms / 1000.0
     buffer = bytearray()
     received_count = 0
@@ -129,7 +123,6 @@ def handle(args: dict[str, Any]) -> dict:
                         "frame_index": received_count,
                     },
                 }
-                log_serial("request_match", port=name, data=result_data)
                 transport.on_tx = None
                 transport.on_rx_chunk = None
                 return ok(result_data)
@@ -142,9 +135,6 @@ def handle(args: dict[str, Any]) -> dict:
     transport.on_tx = None
     transport.on_rx_chunk = None
 
-    log_serial("request_timeout", port=name, data={
-        "timeout_ms": timeout_ms, "received_frames": received_count,
-    })
     return fail("timeout: no response matched wait conditions", detail={
         "request_sent": True,
         "request_frame": send_frame.hex(" ").upper(),
