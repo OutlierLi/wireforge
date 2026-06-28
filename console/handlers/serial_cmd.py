@@ -1,15 +1,17 @@
-"""/serial 命令处理器 — 子命令模式: connect/open/close/send/set/disconnect/ports/use。
+"""/serial 命令处理器 — 子命令模式: connect/open/close/send/set/disconnect/ports。
+
+所有串口后台运行，无需 use 激活。send 等单端口操作未指定 --name 时自动
+检测唯一连接；多连接时必须显式指定 --name。
 
 用法:
   /serial connect --port /dev/ttyUSB0 --baudrate 9600
   /serial connect --name cco --port /dev/ttyUSB0 --baudrate 9600
   /serial open
   /serial open --name cco
-  /serial send --hex "68 ... 16"
-  /serial send --name cco --hex "68 ... 16"
+  /serial send --hex "68 ... 16"             # 单连接自动检测
+  /serial send --name cco --hex "68 ... 16"  # 多连接必须指定
   /serial close --name cco
   /serial set --name cco --baudrate 115200
-  /serial use --name cco
   /serial ports
 """
 
@@ -18,13 +20,11 @@ from __future__ import annotations
 from typing import Any
 
 from wireforge_serial.api import (
-    active_connection,
     get_connection_settings,
     serial_close,
     serial_open,
     serial_ports,
     serial_send,
-    serial_use,
 )
 from wireforge_serial.logger import log_config_change
 from console.response import ok, fail, missing_param
@@ -39,7 +39,7 @@ def handle(args: dict[str, Any]) -> dict:
     cmd_map = {
         "connect": _connect, "open": _open, "close": _close,
         "send": _send, "set": _set, "disconnect": _disconnect,
-        "ports": _ports, "list": _ports, "use": _use,
+        "ports": _ports, "list": _ports,
     }
     fn = cmd_map.get(sub)
     if not fn:
@@ -81,10 +81,13 @@ def _close(args: dict) -> dict:
 
 
 def _send(args: dict) -> dict:
-    args = _with_connection_name(args, default_to_active=True)
+    args = _with_connection_name(args, auto_detect=True)
     if "hex" not in args or not args["hex"]:
         return missing_param("hex", "str",
                              examples=["68 0C 00 40 03 01 01 03 00 E8 30 16"])
+    if not args.get("id") and not args.get("name"):
+        return fail("multiple serial connections active — specify --name",
+                    detail={"hint": "use /serial ports to list connections"})
     r = serial_send(args)
     return r.to_dict()
 
@@ -129,29 +132,40 @@ def _ports(args: dict) -> dict:
     return r.to_dict()
 
 
-def _use(args: dict) -> dict:
-    if "name" not in args and "id" not in args:
-        return missing_param("name", "str", examples=["default", "cco", "sta1"])
-    r = serial_use(_with_connection_name(args))
-    return r.to_dict()
+def _with_connection_name(args: dict, auto_detect: bool = False) -> dict:
+    """规范化连接名参数。
 
-
-def _with_connection_name(args: dict, default_to_active: bool = False) -> dict:
+    - 优先使用显式 --name/--id
+    - auto_detect=True 时，单连接自动填充；无连接或多连接时保持空（由调用方报错）
+    - 其他情况（open/close 等）使用 "default" 作为默认名
+    """
+    from wireforge_serial.api import _auto_detect_name
     normalized = dict(args)
     if "name" in normalized and "id" not in normalized:
         normalized["id"] = normalized["name"]
     if "name" not in normalized and "id" not in normalized:
-        normalized["name"] = active_connection() if default_to_active else "default"
-        normalized["id"] = normalized["name"]
-    if "name" not in normalized:
-        normalized["name"] = normalized["id"]
-    if "id" not in normalized:
-        normalized["id"] = normalized["name"]
+        if auto_detect:
+            detected = _auto_detect_name()
+            if detected:
+                normalized["name"] = detected
+                normalized["id"] = detected
+            # 无连接时保持空，由 _send 检查并返回友好错误
+        else:
+            normalized["name"] = "default"
+            normalized["id"] = "default"
+    # 安全获取：仅在至少有一个 key 存在时才做互为填充
+    existing_name = normalized.get("name")
+    existing_id = normalized.get("id")
+    if existing_name and not existing_id:
+        normalized["id"] = existing_name
+    elif existing_id and not existing_name:
+        normalized["name"] = existing_id
     return normalized
 
 
 def _name(args: dict) -> str:
-    return str(args.get("name") or args.get("id") or active_connection() or "default")
+    from wireforge_serial.api import _auto_detect_name
+    return str(args.get("name") or args.get("id") or _auto_detect_name() or "default")
 
 
 def _settings_from_args(args: dict, data: dict[str, Any] | None = None) -> dict[str, Any]:

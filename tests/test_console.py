@@ -336,12 +336,14 @@ class TestSerial:
         assert "cco" not in r["data"]["connected"]
         assert "sta1" in r["data"]["connected"]
 
-    def test_use_named_connection_as_default_target(self):
+    def test_named_connection_send_with_explicit_name(self):
         exec_cmd("serial", {"sub": "connect", "name": "cco", "port": "mock://loop"})
-        exec_cmd("serial", {"sub": "use", "name": "cco"})
-        r = exec_cmd("serial", {"sub": "send", "hex": "68 0C 00 40"})
-        _ok(r)
-        assert r["data"]["name"] == "cco"
+        try:
+            r = exec_cmd("serial", {"sub": "send", "name": "cco", "hex": "68 0C 00 40"})
+            _ok(r)
+            assert r["data"]["name"] == "cco"
+        finally:
+            exec_cmd("serial", {"sub": "close", "name": "cco"})
 
     def test_invalid_connection_name(self):
         r = exec_cmd("serial", {"sub": "connect", "name": "bad name", "port": "mock://loop"})
@@ -437,7 +439,10 @@ class TestSerial:
             assert default_conn[0].get("display", "hex") == "ascii"
 
     def test_cleanup_serial_state(self):
-        exec_cmd("serial", {"sub": "close"})
+        """关闭所有串口连接以清理状态。"""
+        import wireforge_serial.api as serial_api
+        for name in list(serial_api._connections.keys()):
+            exec_cmd("serial", {"sub": "close", "name": name})
 
 class TestHelp:
     def test_help_list_all(self):

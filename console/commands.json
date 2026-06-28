@@ -194,7 +194,7 @@
     }
   },
   "serial": {
-    "desc": "Serial port management. Sub: connect, open, close, send, set, use, disconnect, ports",
+    "desc": "Serial port management. Sub: connect, open, close, send, set, disconnect, ports",
     "module": "console.handlers.serial_cmd",
     "handler": "handle",
     "enabled": true,
@@ -209,7 +209,6 @@
           "close",
           "send",
           "set",
-          "use",
           "disconnect",
           "ports"
         ]
@@ -222,7 +221,7 @@
           "cco",
           "sta1"
         ],
-        "note": "作为底层 id 的用户侧别名；send 未指定时使用当前 active connection，其余命令默认 default"
+        "note": "send 未指定 --name 时自动检测唯一连接；多连接时必须显式指定"
       },
       "port": {
         "type": "str",
@@ -288,7 +287,6 @@
       "close": "Close current serial connection",
       "send": "Send hex frame and wait for response",
       "set": "Change serial params (takes effect on next open)",
-      "use": "Set active serial connection for commands without --name",
       "disconnect": "Alias for close",
       "ports": "List available serial ports and connection status"
     }

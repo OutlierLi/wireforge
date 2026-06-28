@@ -17,10 +17,9 @@ from wireforge_serial.logger import (
 )
 from protocol_tool.utils.logger import log_serial
 
-# 全局连接实例
+# 全局连接实例 — 所有串口后台运行，无 active 概念
 _connections: dict[str, SerialTransport] = {}
 _connection_meta: dict[str, dict[str, Any]] = {}
-_active_connection = "default"
 _NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 
 
@@ -231,34 +230,25 @@ def serial_ports(args: dict[str, Any] | None = None) -> SerialResult:
         connections = [_connection_snapshot(cid) for cid in sorted(_connection_meta)]
         return SerialResult(True, "ports", data={
             "available": ports, "connected": connected,
-            "connections": connections, "active": _active_connection,
+            "connections": connections,
         })
     except Exception as e:
         return SerialResult(False, "ports", error=str(e))
 
 
-def serial_use(args: dict[str, Any]) -> SerialResult:
-    """设置当前活动连接。"""
-    global _active_connection
-    args = _normalize_args(args)
-    cid = _connection_id(args)
-    invalid = _validate_name(cid)
-    if invalid:
-        return SerialResult(False, "use", error=invalid)
-    if cid not in _connections:
-        return SerialResult(False, "use", error=f"not connected (name={cid})")
-    _active_connection = cid
-    return SerialResult(True, "use", data={
-        "id": cid, "name": cid, "active": cid, "status": "active",
-    })
-
-
-def active_connection() -> str:
-    return _active_connection
+def _auto_detect_name() -> str | None:
+    """如果只有一个已连接串口，返回其名称；否则返回 None（需用户显式指定）。"""
+    connected = list(_connections.keys())
+    if len(connected) == 1:
+        return connected[0]
+    return None
 
 
 def get_connection(name: str | None = None) -> SerialTransport | None:
-    cid = name or _active_connection or "default"
+    """获取连接。name 为空时自动检测唯一连接。"""
+    cid = name or _auto_detect_name()
+    if cid is None:
+        return None
     return _connections.get(cid)
 
 
@@ -284,7 +274,15 @@ def _normalize_args(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _connection_id(args: dict[str, Any]) -> str:
-    return str(args.get("id") or args.get("name") or "default")
+    """获取连接 ID。优先使用显式 name/id；单连接时自动检测。"""
+    explicit = args.get("id") or args.get("name")
+    if explicit:
+        return str(explicit)
+    auto = _auto_detect_name()
+    if auto:
+        return auto
+    # 无连接时需要显式指定 — 调用方会在需要时检查
+    return str(args.get("id") or args.get("name") or "")
 
 
 def _validate_name(name: str) -> str:

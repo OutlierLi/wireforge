@@ -63,7 +63,7 @@
 @expect success
 
 ### Send data
-/serial send --hex 680C00400301010300E83016
+/serial send --name default --hex 680C00400301010300E83016
 @expect success
 
 ### List ports
