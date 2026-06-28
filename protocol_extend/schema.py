@@ -34,7 +34,7 @@ INPUT_SCHEMA: list[dict[str, Any]] = [
     {"name": "description", "type": "string", "required": True, "desc": "报文中文描述，写入 variant description"},
     {"name": "dir", "type": "enum", "required": False, "values": ["downlink", "uplink", "0", "1"], "desc": "传输方向；AFN00 不需要"},
     {"name": "add", "type": "bool", "required": False, "desc": "是否带地址域；AFN00–07 均必填"},
-    {"name": "fields", "type": "array", "required": False, "desc": "用户数据区字段列表"},
+    {"name": "fields", "type": "array", "required": False, "desc": "用户数据区字段；支持 struct、array+count_ref+item_type(struct|bcd|uint8...)，见 FIELD_DSL_EXAMPLES"},
     {"name": "pair", "type": "bool", "required": False, "default": False, "desc": "是否同时生成 request+response 两条 variant"},
     {"name": "resp_description", "type": "string", "required": False, "desc": "响应报文描述（pair=true 时）"},
     {"name": "resp_fields", "type": "array", "required": False, "desc": "响应 payload 字段（pair=true 时）"},
@@ -147,21 +147,7 @@ def normalize_add(raw: Any) -> bool | None:
     return None
 
 
-def missing_field_metadata(fields: list[dict[str, Any]], *, prefix: str = "fields") -> list[str]:
-    missing: list[str] = []
-    for idx, field in enumerate(fields):
-        path = f"{prefix}[{idx}]"
-        name = str(field.get("name", "")).strip()
-        if not name:
-            missing.append(f"{path}.name")
-            continue
-        if not (field.get("desc") or field.get("description")):
-            missing.append(f"{path}.desc")
-        if field.get("type") == "struct" and isinstance(field.get("fields"), list):
-            missing.extend(missing_field_metadata(field["fields"], prefix=f"{path}.fields"))
-    return missing
-
-
+from protocol_extend.fields import FIELD_DSL_EXAMPLES, missing_field_metadata
 def missing_fields(spec: ExtensionSpec) -> list[str]:
     missing: list[str] = []
     if spec.afn is None:

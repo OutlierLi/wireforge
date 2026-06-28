@@ -226,7 +226,34 @@ Use `protocol_extend_run` when the user wants to **add a new CSG 2016 message va
     "dir": "downlink",
     "add": false,
     "description": "查询通信延时时长",
-    "fields": [{"name": "timeout", "type": "uint16_le", "desc": "超时(秒)"}]
+    "fields": [
+      {"name": "timeout", "type": "uint16_le", "desc": "超时(秒)"}
+    ]
+  }
+}
+```
+
+**结构体数组**（`count_ref` 必须引用同列表中靠前字段名）：
+
+```json
+{
+  "run_id": "<run_id>",
+  "user_input": {
+    "fields": [
+      {"name": "node_count", "type": "uint8", "desc": "节点数量n"},
+      {
+        "name": "nodes",
+        "type": "array",
+        "count_ref": "node_count",
+        "item_type": "struct",
+        "item_name": "node",
+        "desc": "节点地址+设备类型列表",
+        "item_fields": [
+          {"name": "address", "type": "bcd", "length": 6, "byte_order": "little", "desc": "地址"},
+          {"name": "device_type", "type": "uint8", "desc": "设备类型"}
+        ]
+      }
+    ]
   }
 }
 ```

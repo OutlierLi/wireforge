@@ -12,6 +12,7 @@ import yaml
 from protocol_extend import run_protocol_extend
 from protocol_extend import yaml_writer
 from protocol_extend.map_verify import refresh_protocol_map, verify_route_handle
+from protocol_extend.fields import field_to_yaml
 from protocol_extend.schema import ExtensionSpec, INPUT_SCHEMA
 from protocol_extend.validator import find_conflicts
 from mcp_servers.extend.server import call_tool, handle_message, serve
@@ -198,10 +199,110 @@ def test_extend_struct_field_missing_child_desc():
     assert "fields[0].fields[0].desc" in second["missing_fields"]
 
 
+def test_extend_array_struct_fields_to_yaml():
+    fields = [
+        {"name": "node_count", "type": "uint8", "desc": "节点数量"},
+        {
+            "name": "nodes",
+            "type": "array",
+            "count_ref": "node_count",
+            "item_type": "struct",
+            "item_name": "node",
+            "desc": "未识别节点列表",
+            "item_fields": [
+                {"name": "address", "type": "bcd", "length": 6, "byte_order": "little", "desc": "地址"},
+                {"name": "device_type", "type": "uint8", "desc": "设备类型"},
+            ],
+        },
+    ]
+    yaml_fields = [field_to_yaml(f) for f in fields]
+    assert yaml_fields[1]["type"] == "array"
+    assert yaml_fields[1]["count_ref"] == "node_count"
+    assert yaml_fields[1]["item_type"] == "struct"
+    assert yaml_fields[1]["item_params"]["fields"][0]["name"] == "address"
+    assert yaml_fields[1]["item_params"]["fields"][1]["type"] == "uint8"
+
+    spec = ExtensionSpec(
+        afn=0x05,
+        di="E80505A0",
+        description="上报未识别节点信息",
+        dir=1,
+        add=False,
+        fields=fields,
+    )
+    preview = yaml_writer.render_extension_yaml(spec, "test")
+    assert "count_ref: node_count" in preview
+    assert "item_type: struct" in preview
+    assert "device_type" in preview
+    assert "type: bytes" not in preview
+
+
+def test_extend_array_primitive_fields_to_yaml():
+    fields = [
+        {"name": "node_count", "type": "uint8", "desc": "数量"},
+        {
+            "name": "node_addrs",
+            "type": "array",
+            "count_ref": "node_count",
+            "item_type": "bcd",
+            "item_name": "node_addr",
+            "item_params": {"length": 6, "byte_order": "little"},
+            "desc": "地址列表",
+        },
+    ]
+    yaml_fields = [field_to_yaml(f) for f in fields]
+    assert yaml_fields[1]["item_params"]["length"] == 6
+
+
+def test_extend_array_missing_count_ref():
+    first = run_protocol_extend(f"扩展 AFN05 DI=E80505A0")
+    second = run_protocol_extend(
+        run_id=first["run_id"],
+        user_input={
+            "dir": "uplink",
+            "add": False,
+            "description": "上报节点",
+            "fields": [
+                {"name": "node_count", "type": "uint8", "desc": "数量"},
+                {"name": "nodes", "type": "array", "item_type": "struct", "desc": "列表"},
+            ],
+        },
+    )
+    assert second["need"] == "params"
+    assert "fields[1].count_ref" in second["missing_fields"]
+
+
+def test_extend_array_struct_missing_item_fields():
+    first = run_protocol_extend(f"扩展 AFN05 DI=E80505A0")
+    second = run_protocol_extend(
+        run_id=first["run_id"],
+        user_input={
+            "dir": "uplink",
+            "add": False,
+            "description": "上报节点",
+            "fields": [
+                {"name": "node_count", "type": "uint8", "desc": "数量"},
+                {
+                    "name": "nodes",
+                    "type": "array",
+                    "count_ref": "node_count",
+                    "item_type": "struct",
+                    "desc": "列表",
+                },
+            ],
+        },
+    )
+    assert second["need"] == "params"
+    assert "fields[1].item_fields" in second["missing_fields"]
+
+
+def test_extend_params_includes_field_dsl_examples():
+    result = run_protocol_extend(f"扩展 AFN05 DI=E80505A0")
+    examples = result.get("field_dsl_examples") or []
+    assert any(ex.get("type") == "array" for ex in examples)
+
+
 # ── 冲突 / 不支持 ─────────────────────────────────────────────────────────
-
-
-def test_extend_duplicate_di_downlink_rejected():
     result = run_protocol_extend(
         f"扩展 AFN03 DI={HEX_EXISTING_DI} 查询厂商",
         user_input={

@@ -20,6 +20,7 @@ from protocol_extend.schema import (
     normalize_protocol,
     partial_with_defaults,
 )
+from protocol_extend.fields import FIELD_DSL_EXAMPLES
 from protocol_extend.validator import find_conflicts
 from protocol_extend import yaml_writer
 from protocol_extend.map_verify import (
@@ -261,6 +262,7 @@ def _wait_params(record: ExtendRecord, spec: ExtensionSpec, missing: list[str]) 
         "message": "缺少扩展报文必填参数，请补充 dir/add/description 等。",
         "missing_fields": missing,
         "input_schema": INPUT_SCHEMA,
+        "field_dsl_examples": FIELD_DSL_EXAMPLES,
         "partial": partial_with_defaults(spec),
     }
     _store_spec(record, spec)
@@ -319,6 +321,7 @@ def _public_result(record: ExtendRecord, *, debug: bool = False) -> dict[str, An
             out["missing_fields"] = wi.get("missing_fields") or []
             out["partial"] = wi.get("partial") or {}
             out["input_schema"] = wi.get("input_schema") or INPUT_SCHEMA
+            out["field_dsl_examples"] = wi.get("field_dsl_examples") or FIELD_DSL_EXAMPLES
         elif need == "confirm":
             out["yaml_preview"] = wi.get("yaml_preview") or record.yaml_preview
             out["extension_file"] = wi.get("extension_file") or record.extension_file

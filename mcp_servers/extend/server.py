@@ -130,9 +130,10 @@ Tool: `protocol_extend_run`
 - Resume: pass `run_id` + `user_input` to supply missing `dir`, `add`, `fields`, or `confirm`.
 - Extensions write to `protocol_tool/protocols/csg_2016/variants/extensions/*.yaml` only.
 - v1 supports AFN 00–07 new DI; AFN 08+ requires manual router in protocol.yaml.
-- After success, run `python3 scripts/bootstrap_protocol_cache.py` to refresh protocol map.
+- Field DSL supports scalar, struct, and array (count_ref + item_type struct/bcd/...).
+- After success, map json+yaml are refreshed automatically; check map_ok and route_entries.
 
-Flow: missing params → `need: params` → preview → `need: confirm` → write + compile → `SUCCEEDED`.
+Flow: missing params → `need: params` → preview → `need: confirm` → write + compile + map → `SUCCEEDED`.
 See AGENTS.md Protocol Extend Flow for examples.
 """
 

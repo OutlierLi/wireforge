@@ -25,17 +25,7 @@ def _slug(text: str) -> str:
     return "ext"
 
 
-def _field_to_yaml(field: dict[str, Any]) -> dict[str, Any]:
-    out: dict[str, Any] = {"name": field["name"], "type": field.get("type", "uint8")}
-    for key in ("length", "desc", "description", "default", "unit"):
-        if key in field and field[key] not in (None, ""):
-            yaml_key = "desc" if key == "description" else key
-            out[yaml_key] = field[key]
-    if field.get("type") == "struct" and isinstance(field.get("fields"), list):
-        out["fields"] = [_field_to_yaml(child) for child in field["fields"]]
-    return out
-
-
+from protocol_extend.fields import field_to_yaml as _field_to_yaml
 def _body_fields(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if not fields:
         return []
