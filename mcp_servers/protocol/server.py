@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
-import json
 import sys
 from typing import Any, BinaryIO
 
 from agent_protocol import run_agent_protocol
+from mcp_servers.common.stdio import (
+    as_object,
+    jsonrpc_error,
+    jsonrpc_result,
+    serve as stdio_serve,
+    tool_result,
+)
 
 
 SERVER_NAME = "wireforge-protocol-agent"
 SERVER_VERSION = "0.1.0"
-_FRAMING_MODE = "content-length"
 
 TOOLS: list[dict[str, Any]] = [
     {
@@ -50,15 +55,7 @@ def main() -> int:
 
 
 def serve(input_stream: BinaryIO, output_stream: BinaryIO) -> int:
-    global _FRAMING_MODE
-    _FRAMING_MODE = "content-length"
-    while True:
-        message = _read_message(input_stream)
-        if message is None:
-            return 0
-        response = handle_message(message)
-        if response is not None:
-            _write_message(output_stream, response)
+    return stdio_serve(input_stream, output_stream, handle_message)
 
 
 def handle_message(message: dict[str, Any]) -> dict[str, Any] | None:
@@ -68,30 +65,30 @@ def handle_message(message: dict[str, Any]) -> dict[str, Any] | None:
     request_id = message.get("id")
     try:
         if method == "initialize":
-            params = _object(message.get("params"))
+            params = as_object(message.get("params"))
             protocol_version = str(params.get("protocolVersion") or "2024-11-05")
-            return _result(request_id, {
+            return jsonrpc_result(request_id, {
                 "protocolVersion": protocol_version,
                 "capabilities": {"tools": {}, "resources": {}},
                 "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
             })
         if method == "ping":
-            return _result(request_id, {})
+            return jsonrpc_result(request_id, {})
         if method == "tools/list":
-            return _result(request_id, {"tools": TOOLS})
+            return jsonrpc_result(request_id, {"tools": TOOLS})
         if method == "tools/call":
-            params = _object(message.get("params"))
+            params = as_object(message.get("params"))
             name = str(params.get("name") or "")
-            arguments = _object(params.get("arguments"))
-            return _result(request_id, _tool_result(call_tool(name, arguments)))
+            arguments = as_object(params.get("arguments"))
+            return jsonrpc_result(request_id, tool_result(call_tool(name, arguments)))
         if method == "resources/list":
-            return _result(request_id, {"resources": RESOURCES})
+            return jsonrpc_result(request_id, {"resources": RESOURCES})
         if method == "resources/read":
-            params = _object(message.get("params"))
+            params = as_object(message.get("params"))
             uri = str(params.get("uri") or "")
             if uri != "wireforge://usage/protocol-agent":
                 raise ValueError(f"unknown resource: {uri}")
-            return _result(request_id, {
+            return jsonrpc_result(request_id, {
                 "contents": [{
                     "uri": uri,
                     "mimeType": "text/markdown",
@@ -100,12 +97,12 @@ def handle_message(message: dict[str, Any]) -> dict[str, Any] | None:
             })
         if method in {"resources/templates/list", "prompts/list"}:
             key = "resourceTemplates" if method.startswith("resources/") else "prompts"
-            return _result(request_id, {key: []})
+            return jsonrpc_result(request_id, {key: []})
         if method.startswith("notifications/"):
             return None
         raise ValueError(f"unsupported MCP method: {method}")
     except Exception as exc:
-        return _error(request_id, -32000, str(exc))
+        return jsonrpc_error(request_id, -32000, str(exc))
 
 
 def call_tool(name: str, arguments: dict[str, Any]) -> Any:
@@ -114,19 +111,9 @@ def call_tool(name: str, arguments: dict[str, Any]) -> Any:
     return run_agent_protocol(
         raw_input=arguments.get("raw_input"),
         run_id=arguments.get("run_id"),
-        user_input=_object(arguments.get("user_input")) if arguments.get("user_input") else None,
+        user_input=as_object(arguments.get("user_input")) if arguments.get("user_input") else None,
         debug=arguments.get("debug") if "debug" in arguments else None,
     )
-
-
-def _tool_result(result: Any) -> dict[str, Any]:
-    return {
-        "content": [{
-            "type": "text",
-            "text": json.dumps(result, ensure_ascii=False, indent=2),
-        }],
-        "isError": False,
-    }
 
 
 def _usage_text() -> str:
@@ -143,50 +130,6 @@ Tool: `protocol_task_run`
 - It calls Build/Decode/Send modules with structured JSON dictionaries, not CLI strings.
 - Route selection is deterministic and based on the generated protocol map.
 """
-
-
-def _read_message(stream: BinaryIO) -> dict[str, Any] | None:
-    global _FRAMING_MODE
-    first = stream.readline()
-    if not first:
-        return None
-    stripped = first.strip()
-    if stripped.startswith(b"{"):
-        _FRAMING_MODE = "json-lines"
-        return json.loads(stripped.decode("utf-8"))
-    if first.lower().startswith(b"content-length:"):
-        _FRAMING_MODE = "content-length"
-        length = int(first.split(b":", 1)[1].strip())
-        while True:
-            line = stream.readline()
-            if line in (b"\r\n", b"\n", b""):
-                break
-        body = stream.read(length)
-        if not body:
-            return None
-        return json.loads(body.decode("utf-8"))
-    return json.loads(stripped.decode("utf-8"))
-
-
-def _write_message(stream: BinaryIO, message: dict[str, Any]) -> None:
-    body = json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    if _FRAMING_MODE == "json-lines":
-        stream.write(body + b"\n")
-    else:
-        stream.write(b"Content-Length: " + str(len(body)).encode("ascii") + b"\r\n\r\n" + body)
-    stream.flush()
-
-
-def _result(request_id: Any, result: dict[str, Any]) -> dict[str, Any]:
-    return {"jsonrpc": "2.0", "id": request_id, "result": result}
-
-
-def _error(request_id: Any, code: int, message: str) -> dict[str, Any]:
-    return {"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}}
-
-
-def _object(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
 
 
 if __name__ == "__main__":

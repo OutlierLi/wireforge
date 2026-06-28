@@ -7,6 +7,12 @@
       "command": ["python3", "scripts/python/wireforge_mcp_server.py"],
       "enabled": true,
       "timeout": 120000
+    },
+    "wireforge-test": {
+      "type": "local",
+      "command": ["python3", "scripts/python/wireforge_test_mcp_server.py"],
+      "enabled": true,
+      "timeout": 120000
     }
   },
   "permission": {

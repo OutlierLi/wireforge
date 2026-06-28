@@ -2,6 +2,24 @@
 
 Use the MCP tool `protocol_task_run` for natural-language protocol build/decode/send tasks.
 
+Use the test MCP tools (`test.schema`, `test.validate`, `test.dry_run`, `test.run`, `test.read_report`) for YAML TestPlan execution. Start the test MCP server with:
+
+```bash
+wireforge-test-mcp-server
+# or
+python3 scripts/python/wireforge_test_mcp_server.py
+```
+
+## Test MCP Flow
+
+1. Agent generates a TestPlan (version 1, name, steps).
+2. Call `test.validate` with inline `plan` or `file` — fix schema/action errors before running.
+3. Call `test.dry_run` — fix unresolved variables or action mapping issues.
+4. Call `test.run` with `plan` or `file` and optional `options` (`timeout_ms`, `dry_run`, `vars`, `report`).
+5. On failure, call `test.read_report` with `report_dir` and optional `step_id` for diagnostics.
+
+Agent reads `ok` / `status` / `error` from `test.run` — do not infer pass/fail from logs. Full logs are under `log/run_reports/<run_id>/` (or custom `report` path).
+
 Before protocol tasks, the repository must be initialized once:
 
 ```bash
