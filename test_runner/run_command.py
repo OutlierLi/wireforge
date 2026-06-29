@@ -28,6 +28,7 @@ from test_runner.build_schema_check import (
     workflow_catalog,
 )
 from test_runner.plan_loader import PlanError, load_plan, load_plan_dict
+from test_runner.plan_compose import compose_plan
 from test_runner.plan_resolver import dry_resolve, resolve_plan_for_report
 from test_runner.plan_validator import validate_plan
 from test_runner.control_flow import execute_steps
@@ -95,6 +96,8 @@ class RunCommand:
                 "sleep": "Sleep for specified ms",
                 "loop": "Repeat nested steps over a list or count",
                 "if": "Run nested steps when when-condition matches",
+                "include": "Compose-time: splice steps from a fragment YAML (expanded before run)",
+                "parametrize": "Compose-time: expand nested steps per case (flat steps, no runtime loop)",
             },
             "example": "database/runs/mock_auto_ack.yaml",
             "template": "database/templates/test_plan_mock_auto.yaml",
@@ -107,10 +110,16 @@ class RunCommand:
                     "scenario": "单连接 mock://auto + auto_rule 确认帧",
                 },
                 {
+                    "name": "add_slave_nodes_loop",
+                    "file": "database/runs/add_slave_nodes_loop.yaml",
+                    "doc": "database/examples/add_slave_nodes_loop.md",
+                    "scenario": "parametrize + include 批量添加从节点 + mock 动态 build",
+                },
+                {
                     "name": "loop_batch_demo",
                     "file": "database/runs/loop_batch_demo.yaml",
                     "doc": "database/examples/TEST_PLAN_AGENT.md",
-                    "scenario": "loop/if + 数组结构体 vars",
+                    "scenario": "loop/if + 数组结构体 vars（旧写法）",
                 },
                 {
                     "name": "vendor_code_query",
@@ -136,15 +145,18 @@ class RunCommand:
                 "default_port": "mock://auto",
                 "real_port_override": "test.run options.vars.port",
                 "send_before_wait_frame": "send args.timeout must be 0",
-                "auto_rule_match": "use DI hex substring from build downlink frame, not broad regex",
-                "auto_rule_then": "use dict format: then: [{command: /send, args: {hex: ...}}]",
+                "auto_rule_match": "use DI hex substring from build downlink frame; match.all/match.any for composite",
+                "auto_rule_then": "dict: command /send + args.hex, or command build + $request/$generated",
+                "auto_rule_no_fallback": "mock://auto returns empty RX when no rule matches",
                 "build_fields": "field names from protocol MCP input_schema only",
-                "repeat_steps": "use action: loop with args.over or args.count",
-                "conditional_steps": "use action: if with args.when (eq/not/all)",
+                "repeat_steps": "prefer parametrize + include fragments; loop still supported",
+                "conditional_steps": "include/if with args.when string (port == mock://auto) or eq/not/all object",
+                "compose_actions": "include (splice fragment YAML), parametrize (expand to linear steps at load)",
+                "fragments_dir": "database/fragments/",
                 "composite_vars": "arrays and structs in vars; paths like batches.0.addrs[1]",
-                "expressions": "use action: expr or ${qi * 32}; count loop without index_as auto-injects i/qi",
-                "loop_scope": "each loop iteration is isolated; count loop defaults index vars i and qi",
-                "dry_run_loop_preview": "dry_run adds loop_preview with expanded steps when over/count is static",
+                "expressions": "use action: expr or ${query_idx * 32}; parametrize/loop count with index_as",
+                "loop_scope": "loop: per-iteration scope; parametrize: expanded flat steps at compose time",
+                "dry_run_loop_preview": "dry_run adds loop_preview for runtime loop when over/count is static",
             },
             "prerequisite": {
                 "mcp": "wireforge protocol_task_run",
@@ -170,7 +182,11 @@ class RunCommand:
         skip_build_check: bool = False,
     ) -> dict[str, Any]:
         try:
-            loaded = _load_raw(plan=plan, file=file)
+            raw = _load_raw(plan=plan, file=file)
+            from test_runner.plan_compose import compose_plan
+
+            plan_path = Path(file) if file else None
+            loaded = compose_plan(raw, plan_path=plan_path, vars=vars)
         except PlanError as exc:
             return {"ok": False, "errors": [RunError(PLAN_SCHEMA_INVALID, str(exc)).to_dict()]}
         result = validate_plan(deepcopy(loaded))
@@ -197,7 +213,7 @@ class RunCommand:
         )
         if not validation["ok"]:
             return validation
-        loaded = _load_input(plan=plan, file=file)
+        loaded = _load_input(plan=plan, file=file, vars=vars)
         resolved = dry_resolve(loaded, vars)
         if skip_build_check:
             return resolved
@@ -217,7 +233,7 @@ class RunCommand:
     ) -> dict[str, Any]:
         opts = _normalize_options(options)
         try:
-            loaded = _load_input(plan=plan, file=file)
+            loaded = _load_input(plan=plan, file=file, vars=opts.vars)
         except PlanError as exc:
             err = RunError(PLAN_SCHEMA_INVALID, str(exc))
             return _error_response(err)
@@ -384,11 +400,16 @@ def _merge_build_check(base: dict[str, Any], build_result: dict[str, Any]) -> di
     return out
 
 
-def _load_input(*, plan: dict[str, Any] | None, file: str | None) -> dict[str, Any]:
+def _load_input(
+    *,
+    plan: dict[str, Any] | None,
+    file: str | None,
+    vars: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     if plan is not None:
-        return load_plan_dict(plan)
+        return load_plan_dict(plan, vars=vars)
     if file:
-        return load_plan(file)
+        return load_plan(file, vars=vars)
     raise PlanError("plan or file is required")
 
 

@@ -81,98 +81,18 @@ class _MockLoopPort:
         self._buf.clear()
 
 
-def _parse_query_slave_info_request(data: bytes) -> tuple[int, int] | None:
-    """从查询从节点信息下行帧解析 (start_slave_index, slave_count)。"""
-    marker = b"\x06\x03\x03\xe8"
-    pos = data.find(marker)
-    if pos < 0:
-        return None
-    off = pos + len(marker)
-    if off + 3 > len(data):
-        return None
-    start = int.from_bytes(data[off:off + 2], "little")
-    count = data[off + 2]
-    return start, count
-
-
-def _build_query_slave_info_response(start: int, count: int) -> bytes | None:
-    from runtime.command_runtime import execute
-
-    addrs = [str(start + i + 1) for i in range(count)]
-    result = execute("build", {
-        "proto": "csg",
-        "afn": "0x03",
-        "di": "E8040306",
-        "dir": "uplink",
-        "slave_total": 1024,
-        "response_slave_count": count,
-        "slave_addrs": addrs,
-    })
-    if result.get("status") != "success":
-        return None
-    frame_hex = (result.get("data") or {}).get("frame", "")
-    if not frame_hex:
-        return None
-    try:
-        return bytes.fromhex(frame_hex.replace(" ", ""))
-    except ValueError:
-        return None
-
-
-def _build_csg_ack_response() -> bytes | None:
-    from runtime.command_runtime import execute
-
-    result = execute("build", {
-        "proto": "csg",
-        "afn": "0x00",
-        "di": "E8010001",
-        "dir": "uplink",
-        "wait_time": 0,
-    })
-    if result.get("status") != "success":
-        return None
-    frame_hex = (result.get("data") or {}).get("frame", "")
-    if not frame_hex:
-        return None
-    try:
-        return bytes.fromhex(frame_hex.replace(" ", ""))
-    except ValueError:
-        return None
-
-
-def _builtin_csg_auto_reply(data: bytes) -> bytes | None:
-    """mock://auto 内置 CSG 回复：查询从节点信息按请求序号生成地址，其余回确认帧。"""
-    hex_str = data.hex().upper()
-    if not hex_str.startswith("68") or not hex_str.endswith("16"):
-        return None
-    # 下行帧 control.dir=0 → 0040
-    if "0040" not in hex_str:
-        return None
-
-    if "060303E8" in hex_str:
-        parsed = _parse_query_slave_info_request(data)
-        if parsed:
-            start, count = parsed
-            return _build_query_slave_info_response(start, count)
-        return None
-
-    # 查询从节点数量等其它下行请求默认回确认（也可由 auto_rule 覆盖）
-    return _build_csg_ack_response()
-
-
 # ── Auto Rule Loopback ─────────────────────────────────────────────────
 
 class _AutoRulePort:
     """自动规则回环：写入 → auto_rule 匹配 → 匹配到的 reply 变成 RX。
 
     与 mock://loop 的区别：不是直接回显，而是经过 auto_rule 引擎处理。
-    如果规则匹配成功且有 reply 动作，reply 帧作为 RX；否则尝试内置 CSG 回复；
-    仍无匹配则 RX 为空。
+    规则匹配成功且有 reply/build 动作时，reply 帧作为 RX；未命中则 RX 为空。
 
     规则格式（与 auto_rule 模块一致）:
-      condition.type: regex | decoded | any
-      condition.pattern: 正则或 hex 匹配模式（匹配 frame.hex().upper()，无空格）
+      condition: regex | decoded | any | all | any 组合
       actions: [{command: "/send", args: {hex: "68..."}}, ...]
+               [{command: build, args: {...}}]
     """
 
     def __init__(self):
@@ -180,41 +100,14 @@ class _AutoRulePort:
 
     def write(self, data: bytes) -> int:
         try:
-            from console.handlers.auto_rule import _rules, _match_rule
+            from console.handlers.auto_rule import match_all, append_action_replies_to_buf
 
-            for rule in _rules.values():
-                if not rule.get("enabled", True):
-                    continue
-                match_result = _match_rule(rule, data)
-                if match_result:
-                    self._append_action_replies(match_result.actions)
-
-            if not self._rx_buf:
-                builtin = _builtin_csg_auto_reply(data)
-                if builtin:
-                    self._rx_buf.extend(builtin)
+            frame_hex = data.hex().upper()
+            for match_result in match_all(frame_hex, data):
+                append_action_replies_to_buf(self._rx_buf, match_result.actions, data)
         except Exception:
             pass
         return len(data)
-
-    def _append_action_replies(self, actions: list[dict]) -> None:
-        for action in actions:
-            cmd = action.get("command", "")
-            act_args = action.get("args", {})
-            if cmd in ("/send", "send"):
-                reply_hex = act_args.get("hex", "")
-                if reply_hex:
-                    try:
-                        self._rx_buf.extend(bytes.fromhex(reply_hex.replace(" ", "")))
-                    except ValueError:
-                        pass
-            elif cmd in ("/serial", "serial") and act_args.get("sub") == "send":
-                reply_hex = act_args.get("hex", "")
-                if reply_hex:
-                    try:
-                        self._rx_buf.extend(bytes.fromhex(reply_hex.replace(" ", "")))
-                    except ValueError:
-                        pass
 
     def read(self, size: int = 1) -> bytes:
         if not self._rx_buf:

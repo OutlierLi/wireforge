@@ -179,6 +179,77 @@ class TestMatch:
 
 
 # ═══════════════════════════════════════════════════════════════
+# 5b. composite match — all / any
+# ═══════════════════════════════════════════════════════════════
+
+class TestCompositeMatch:
+    _QUERY_SLAVE_HEX = "68 0F 00 40 03 01 06 03 03 E8 00 00 20 58 16"
+
+    def test_match_all_hit(self):
+        exec_cmd("auto_rule", {
+            "sub": "add", "id": "all_hit",
+            "match": {"all": ["060303E8", "0040"]},
+            "then": "/send --hex \"11 22\"",
+        })
+        r = exec_cmd("auto_rule", {
+            "sub": "test", "id": "all_hit",
+            "hex": self._QUERY_SLAVE_HEX,
+        })
+        _ok(r)
+        assert r["data"]["matched"] is True
+
+    def test_match_all_miss(self):
+        exec_cmd("auto_rule", {
+            "sub": "add", "id": "all_miss",
+            "match": {"all": ["060303E8", "FFFF"]},
+            "then": "/send --hex \"11 22\"",
+        })
+        r = exec_cmd("auto_rule", {
+            "sub": "test", "id": "all_miss",
+            "hex": self._QUERY_SLAVE_HEX,
+        })
+        _ok(r)
+        assert r["data"]["matched"] is False
+
+    def test_match_any_hit(self):
+        exec_cmd("auto_rule", {
+            "sub": "add", "id": "any_hit",
+            "match": {"any": ["020102E8", "060303E8"]},
+            "then": "/send --hex \"11 22\"",
+        })
+        r = exec_cmd("auto_rule", {
+            "sub": "test", "id": "any_hit",
+            "hex": self._QUERY_SLAVE_HEX,
+        })
+        _ok(r)
+        assert r["data"]["matched"] is True
+
+    def test_match_any_miss(self):
+        exec_cmd("auto_rule", {
+            "sub": "add", "id": "any_miss",
+            "match": {"any": ["020102E8", "050300E8"]},
+            "then": "/send --hex \"11 22\"",
+        })
+        r = exec_cmd("auto_rule", {
+            "sub": "test", "id": "any_miss",
+            "hex": self._QUERY_SLAVE_HEX,
+        })
+        _ok(r)
+        assert r["data"]["matched"] is False
+
+    def test_add_stores_composite_condition(self):
+        r = exec_cmd("auto_rule", {
+            "sub": "add", "id": "composite_store",
+            "match": {"all": ["AA", "BB"]},
+            "then": "/send --hex \"11 22\"",
+        })
+        _ok(r)
+        cond = r["data"]["rule"]["condition"]
+        assert "all" in cond
+        assert len(cond["all"]) == 2
+
+
+# ═══════════════════════════════════════════════════════════════
 # 7. load YAML
 # ═══════════════════════════════════════════════════════════════
 

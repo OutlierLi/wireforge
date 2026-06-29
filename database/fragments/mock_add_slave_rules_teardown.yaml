@@ -1,0 +1,22 @@
+# mock://auto 场景：清理 add_slave 测试注册的 auto_rule
+
+steps:
+  - id: remove_rule_init_ack
+    action: auto_rule.remove
+    args:
+      id: rule_init_ack
+
+  - id: remove_rule_add_slave_ack
+    action: auto_rule.remove
+    args:
+      id: rule_add_slave_ack
+
+  - id: remove_rule_query_count
+    action: auto_rule.remove
+    args:
+      id: rule_query_count
+
+  - id: remove_rule_query_slave_info
+    action: auto_rule.remove
+    args:
+      id: rule_query_slave_info

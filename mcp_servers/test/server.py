@@ -245,13 +245,15 @@ Then use this test MCP to validate and run the plan.
 
 - Build all frames via `build` action; never hand-craft hex
 - `send` with `timeout: 0` when followed by `wait-frame`
-- `auto_rule.match`: DI hex substring from build output, not `68.*16`
-- `auto_rule.then`: dict format with `command` and `args.hex`
-- Repeat steps: `action: loop` with `args.over` (list) or `args.count`
-- Conditional steps: `action: if` with `args.when` (`eq` / `not` / `all`)
-- Arithmetic: `action: expr` or `${qi * 32 + 1}`; count loop without `index_as` auto-injects `i` and `qi`
+- `auto_rule.match`: DI hex substring from build output, not `68.*16`; use `match.all` / `match.any` for composite
+- `auto_rule.then`: dict format with `command` and `args.hex`, or `command: build` with `$request.*` / `$generated.slave_addrs`
+- `mock://auto`: no reply when no rule matches; register explicit rules in setup
+- Repeat steps: prefer `action: parametrize` + `include` fragments (`database/fragments/`)
+- Conditional / mock-only: `include` or `if` with `args.when: port == mock://auto` (string) or `{eq: ...}`
+- Legacy: `action: loop` with `args.over` / `args.count` still supported
+- Arithmetic: `action: expr` or `${query_idx * 32}`; set `index_as` on parametrize/loop count
 - Composite vars: `${batches.0.addrs[1]}`, `${device.port}`
-- dry_run adds `loop_preview` when loop bounds are statically known (max 32 iterations)
+- parametrize/include expand at plan load (linear step ids); loop uses runtime scope + loop_preview in dry_run
 
 ## Protocol sources
 

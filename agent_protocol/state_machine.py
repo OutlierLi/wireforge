@@ -1053,10 +1053,11 @@ def _compact_candidate(entry: dict[str, Any]) -> dict[str, Any]:
 
 
 def _compact_decode_values(values: dict[str, Any] | None, depth: int = 0) -> dict[str, Any] | None:
-    """Compact decoded values to a reasonable size for agent consumption.
+    """Compact decoded values for agent consumption without truncating lists.
 
     Depth 0: keep all top-level keys, recurse into dicts.
     Depth >= 2: replace dicts with their key count summary.
+    Lists are never abbreviated — callers rely on full array values (e.g. nodes[]).
     """
     if not isinstance(values, dict):
         return values
@@ -1066,11 +1067,6 @@ def _compact_decode_values(values: dict[str, Any] | None, depth: int = 0) -> dic
     for key, val in values.items():
         if isinstance(val, dict):
             result[key] = _compact_decode_values(val, depth + 1)
-        elif isinstance(val, list):
-            if len(val) <= 20:
-                result[key] = val
-            else:
-                result[key] = val[:20] + [f"... ({len(val) - 20} more)"]
         else:
             result[key] = val
     return result
@@ -1117,11 +1113,17 @@ def _compact_success(record: RunRecord) -> dict[str, Any]:
 
 
 def _fit_response_budget(result: dict[str, Any], raw_input: str) -> dict[str, Any]:
+    # Hex payloads must never be shortened to fit the budget.
+    if _has_complete_hex_payload(result):
+        return result
+
     budget = _response_budget(raw_input)
     if _json_size(result) <= budget:
         return result
 
     compact = json.loads(json.dumps(result, ensure_ascii=False))
+    if _has_complete_hex_payload(compact):
+        return compact
     candidates = compact.get("candidates")
     if isinstance(candidates, list):
         while len(candidates) > 1 and _json_size(compact) > budget:
@@ -1133,6 +1135,16 @@ def _fit_response_budget(result: dict[str, Any], raw_input: str) -> dict[str, An
         if _json_size(compact) > budget and candidates:
             compact["candidates"] = candidates[:1]
     return compact
+
+
+def _has_complete_hex_payload(result: dict[str, Any]) -> bool:
+    """True when the response carries a full frame hex that must not be budget-trimmed."""
+    if result.get("final_frame"):
+        return True
+    decode = result.get("decode")
+    if isinstance(decode, dict) and decode.get("frame"):
+        return True
+    return False
 
 
 def _response_budget(raw_input: str) -> int:

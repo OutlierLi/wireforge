@@ -80,8 +80,14 @@
 
 ## /auto_rule — Auto-reply rules
 
-### Add rule
-/auto_rule add --id test_rule --match 68..16 --then example_action
+`mock://auto` 仅在规则命中时回复；无规则时 RX 为空。`then` 推荐 dict 格式。
+
+### Add rule (dict then — recommended)
+/auto_rule add --id test_rule --match 010300E8 --then '[{"command":"/send","args":{"hex":"68 0E 00 80 00 01 01 00 01 E8 00 00 6B 16"}}]'
+@expect success
+
+### Add rule with composite match
+/auto_rule add --id combo_rule --match '{"all":["010300E8","0040"]}' --then '[{"command":"/send","args":{"hex":"11 22"}}]'
 @expect success
 
 ### List rules

@@ -1,0 +1,99 @@
+"""mock://auto _AutoRulePort 集成测试。"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import pytest
+
+_project_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_project_root))
+
+from console.api import exec_cmd
+from console.handlers import auto_rule as auto_rule_mod
+from wireforge_serial.transport import _AutoRulePort
+
+
+@pytest.fixture(autouse=True)
+def clear_rules():
+    auto_rule_mod._rules.clear()
+    auto_rule_mod._rule_history.clear()
+    yield
+    auto_rule_mod._rules.clear()
+    auto_rule_mod._rule_history.clear()
+
+
+QUERY_SLAVE_DOWNLINK = (
+    "68 0F 00 40 03 01 06 03 03 E8 00 00 20 58 16"
+)
+
+
+class TestAutoRulePort:
+    def test_no_rule_no_reply(self):
+        port = _AutoRulePort()
+        port.write(bytes.fromhex(QUERY_SLAVE_DOWNLINK.replace(" ", "")))
+        assert port.read(4096) == b""
+
+    def test_send_action_reply(self):
+        exec_cmd("auto_rule", {
+            "sub": "add",
+            "id": "send_reply",
+            "match": "050300E8",
+            "then": [{"command": "/send", "args": {"hex": "11 22 33"}}],
+        })
+        port = _AutoRulePort()
+        port.write(bytes.fromhex("050300E8"))
+        assert port.read(4096) == bytes.fromhex("112233")
+
+    def test_match_all_on_port(self):
+        exec_cmd("auto_rule", {
+            "sub": "add",
+            "id": "all_port",
+            "match": {"all": ["060303E8", "0040"]},
+            "then": [{"command": "/send", "args": {"hex": "AA BB"}}],
+        })
+        port = _AutoRulePort()
+        port.write(bytes.fromhex(QUERY_SLAVE_DOWNLINK.replace(" ", "")))
+        assert port.read(4096) == bytes.fromhex("AABB")
+
+    def test_build_dynamic_query_slave_info(self):
+        exec_cmd("auto_rule", {
+            "sub": "add",
+            "id": "build_slave_info",
+            "match": {"all": ["060303E8", "0040"]},
+            "then": [{
+                "command": "build",
+                "args": {
+                    "proto": "csg",
+                    "afn": "0x03",
+                    "di": "E8040306",
+                    "dir": "uplink",
+                    "slave_total": 1024,
+                    "response_slave_count": "$request.user_data.slave_count",
+                    "slave_addrs": "$generated.slave_addrs",
+                },
+            }],
+        })
+        port = _AutoRulePort()
+        port.write(bytes.fromhex(QUERY_SLAVE_DOWNLINK.replace(" ", "")))
+        reply = port.read(4096)
+        assert reply.startswith(b"\x68")
+        assert reply.endswith(b"\x16")
+        assert b"\xe8\x03\x06\x03" in reply.lower() or b"\x06\x03\x06\xe8" in reply.lower() or len(reply) > 20
+
+        decode_r = exec_cmd("decode", {
+            "proto": "csg",
+            "hex": reply.hex(" ").upper(),
+        })
+        assert decode_r["status"] == "success"
+        values = decode_r["data"].get("values", {})
+        ud = values.get("user_data") or {}
+        payload = ud.get("di_payload") or ud.get("data_content", {}).get("di_payload") or {}
+        count = payload.get("response_slave_count")
+        if count is None:
+            for k, v in ud.items():
+                if k.endswith("response_slave_count"):
+                    count = v
+                    break
+        assert int(count) == 32

@@ -30,7 +30,7 @@ run_step("1/4 pytest 全量", [
     sys.executable, "-m", "pytest",
     "tests/test_codecs.py", "tests/test_compiler.py",
     "tests/test_runtime.py", "tests/test_cli.py",
-    "tests/test_console.py", "tests/test_auto_rule.py",
+    "tests/test_console.py", "tests/test_auto_rule.py", "tests/test_auto_rule_port.py",
     "tests/test_upg.py",
     "-v", "--tb=short",
 ])

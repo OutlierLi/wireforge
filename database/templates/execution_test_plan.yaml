@@ -3,7 +3,7 @@
 # 编排校验: wireforge-test MCP (test.validate → test.dry_run)
 # 真实执行: wireforge-exec-test MCP (exec_test.run) 或 CLI /run
 #
-# 顶层 purpose / expected_results / test_flow 会写入 execution_report
+# 顶层 purpose / expected_results / test_flow / report_interactions 会写入 execution_report
 
 version: 1
 name: <execution_test_name>
@@ -28,6 +28,8 @@ test_flow:
   - teardown disconnect
 
 doc: database/examples/mock_auto_ack.md
+
+# 真机执行时 port 填实际串口；若用 mock://auto 自测，须按 mock_auto_ack 注册 auto_rule（无兜底）
 
 vars:
   port: /dev/ttyUSB0

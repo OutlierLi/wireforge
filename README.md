@@ -106,6 +106,8 @@ steps:
 
 第一版只支持顺序步骤，失败即停，并始终执行 `teardown`。报告会写入 `reports/<plan_name>_<timestamp>/`，包含 `plan.yaml`、`resolved_plan.yaml`、`report.json`、`timeline.log`、`frames.log` 和 `summary.txt`。
 
+脚本自测默认 `vars.port: mock://auto`：须在 setup 中显式 `auto_rule.add` 注册 mock 应答（无内置兜底）。示例见 [`database/examples/mock_auto_ack.md`](database/examples/mock_auto_ack.md)；OpenCode 编排见 [`.opencode/README.md`](.opencode/README.md) 与 [`database/examples/TEST_PLAN_AGENT.md`](database/examples/TEST_PLAN_AGENT.md)。
+
 ### OpenCode MCP 服务
 
 WireForge 提供一个面向 Agent 的 MCP Server，用于处理“自然语言 → 协议任务 → JSON 请求 → 执行结果”。MCP 内部维护可恢复状态机，不要求 Agent 拼接 `/build ...` 或 `/serial ...` 命令文本。

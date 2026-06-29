@@ -1,6 +1,6 @@
 version: 1
 name: add_slave_nodes_loop
-description: 添加从节点测试：每次添加32个节点，共1024个地址，地址从000000000001自增，使用loop优化
+description: 添加从节点测试：每次添加32个节点，共1024个地址；使用 parametrize + include 片段（mock 规则见 database/fragments/）
 timeout_ms: 600000
 
 vars:
@@ -74,59 +74,11 @@ setup:
       slave_total: 1024
     save_as: count_resp_frame
 
-  - id: add_rule_init_ack
-    action: if
+  - id: mock_rules
+    action: include
     args:
-      when:
-        eq:
-          port: mock://auto
-    steps:
-      - id: register_rule_init_ack
-        action: auto_rule.add
-        args:
-          id: rule_init_ack
-          match: 020102E8
-          source: serial:${conn}
-          then:
-            - command: /send
-              args:
-                hex: ${ack_frame.frame}
-
-  - id: add_rule_add_slave_ack
-    action: if
-    args:
-      when:
-        eq:
-          port: mock://auto
-    steps:
-      - id: register_rule_add_slave_ack
-        action: auto_rule.add
-        args:
-          id: rule_add_slave_ack
-          match: 020204E8
-          source: serial:${conn}
-          then:
-            - command: /send
-              args:
-                hex: ${ack_frame.frame}
-
-  - id: add_rule_query_count
-    action: if
-    args:
-      when:
-        eq:
-          port: mock://auto
-    steps:
-      - id: register_rule_query_count
-        action: auto_rule.add
-        args:
-          id: rule_query_count
-          match: 050300E8
-          source: serial:${conn}
-          then:
-            - command: /send
-              args:
-                hex: ${count_resp_frame.frame}
+      file: database/fragments/mock_add_slave_rules.yaml
+      when: port == mock://auto
 
 steps:
   - id: build_init_archive
@@ -163,48 +115,15 @@ steps:
       expect:
         init_ack.matched: true
 
-  - id: loop_add_slaves
-    action: loop
+  - id: add_slave_batches
+    action: parametrize
     args:
       over: ${batches}
       as: batch
-      index_as: batch_idx
     steps:
-      - id: build_add_slave_batch
-        action: build
+      - action: include
         args:
-          proto: ${proto}
-          afn: '0x04'
-          di: E8020402
-          dir: downlink
-          slave_count: 32
-          slave_addrs: ${batch.addrs}
-        save_as: add_frame
-
-      - id: send_add_slave_batch
-        action: send
-        args:
-          conn: ${conn}
-          hex: ${add_frame.frame_hex}
-          timeout: 0
-
-      - id: wait_add_slave_ack
-        action: wait-frame
-        args:
-          conn: ${conn}
-          proto: ${proto}
-          timeout_ms: ${wait_timeout_ms}
-          expect:
-            afn: '00'
-            di: E8010001
-            dir: uplink
-        save_as: add_ack
-
-      - id: assert_add_ack
-        action: assert
-        args:
-          expect:
-            add_ack.matched: true
+          file: database/fragments/add_slave_batch_steps.yaml
 
   - id: build_query_count
     action: build
@@ -241,87 +160,22 @@ steps:
         count_resp.matched: true
         count_resp.decoded.user_data.slave_total: 1024
 
-  - id: loop_query_info
-    action: loop
+  - id: query_info_batches
+    action: parametrize
     args:
       count: 32
       index_as: query_idx
     steps:
-      - id: calc_query_start
-        action: expr
+      - action: include
         args:
-          name: query_start_index
-          expr: ${query_idx} * 32
-
-      - id: build_query_info
-        action: build
-        args:
-          proto: ${proto}
-          afn: '0x03'
-          di: E8030306
-          dir: downlink
-          start_slave_index: ${query_start_index}
-          slave_count: 32
-        save_as: query_info_frame
-
-      - id: send_query_info
-        action: send
-        args:
-          conn: ${conn}
-          hex: ${query_info_frame.frame_hex}
-          timeout: 0
-
-      - id: wait_query_info_resp
-        action: wait-frame
-        args:
-          conn: ${conn}
-          proto: ${proto}
-          timeout_ms: ${wait_timeout_ms}
-          expect:
-            afn: '03'
-            di: E8040306
-            dir: uplink
-        save_as: query_resp
-
-      - id: assert_query_resp
-        action: assert
-        args:
-          expect:
-            query_resp.matched: true
+          file: database/fragments/query_slave_info_batch_steps.yaml
 
 teardown:
-  - id: remove_rule_init_ack
-    action: if
+  - id: mock_rules_cleanup
+    action: include
     args:
-      when:
-        eq:
-          port: mock://auto
-    steps:
-      - action: auto_rule.remove
-        args:
-          id: rule_init_ack
-
-  - id: remove_rule_add_slave_ack
-    action: if
-    args:
-      when:
-        eq:
-          port: mock://auto
-    steps:
-      - action: auto_rule.remove
-        args:
-          id: rule_add_slave_ack
-
-  - id: remove_rule_query_count
-    action: if
-    args:
-      when:
-        eq:
-          port: mock://auto
-    steps:
-      - action: auto_rule.remove
-        args:
-          id: rule_query_count
+      file: database/fragments/mock_add_slave_rules_teardown.yaml
+      when: port == mock://auto
 
   - id: disconnect
     action: serial.disconnect

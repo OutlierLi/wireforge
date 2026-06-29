@@ -1,0 +1,38 @@
+# 单次添加从节点批次（供 parametrize 引用）
+
+steps:
+  - id: build_add_slave_batch
+    action: build
+    args:
+      proto: ${proto}
+      afn: '0x04'
+      di: E8020402
+      dir: downlink
+      slave_count: 32
+      slave_addrs: ${batch.addrs}
+    save_as: add_frame
+
+  - id: send_add_slave_batch
+    action: send
+    args:
+      conn: ${conn}
+      hex: ${add_frame.frame_hex}
+      timeout: 0
+
+  - id: wait_add_slave_ack
+    action: wait-frame
+    args:
+      conn: ${conn}
+      proto: ${proto}
+      timeout_ms: ${wait_timeout_ms}
+      expect:
+        afn: '00'
+        di: E8010001
+        dir: uplink
+    save_as: add_ack
+
+  - id: assert_add_ack
+    action: assert
+    args:
+      expect:
+        add_ack.matched: true

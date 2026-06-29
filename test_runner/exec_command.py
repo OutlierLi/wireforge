@@ -64,6 +64,12 @@ class ExecCommand:
                         "build + send 初始化",
                         "wait-frame 确认",
                     ],
+                    "report_interactions": [
+                        {
+                            "title": "添加从节点",
+                            "wait_step": "wait_add_slave_ack",
+                        }
+                    ],
                     "doc": "database/examples/mock_auto_ack.md",
                 },
             },
@@ -95,7 +101,7 @@ class ExecCommand:
         opts = _normalize_exec_options(options)
 
         try:
-            loaded = _load_input(plan=plan, file=file)
+            loaded = _load_input(plan=plan, file=file, vars=opts.vars)
         except PlanError as exc:
             return _error_response(RunError(PLAN_SCHEMA_INVALID, str(exc)))
 

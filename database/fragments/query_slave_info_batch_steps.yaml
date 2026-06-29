@@ -1,0 +1,44 @@
+# 单次查询从节点信息批次（供 parametrize count 引用）
+
+steps:
+  - id: calc_query_start
+    action: expr
+    args:
+      name: query_start_index
+      expr: ${query_idx} * 32
+
+  - id: build_query_info
+    action: build
+    args:
+      proto: ${proto}
+      afn: '0x03'
+      di: E8030306
+      dir: downlink
+      start_slave_index: ${query_start_index}
+      slave_count: 32
+    save_as: query_info_frame
+
+  - id: send_query_info
+    action: send
+    args:
+      conn: ${conn}
+      hex: ${query_info_frame.frame_hex}
+      timeout: 0
+
+  - id: wait_query_info_resp
+    action: wait-frame
+    args:
+      conn: ${conn}
+      proto: ${proto}
+      timeout_ms: ${wait_timeout_ms}
+      expect:
+        afn: '03'
+        di: E8040306
+        dir: uplink
+    save_as: query_resp
+
+  - id: assert_query_resp
+    action: assert
+    args:
+      expect:
+        query_resp.matched: true

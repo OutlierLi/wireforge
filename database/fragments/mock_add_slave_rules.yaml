@@ -1,0 +1,54 @@
+# mock://auto 场景：添加从节点测试所需的 auto_rule 片段
+# 由 add_slave_nodes_loop.yaml include；真机 plan 不包含此文件
+
+steps:
+  - id: register_rule_init_ack
+    action: auto_rule.add
+    args:
+      id: rule_init_ack
+      match: 020102E8
+      source: serial:${conn}
+      then:
+        - command: /send
+          args:
+            hex: ${ack_frame.frame}
+
+  - id: register_rule_add_slave_ack
+    action: auto_rule.add
+    args:
+      id: rule_add_slave_ack
+      match: 020402E8
+      source: serial:${conn}
+      then:
+        - command: /send
+          args:
+            hex: ${ack_frame.frame}
+
+  - id: register_rule_query_count
+    action: auto_rule.add
+    args:
+      id: rule_query_count
+      match: 050300E8
+      source: serial:${conn}
+      then:
+        - command: /send
+          args:
+            hex: ${count_resp_frame.frame}
+
+  - id: register_rule_query_slave_info
+    action: auto_rule.add
+    args:
+      id: rule_query_slave_info
+      match:
+        all: ["060303E8", "0040"]
+      source: serial:${conn}
+      then:
+        - command: build
+          args:
+            proto: csg
+            afn: '0x03'
+            di: E8040306
+            dir: uplink
+            slave_total: 1024
+            response_slave_count: $request.user_data.slave_count
+            slave_addrs: $generated.slave_addrs

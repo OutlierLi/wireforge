@@ -4,12 +4,16 @@
 #   1. 编排前: 用 wireforge protocol_task_run 逐条确认报文 schema（见 AGENTS.md / TEST_PLAN_AGENT.md）
 #   2. 复制本文件到 database/runs/<name>.yaml，填写 setup/steps
 #   3. test.validate → test.dry_run → test.run（默认 mock://auto）
-#   4. 真机: test.run options.vars.port = /dev/ttyUSB0 或 COM3
+#   4. 真机: exec_test.run options.vars.port = /dev/ttyUSB0 或 COM3
 #
 # 约定:
+#   - mock://auto 无 auto_rule 命中时不回复，setup 必须显式 auto_rule.add
 #   - send 后接 wait-frame 时 timeout: 0（避免 send 读走 mock 回复）
-#   - auto_rule.then 用 dict 格式（command + args.hex），不用字符串 then
-#   - auto_rule.match 用 build 下行帧 DI 的 hex 片段（无空格），不用宽泛正则
+#   - auto_rule.then 用 dict 格式（command + args），不用字符串 then
+#   - auto_rule.match 用 build 下行帧 DI 的 hex 片段（无空格），不用宽泛 regex
+#   - 多分支: match.all / match.any；动态上行: then command: build + $request.* / $generated.slave_addrs
+#   - 重复步骤: parametrize + include（推荐）；或 loop
+#   - mock 专用: include 片段 + when: port == mock://auto
 #   - 报文一律 build 构造，禁止手拼 hex
 
 version: 1
@@ -30,12 +34,16 @@ setup:
       conn: ${conn}
       port: ${port}
       baudrate: ${baudrate}
-  # --- Agent: 在此添加 pre-build 响应帧 + auto_rule.add ---
+  # --- Agent: pre-build 上行响应帧 + auto_rule.add（见 mock_auto_ack.yaml）---
 
 steps:
-  # --- Agent: build / send(timeout:0) / wait-frame / assert / decode ---
+  # --- build / send(timeout:0) / wait-frame / assert / decode ---
 
 teardown:
+  - id: remove_rules
+    action: auto_rule.remove
+    args:
+      id: <rule_id>
   - id: disconnect
     action: serial.disconnect
     args:

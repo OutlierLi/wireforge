@@ -17,9 +17,18 @@
 | 说明 | TestPlan | 文档 |
 |------|----------|------|
 | mock 确认帧（最小） | [`../runs/mock_auto_ack.yaml`](../runs/mock_auto_ack.yaml) | [`mock_auto_ack.md`](mock_auto_ack.md) |
-| loop/if 演示 | [`../runs/loop_batch_demo.yaml`](../runs/loop_batch_demo.yaml) | [`TEST_PLAN_AGENT.md`](TEST_PLAN_AGENT.md) |
+| 批量添加从节点（parametrize+include） | [`../runs/add_slave_nodes_loop.yaml`](../runs/add_slave_nodes_loop.yaml) | [`add_slave_nodes_loop.md`](add_slave_nodes_loop.md) |
+| 步骤片段（mock/单批） | [`../fragments/`](../fragments/) | [`add_slave_nodes_loop.md`](add_slave_nodes_loop.md) |
+| loop/if 演示（旧写法，仍支持） | [`../runs/loop_batch_demo.yaml`](../runs/loop_batch_demo.yaml) | [`TEST_PLAN_AGENT.md`](TEST_PLAN_AGENT.md) |
 | virtual 双端查询 | [`../runs/vendor_code_query.yaml`](../runs/vendor_code_query.yaml) | [`vendor_code_query.md`](vendor_code_query.md) |
 | 全 action 覆盖 | [`../runs/all_actions.yaml`](../runs/all_actions.yaml) | — |
+
+## auto_rule（mock://auto）
+
+- **无兜底**：未命中规则时不回复，setup 须显式注册每条 mock 应答
+- **match**：build 下行 DI hex 子串；可用 `match.all` / `match.any`
+- **then**：dict 格式；静态用 `command: /send`，动态用 `command: build` + `$request.*`
+- OpenCode 速查：[`.opencode/README.md`](../../.opencode/README.md)
 
 ## 协议源文件
 

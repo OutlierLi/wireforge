@@ -201,7 +201,39 @@ assert 示例：`resp.matched: true` 或 `resp.decoded.user_data.slave_total: 10
 
 DI 片段来源：查询数量下行 `E8000305` → 线上字节 `05 03 00 E8` → match `050300E8`。
 
-**mock://auto 内置兜底**（[`wireforge_serial/transport.py`](../../wireforge_serial/transport.py)）：查询从节点信息（`060303E8`）按 `start_slave_index` 动态生成地址；其它未命中规则的下行为确认帧。优先写显式 auto_rule。
+**mock://auto 无兜底**：未命中 auto_rule 时不回复。所有 mock 应答须显式注册规则。
+
+#### 组合 match（all / any）
+
+```yaml
+# 且：DI 片段 + 下行 control
+match:
+  all: ["060303E8", "0040"]
+
+# 或：多种 DI 共用一个回复
+match:
+  any: ["020102E8", "020204E8"]
+```
+
+#### 动态 build 回复
+
+上行字段依赖请求 payload 时，用 `command: build` 替代静态 hex：
+
+```yaml
+then:
+  - command: build
+    args:
+      proto: csg
+      afn: "0x03"
+      di: E8040306
+      dir: uplink
+      slave_total: 1024
+      response_slave_count: $request.user_data.slave_count
+      slave_addrs: $generated.slave_addrs
+```
+
+- `$request.<path>`：解码入站 TX 帧后按路径取值（如 `user_data.slave_count`）
+- `$generated.slave_addrs`：由请求的 `start_slave_index` + `slave_count` 生成地址列表
 
 ### serial.connect / disconnect
 
@@ -240,7 +272,9 @@ vars:
 - `${device.port}`
 - 整对象：`value: ${batches.0}`（保留 dict/list 类型，用于 `set_var`）
 
-### loop — 遍历数组或计数
+### loop — 遍历数组或计数（运行时）
+
+仍支持；大批量重复更推荐 **parametrize**（compose 时展开为线性 steps）。
 
 ```yaml
 - id: loop_batches
@@ -255,19 +289,45 @@ vars:
       args:
         name: idx
         value: ${batch.start_index}
-
-- id: loop_n
-  action: loop
-  args:
-    count: 32
-    start: 0            # 可选，默认 0
-    index_as: i
-  steps:
-    - action: set_var
-      args: {name: n, value: ${i}}
 ```
 
-重复步骤用 `loop`，避免复制粘贴上百个 step。
+### parametrize — 数据驱动（compose 时展开，推荐）
+
+类似 pytest parametrize：编写时嵌套子步骤，加载 plan 时展开为 `prefix_0.step`、`prefix_1.step`… 无运行时 loop scope。
+
+```yaml
+- id: add_slave_batches
+  action: parametrize
+  args:
+    over: ${batches}
+    as: batch
+  steps:
+    - action: include
+      args:
+        file: database/fragments/add_slave_batch_steps.yaml
+
+- id: query_batches
+  action: parametrize
+  args:
+    count: 32
+    index_as: query_idx
+  steps:
+    - id: calc
+      action: expr
+      args: {name: off, expr: ${query_idx} * 32}
+```
+
+### include — 复用步骤片段
+
+```yaml
+- id: mock_rules
+  action: include
+  args:
+    file: database/fragments/mock_add_slave_rules.yaml
+    when: port == mock://auto
+```
+
+片段文件格式：`steps: [...]`（见 `database/fragments/`）。
 
 ### if — 条件分支
 
@@ -275,22 +335,14 @@ vars:
 - id: only_on_mock
   action: if
   args:
-    when:
-      eq:
-        port: mock://auto
+    when: port == mock://auto    # 字符串条件（推荐）
+    # 或 when: {eq: {port: mock://auto}}
   steps:
     - action: auto_rule.add
       ...
-  else_steps:
-    - action: sleep
-      args: {ms: 100}
 ```
 
-`when` 语法：
-
-- `eq: {path: expected}` — 同 assert
-- `not: {eq: {...}}` — 取反
-- `all: [{eq:...}, {not:...}]` — 全部满足
+`when` 字符串支持：`==`、`!=`、`not`（如 `not port == COM3`）。
 
 ### expr — 算术表达式
 
@@ -356,9 +408,12 @@ python3 scripts/bootstrap_protocol_cache.py
 | 示例 | 文件 | 场景 |
 |------|------|------|
 | 最小 mock | [`mock_auto_ack.md`](mock_auto_ack.md) | 单连接 mock://auto + auto_rule |
-| loop/if 演示 | [`../runs/loop_batch_demo.yaml`](../runs/loop_batch_demo.yaml) | 数组/结构体 vars + loop + if |
-| 双端 virtual | [`vendor_code_query.md`](vendor_code_query.md) | CCO + STA 总线 |
+| 批量 + 动态 build | [`add_slave_nodes_loop.md`](add_slave_nodes_loop.md) | parametrize + include + mock 片段 |
+| loop/if 演示 | [`../runs/loop_batch_demo.yaml`](../runs/loop_batch_demo.yaml) | 数组/结构体 vars + loop + if（旧写法） |
+| 双端 virtual | [`vendor_code_query.md`](vendor_code_query.md) | CCO + STA 总线（不用 auto_rule） |
 | 动作覆盖 | [`../runs/all_actions.yaml`](../runs/all_actions.yaml) | 全部 action 类型 |
+
+OpenCode 项目说明：[`.opencode/README.md`](../../.opencode/README.md)
 
 ---
 

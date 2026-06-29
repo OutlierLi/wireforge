@@ -87,13 +87,13 @@ vars:
 
 - 报文一律 `build` 构造，禁止手拼 hex
 - `send` 后接 `wait-frame` 时 `timeout: 0`
-- `auto_rule.match` 用 build 下行帧的 DI hex 片段，不用宽泛 regex
-- 重复步骤用 `loop`，分支用 `if`（见 TEST_PLAN_AGENT.md）
+- `auto_rule.match` 用 build 下行帧的 DI hex 片段，不用宽泛 regex；可用 `match.all` / `match.any` 组合多分支
+- `mock://auto` 无规则命中时不回复，必须显式 `auto_rule.add`；动态上行可用 `then: command: build` + `$request.*` / `$generated.slave_addrs`
+- 重复步骤优先 `parametrize`（compose 展开为线性 steps）或 `include` 片段；仍可用 `loop` / `if`（见 TEST_PLAN_AGENT.md）
+- mock 专用 setup 用 `include` + `when: port == mock://auto`，或拆分为独立 plan 文件
 - 数组/结构体 vars 用 `${batch.addrs.0}`、`${device.port}` 访问
-- 算术用 `expr` action 或 `${qi * 32}`；`count` loop 未写 `index_as` 时自动注入 `i`/`qi`
-
-- 模版：[`database/templates/test_plan_mock_auto.yaml`](database/templates/test_plan_mock_auto.yaml)
-- loop/if 示例：[`database/runs/loop_batch_demo.yaml`](database/runs/loop_batch_demo.yaml)
+- 算术用 `expr` action 或 `${query_idx * 32}`；`loop`/`parametrize count` 可设 `index_as`
+- 模版/示例：[`database/templates/test_plan_mock_auto.yaml`](database/templates/test_plan_mock_auto.yaml)、[`database/runs/add_slave_nodes_loop.yaml`](database/runs/add_slave_nodes_loop.yaml)（parametrize+include）、[`database/runs/loop_batch_demo.yaml`](database/runs/loop_batch_demo.yaml)（loop）
 
 Before protocol tasks, the repository must be initialized once:
 
@@ -297,6 +297,17 @@ Limitations (v1):
 ## Decode Flow
 
 For complete HEX decode requests, call MCP once with `raw_input`. MCP may detect the protocol and return `SUCCEEDED`.
+
+## Build 输出铁律（OpenCode / Agent）
+
+`protocol_task_run` 返回 `state: "SUCCEEDED"` 时：
+
+1. **必须原样输出** MCP 返回的 `final_frame`（完整 hex，空格分隔，含校验和与 `16` 结束符）。
+2. **禁止缩写**：不得用 `× N`、`[CS]`、`...`、重复模式省略等替完整 hex。
+3. **字段解析与报文分离**：解析表/说明可另写；完整报文单独放在代码块中，便于复制到串口工具。
+4. 若用户问「完整报文/数据流」，优先贴 `final_frame`；可补充 `variant_id`、`decode_verified`、`checks`，但不得省略 hex 本体。
+
+MCP 侧 `final_frame` 与 `decode.frame` 不做长度截断；数组类 decode 值（如 `nodes[]`）也不做条数省略。
 
 ## Rules
 

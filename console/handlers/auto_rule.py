@@ -219,6 +219,38 @@ def execute_actions(match: MatchResult, context: dict | None = None) -> list[dic
     return results
 
 
+def append_action_replies_to_buf(
+    rx_buf: bytearray,
+    actions: list[dict],
+    frame_bytes: bytes,
+) -> None:
+    """将规则 actions 的回复帧追加到 RX 缓冲（mock://auto 使用）。"""
+    for action in actions:
+        cmd = str(action.get("command", "")).lstrip("/")
+        act_args = action.get("args") or {}
+        if cmd in ("send",):
+            reply_hex = act_args.get("hex", "")
+            if reply_hex:
+                try:
+                    rx_buf.extend(bytes.fromhex(str(reply_hex).replace(" ", "")))
+                except ValueError:
+                    pass
+        elif cmd == "serial" and act_args.get("sub") == "send":
+            reply_hex = act_args.get("hex", "")
+            if reply_hex:
+                try:
+                    rx_buf.extend(bytes.fromhex(str(reply_hex).replace(" ", "")))
+                except ValueError:
+                    pass
+        elif cmd == "build":
+            frame_hex = _build_reply_hex(act_args, frame_bytes)
+            if frame_hex:
+                try:
+                    rx_buf.extend(bytes.fromhex(frame_hex.replace(" ", "")))
+                except ValueError:
+                    pass
+
+
 # ── helpers ───────────────────────────────────────────────────────────
 
 def _parse_condition(args: dict) -> dict:
@@ -237,9 +269,42 @@ def _parse_condition(args: dict) -> dict:
 
     if fields:
         return {"type": "decoded", "fields": fields}
+
+    if isinstance(pattern, dict):
+        if "all" in pattern or "any" in pattern:
+            return _normalize_composite(pattern)
+        if "type" in pattern:
+            return pattern
+
+    if isinstance(pattern, list):
+        return {"any": [_normalize_leaf_item(item) for item in pattern]}
+
     if pattern:
-        return {"type": cond_type, "pattern": pattern}
+        return {"type": cond_type, "pattern": str(pattern)}
     return {"type": "any"}
+
+
+def _normalize_composite(cond: dict) -> dict:
+    result: dict[str, Any] = {}
+    for key in ("all", "any"):
+        if key in cond:
+            items = cond[key]
+            if not isinstance(items, list):
+                items = [items]
+            result[key] = [_normalize_leaf_item(item) for item in items]
+    return result
+
+
+def _normalize_leaf_item(item: Any) -> dict:
+    if isinstance(item, str):
+        return {"type": "regex", "pattern": item}
+    if isinstance(item, dict):
+        if "all" in item or "any" in item:
+            return _normalize_composite(item)
+        if "type" not in item and "pattern" in item:
+            return {"type": "regex", **item}
+        return item
+    return {"type": "regex", "pattern": str(item)}
 
 
 def _parse_actions(args: dict) -> list[dict]:
@@ -284,24 +349,135 @@ def _parse_actions(args: dict) -> list[dict]:
 
 def _match_rule(rule: dict, frame_bytes: bytes, decoded: dict | None = None) -> MatchResult | None:
     cond = rule.get("condition", {})
-    cond_type = cond.get("type", "regex")
-
     hex_str = frame_bytes.hex().upper()
+
+    if _eval_condition(cond, hex_str, frame_bytes, decoded):
+        return MatchResult(
+            rule_id=rule["id"],
+            rule_name=rule.get("name", ""),
+            actions=rule.get("actions", []),
+        )
+    return None
+
+
+def _eval_condition(
+    cond: dict,
+    hex_str: str,
+    frame_bytes: bytes,
+    decoded: dict | None = None,
+) -> bool:
+    if "all" in cond:
+        items = cond["all"]
+        if not isinstance(items, list):
+            items = [items]
+        return all(_eval_condition(item, hex_str, frame_bytes, decoded) for item in items)
+
+    if "any" in cond:
+        items = cond["any"]
+        if not isinstance(items, list):
+            items = [items]
+        return any(_eval_condition(item, hex_str, frame_bytes, decoded) for item in items)
+
+    cond_type = cond.get("type", "regex")
 
     if cond_type == "regex":
         pattern = cond.get("pattern", "")
-        if pattern and re.search(pattern, hex_str):
-            return MatchResult(rule_id=rule["id"], rule_name=rule.get("name",""),
-                              actions=rule.get("actions", []))
-    elif cond_type == "decoded":
-        fields = cond.get("fields", {})
-        if decoded:
-            match = all(str(decoded.get(k, "")) == str(v) for k, v in fields.items())
-            if match:
-                return MatchResult(rule_id=rule["id"], rule_name=rule.get("name",""),
-                                  actions=rule.get("actions", []))
-    elif cond_type == "any":
-        return MatchResult(rule_id=rule["id"], rule_name=rule.get("name",""),
-                          actions=rule.get("actions", []))
+        return bool(pattern and re.search(pattern, hex_str))
 
-    return None
+    if cond_type == "decoded":
+        fields = cond.get("fields", {})
+        if not decoded:
+            return False
+        return all(str(decoded.get(k, "")) == str(v) for k, v in fields.items())
+
+    if cond_type == "any":
+        return True
+
+    return False
+
+
+def _build_reply_hex(build_args: dict, frame_bytes: bytes) -> str:
+    resolved = _resolve_build_args(build_args, frame_bytes)
+    if resolved is None:
+        return ""
+    from runtime.command_runtime import execute
+    result = execute("build", resolved)
+    if result.get("status") != "success":
+        return ""
+    data = result.get("data") or {}
+    return str(data.get("frame") or data.get("frame_hex") or "")
+
+
+def _resolve_build_args(build_args: dict, frame_bytes: bytes) -> dict | None:
+    proto = str(build_args.get("proto", "csg"))
+    request_flat = _decode_request_flat(proto, frame_bytes)
+    if request_flat is None:
+        return None
+
+    resolved: dict[str, Any] = {}
+    for key, value in build_args.items():
+        resolved[key] = _resolve_build_value(value, request_flat, resolved)
+
+    if resolved.get("slave_addrs") == "$generated.slave_addrs":
+        start = _coerce_int(
+            resolved.get("start_slave_index")
+            or request_flat.get("user_data.start_slave_index")
+        )
+        count = _coerce_int(
+            resolved.get("response_slave_count")
+            or request_flat.get("user_data.slave_count")
+        )
+        if start is None or count is None:
+            return None
+        resolved["slave_addrs"] = generate_slave_addrs(start, count)
+
+    for key in ("response_slave_count", "slave_total", "wait_time"):
+        if key in resolved:
+            coerced = _coerce_int(resolved[key])
+            if coerced is not None:
+                resolved[key] = coerced
+
+    # start_slave_index 仅用于生成地址，不应传入 build
+    resolved.pop("start_slave_index", None)
+    return resolved
+
+
+def _resolve_build_value(value: Any, request_flat: dict, resolved_so_far: dict) -> Any:
+    if isinstance(value, str) and value.startswith("$request."):
+        path = value[len("$request."):]
+        return request_flat.get(path)
+    if isinstance(value, dict):
+        return {k: _resolve_build_value(v, request_flat, resolved_so_far) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_resolve_build_value(v, request_flat, resolved_so_far) for v in value]
+    return value
+
+
+def _decode_request_flat(proto: str, frame_bytes: bytes) -> dict | None:
+    from runtime.command_runtime import execute
+    from console.handlers.wait_frame import _flatten_decode_values
+
+    result = execute("decode", {
+        "proto": proto,
+        "hex": frame_bytes.hex(" ").upper(),
+    })
+    if result.get("status") != "success":
+        return None
+    data = result.get("data") or {}
+    values = data.get("values") or data.get("decoded") or {}
+    if not isinstance(values, dict):
+        return None
+    return _flatten_decode_values(values, data.get("path", ""))
+
+
+def generate_slave_addrs(start_slave_index: int, count: int) -> list[str]:
+    return [str(start_slave_index + i + 1) for i in range(count)]
+
+
+def _coerce_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None

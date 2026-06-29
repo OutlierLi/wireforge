@@ -684,3 +684,26 @@ def test_mcp_call_from_frame_build():
     assert called["state"] == "SUCCEEDED"
     assert called["final_frame"] == HEX_645_READ_ADDR
     assert called["decode_verified"] is True
+
+
+def test_fit_response_budget_never_trims_final_frame():
+    from agent_protocol.state_machine import _fit_response_budget
+
+    long_frame = "68 " + "AA " * 300 + "16"
+    result = {
+        "state": "SUCCEEDED",
+        "final_frame": long_frame,
+        "variant_id": "demo",
+    }
+    trimmed = _fit_response_budget(result, "x")
+    assert trimmed["final_frame"] == long_frame
+
+
+def test_compact_decode_values_keeps_long_arrays():
+    from agent_protocol.state_machine import _compact_decode_values
+
+    nodes = ["00000000000E"] * 32
+    compact = _compact_decode_values({"node_count": 32, "nodes": nodes})
+    assert compact["nodes"] == nodes
+    assert len(compact["nodes"]) == 32
+

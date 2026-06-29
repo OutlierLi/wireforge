@@ -198,9 +198,8 @@ Tools: `exec_test.schema`, `exec_test.run`, `exec_test.read_report`
 
 ## 报告内容
 
-- 测试目的 / 预期结果 / 测试流程（来自 plan 顶层字段）
-- 串口收发记录 `serial_trace[]`（TX/RX hex、解码）
-- 步骤执行结果
+- 测试目的 / 业务验证 / 通信记录 TX·RX（来自 plan 顶层 `purpose` / `expected_results`）
+- `execution_report.json` 含 `comm_interactions`、技术向 `serial_trace`
 - 失败时 `error_analysis`（错误码、诊断、排查建议）
 """
 

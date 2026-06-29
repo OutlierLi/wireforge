@@ -72,14 +72,17 @@ steps:
       hex: "${query_frame.frame_hex}"
       timeout: 1
 
-  # ── auto_rule.add — 添加自动回复规则 ──
+  # ── auto_rule.add — 语法示例（virtual:// 不触发 auto_rule，本 plan 由 STA 显式 send）──
   - id: add_rule
     action: auto_rule.add
     args:
       id: "test_rule_cov"
-      match: "68..16"
+      match: "010300E8"
       source: "serial:${sta}"
-      then: "reply_with_ack"
+      then:
+        - command: /send
+          args:
+            hex: "${resp_frame.frame}"
 
   # ── sleep — 短暂等待 ──
   - id: pause1
