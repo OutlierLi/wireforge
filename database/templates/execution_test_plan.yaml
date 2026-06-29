@@ -1,0 +1,54 @@
+# WireForge 执行测试 TestPlan 模版 — 真实串口
+#
+# 编排校验: wireforge-test MCP (test.validate → test.dry_run)
+# 真实执行: wireforge-exec-test MCP (exec_test.run) 或 CLI /run
+#
+# 顶层 purpose / expected_results / test_flow 会写入 execution_report
+
+version: 1
+name: <execution_test_name>
+timeout_ms: 120000
+
+purpose: |
+  描述本测试要验证的业务场景（例如：档案初始化后应收到 AFN00 确认帧）
+
+expected_results:
+  - step_id: wait_init_ack
+    description: 收到上行确认帧 AFN00 DI=E8010001
+    expect:
+      afn: "00"
+      di: E8010001
+      dir: uplink
+
+test_flow:
+  - serial.connect 连接被测设备
+  - build 初始化下行帧并 send（timeout:0）
+  - wait-frame 等待确认
+  - assert 校验关键字段
+  - teardown disconnect
+
+doc: database/examples/mock_auto_ack.md
+
+vars:
+  port: /dev/ttyUSB0
+  conn: cco
+  baudrate: 9600
+  proto: csg
+  wait_timeout_ms: 5000
+
+setup:
+  - id: connect
+    action: serial.connect
+    args:
+      conn: ${conn}
+      port: ${port}
+      baudrate: ${baudrate}
+
+steps:
+  # --- build / send(timeout:0) / wait-frame / assert ---
+
+teardown:
+  - id: disconnect
+    action: serial.disconnect
+    args:
+      conn: ${conn}

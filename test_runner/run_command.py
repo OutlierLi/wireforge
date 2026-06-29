@@ -47,6 +47,7 @@ class RunOptions:
     vars: dict[str, Any] = field(default_factory=dict)
     report: str | None = None
     skip_build_check: bool = False
+    execution_report: bool = False
 
 
 class RunCommand:
@@ -286,7 +287,14 @@ class RunCommand:
 
         total_ms = sum(r.elapsed_ms for r in ctx.records)
         mcp_result = _compact_result(ctx, status, error_text, primary_error, total_ms)
-        writer.finish(status, error_text, primary_error=primary_error, mcp_result=mcp_result)
+        writer.finish(
+            status,
+            error_text,
+            primary_error=primary_error,
+            mcp_result=mcp_result,
+            execution_report=opts.execution_report,
+            original_plan=loaded,
+        )
 
         legacy = {
             "run_id": ctx.run_id,
@@ -416,6 +424,7 @@ def _normalize_options(options: RunOptions | dict[str, Any] | None) -> RunOption
         vars=dict(options.get("vars") or {}),
         report=options.get("report"),
         skip_build_check=bool(options.get("skip_build_check", False)),
+        execution_report=bool(options.get("execution_report", False)),
     )
 
 

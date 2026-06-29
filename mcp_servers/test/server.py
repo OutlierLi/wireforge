@@ -215,18 +215,16 @@ Then use this test MCP to validate and run the plan.
 - Full guide: `database/examples/TEST_PLAN_AGENT.md`
 - Minimal example: `database/runs/mock_auto_ack.yaml`
 
-### Phase 2 — test MCP (this server)
+### Phase 2 — test MCP (编排校验)
 
 1. `test.schema` — template, examples, build_field_types, workflow
 2. `test.validate` — YAML structure + **build/route schema check** per build step
 3. `test.dry_run` — resolve vars + build schema check on resolved args
-4. `test.run` — execute (also runs build check unless `options.skip_build_check`)
-5. On failure: `test.read_report` with `step_id`
+4. On failure: fix using `build_checks` / errors
 
-Build field names must come from protocol MCP `input_schema`. On mismatch, errors include
-`unknown_fields`, `missing_required`, and `input_schema` for that step.
+**真实串口执行**请用 **exec test MCP**（`exec_test.run`），不用 `test.run`（后者仅 mock 快速自检）。
 
-## Serial port
+## Serial port (exec_test.run)
 
 - Default in template: `vars.port: mock://auto` (script self-test with auto_rule)
 - Real device: pass `options.vars.port` e.g. `/dev/ttyUSB0` or `COM3`

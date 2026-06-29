@@ -10,7 +10,7 @@ wireforge-extend-mcp-server
 python3 scripts/python/wireforge_extend_mcp_server.py
 ```
 
-Use the test MCP tools (`test.schema`, `test.validate`, `test.dry_run`, `test.run`, `test.read_report`) for YAML TestPlan execution. Start the test MCP server with:
+Use the **编排校验** test MCP tools (`test.schema`, `test.validate`, `test.dry_run`, `test.read_report`) for YAML TestPlan validation. Start with:
 
 ```bash
 wireforge-test-mcp-server
@@ -18,17 +18,32 @@ wireforge-test-mcp-server
 python3 scripts/python/wireforge_test_mcp_server.py
 ```
 
-## Test MCP Flow
+Use the **真实串口执行** exec test MCP (`exec_test.schema`, `exec_test.run`, `exec_test.read_report`) after validate/dry_run pass. Start with:
 
-1. Agent generates a TestPlan (version 1, name, steps).
+```bash
+wireforge-exec-test-mcp-server
+# or
+python3 scripts/python/wireforge_exec_test_mcp_server.py
+```
+
+## Test MCP Flow（编排校验，不连串口）
+
+1. Agent generates a TestPlan (version 1, name, steps); execution plans should include `purpose`, `expected_results`, `test_flow` (see [`database/templates/execution_test_plan.yaml`](database/templates/execution_test_plan.yaml)).
 2. Call `test.validate` with inline `plan` or `file` — fix schema/action errors; each `build` step is checked against `/route` `input_schema` (`build_checks`, `PLAN_BUILD_SCHEMA_MISMATCH` on mismatch).
 3. Call `test.dry_run` — resolve variables and re-check build args against route schema (stricter than validate alone).
-4. Call `test.run` with `plan` or `file` and optional `options` (`timeout_ms`, `dry_run`, `vars`, `report`, `skip_build_check` for debug only).
-5. On failure, call `test.read_report` with `report_dir` and optional `step_id` for diagnostics.
+4. On failure during dry_run, call `test.read_report` if a prior run exists.
 
 Call `test.schema` for `build_field_types` (how to pass bcd/array/struct in YAML) and `workflow` order.
 
-Agent reads `ok` / `status` / `error` from `test.run` — do not infer pass/fail from logs. Full logs are under `log/run_reports/<run_id>/` (or custom `report` path).
+## Execution Test MCP Flow（真实串口执行）
+
+After `test.validate` + `test.dry_run` pass:
+
+1. Call `exec_test.run` with `file` or `plan` and `options.vars` (e.g. `port: /dev/ttyUSB0`).
+2. Read `ok` / `status` / `report_dir` from the result; **success or fail** both write `execution_report.json` + `execution_report.md` under `log/exec_reports/<run_id>/`.
+3. Call `exec_test.read_report` with `report_dir` for serial trace, error analysis, purpose/expected_results.
+
+`exec_test.run` is equivalent to CLI `/run` (no dry_run). `test.run` remains for quick mock self-tests only.
 
 ## TestPlan 编排工作流
 
@@ -39,8 +54,9 @@ Agent reads `ok` / `status` / `error` from `test.run` — do not infer pass/fail
 | 阶段 | MCP | 职责 |
 |------|-----|------|
 | Phase 0 — 编排前 | wireforge `protocol_task_run` | 逐条报文匹配路由、取 `input_schema`、确认必填/默认/推导字段 |
-| Phase 1 — 编写 YAML | （Agent） | 从 [`database/templates/test_plan_mock_auto.yaml`](database/templates/test_plan_mock_auto.yaml) 复制，build args 与 MCP schema 对齐 |
-| Phase 2 — 执行 | wireforge-test `test.validate` … `test.run` | 校验并执行；默认 `mock://auto`，真机用 `options.vars.port` 覆盖 |
+| Phase 1 — 编写 YAML | （Agent） | 从 [`database/templates/execution_test_plan.yaml`](database/templates/execution_test_plan.yaml) 复制，填写 purpose/expected_results/test_flow |
+| Phase 2 — 编排校验 | wireforge-test `test.validate` … `test.dry_run` | 结构/build schema/变量展开（**不连串口**） |
+| Phase 3 — 真实执行 | wireforge-exec-test `exec_test.run` | 串口真实收发；报告 `log/exec_reports/` |
 
 **Build Flow 不仅是单次构帧，也是 TestPlan 编排的前置依赖分析** — 禁止跳过 protocol MCP 直接写 YAML 或猜测 build 字段名。
 

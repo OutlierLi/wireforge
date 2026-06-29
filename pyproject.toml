@@ -25,6 +25,7 @@ protocolctl = "protocol_tool.cli.main:app"
 wireforge-terminal = "console.terminal:main"
 wireforge-mcp-server = "mcp_servers.protocol.server:main"
 wireforge-test-mcp-server = "mcp_servers.test.server:main"
+wireforge-exec-test-mcp-server = "mcp_servers.exec_test.server:main"
 wireforge-extend-mcp-server = "mcp_servers.extend.server:main"
 
 [build-system]

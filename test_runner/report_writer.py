@@ -59,6 +59,8 @@ class ReportWriter:
         *,
         primary_error: RunError | None = None,
         mcp_result: dict[str, Any] | None = None,
+        execution_report: bool = False,
+        original_plan: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         total_ms = sum(r.elapsed_ms for r in self.ctx.records)
         report = {
@@ -108,6 +110,18 @@ class ReportWriter:
             (self.ctx.report_dir / "mcp_result.json").write_text(
                 json.dumps(mcp_result, ensure_ascii=False, indent=2),
                 encoding="utf-8",
+            )
+
+        if execution_report:
+            from test_runner.execution_report import write_execution_report_files
+
+            write_execution_report_files(
+                self.ctx,
+                original_plan or self.original_plan,
+                status=status,
+                error_text=error,
+                primary_error=primary_error,
+                total_ms=total_ms,
             )
 
         return report
