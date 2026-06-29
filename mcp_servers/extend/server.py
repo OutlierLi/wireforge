@@ -130,10 +130,16 @@ Tool: `protocol_extend_run`
 - Resume: pass `run_id` + `user_input` to supply missing `dir`, `add`, `fields`, or `confirm`.
 - Extensions write to `protocol_tool/protocols/csg_2016/variants/extensions/*.yaml` only.
 - v1 supports AFN 00–07 new DI; AFN 08+ requires manual router in protocol.yaml.
-- Field DSL supports scalar, struct, and array (count_ref + item_type struct/bcd/...).
-- After success, map json+yaml are refreshed automatically; check map_ok and route_entries.
 
-Flow: missing params → `need: params` → preview → `need: confirm` → write + compile + map → `SUCCEEDED`.
+## TypeInferencer rules
+
+1. Do **not** pick semantic type from byte width. Provide `evidence` (value tables, units, subfields).
+2. `uint8/u16/bytes` are codec hints only; program infers `semantic_type` + YAML codec.
+3. `bool` semantic → YAML `enum` with 2 values; `unknown` → `field_type_warnings`, still confirmable.
+
+Field DSL: scalar with evidence, struct, array (count_ref + item_type). See `field_dsl_examples` in params response.
+
+Flow: missing params → `need: params` → (optional `need: field_types`) → `need: confirm` → write + compile + map → `SUCCEEDED`.
 See AGENTS.md Protocol Extend Flow for examples.
 """
 

@@ -1,12 +1,43 @@
-"""Field DSL normalization, validation, and YAML emission for protocol extensions."""
+"""Field DSL normalization, TypeInferencer emit, and YAML generation."""
 
 from __future__ import annotations
 
 from typing import Any
 
-# Agent-facing field DSL reference (also surfaced in INPUT_SCHEMA).
+from protocol_extend.candidate import FieldCandidate, InferredField, candidate_from_agent_field
+from protocol_extend.type_inferencer import infer_field, infer_fields, inference_entry
+from protocol_extend.semantic_validator import validate_all, validate_inferred
+
+# Agent-facing field DSL reference (evidence-driven; do not pick uint8 by byte width).
 FIELD_DSL_EXAMPLES: list[dict[str, Any]] = [
-    {"name": "timeout", "type": "uint16_le", "desc": "超时(秒)"},
+    {
+        "name": "device_type",
+        "desc": "设备类型",
+        "bytes": 2,
+        "evidence": [
+            "00H：单相表",
+            "01H：三相表",
+            "02H：采集器",
+            "03H：集中器",
+        ],
+    },
+    {
+        "name": "switch_state",
+        "desc": "开关",
+        "evidence": ["0：关闭", "1：打开"],
+    },
+    {
+        "name": "voltage_a",
+        "desc": "A相电压",
+        "bytes": 2,
+        "evidence": ["单位 0.1V，范围 0~300"],
+    },
+    {
+        "name": "vendor_code",
+        "desc": "厂商代码",
+        "evidence": ["2字节 ASCII 字符串"],
+        "length": 2,
+    },
     {
         "name": "node_count",
         "type": "uint8",
@@ -21,73 +52,104 @@ FIELD_DSL_EXAMPLES: list[dict[str, Any]] = [
         "desc": "节点列表",
         "item_fields": [
             {"name": "address", "type": "bcd", "length": 6, "byte_order": "little", "desc": "地址"},
-            {"name": "device_type", "type": "uint8", "desc": "设备类型"},
+            {
+                "name": "device_type",
+                "desc": "设备类型",
+                "evidence": ["00H：单相表", "01H：三相表"],
+            },
         ],
-    },
-    {
-        "name": "node_addrs",
-        "type": "array",
-        "count_ref": "node_count",
-        "item_type": "bcd",
-        "item_name": "node_addr",
-        "item_params": {"length": 6, "byte_order": "little"},
-        "desc": "节点地址列表",
     },
 ]
 
 _SCALAR_KEYS = ("length", "desc", "description", "default", "unit", "byte_order", "format", "signed")
 _ARRAY_ITEM_SCALAR_KEYS = ("length", "byte_order", "format", "signed")
+_ENUM_KEYS = ("values", "length")
+
+
+def process_agent_fields(
+    agent_fields: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str]]:
+    """Infer, validate, and emit YAML-ready field dicts."""
+    if not agent_fields:
+        return [], [], []
+
+    candidates = [candidate_from_agent_field(f) for f in agent_fields]
+    inferred_list = [infer_field(c) for c in candidates]
+    for inf, cand in zip(inferred_list, candidates):
+        inf.warnings = validate_inferred(inf, cand)
+
+    yaml_fields = [field_to_yaml_from_inferred(inf) for inf in inferred_list]
+    report = [inference_entry(inf) for inf in inferred_list]
+    warnings = validate_all(inferred_list, candidates)
+    return yaml_fields, report, warnings
 
 
 def field_to_yaml(field: dict[str, Any]) -> dict[str, Any]:
-    """Convert Agent field DSL dict to variant YAML field entry."""
-    field_type = field.get("type", "uint8")
-    out: dict[str, Any] = {"name": field["name"], "type": field_type}
+    """Convert Agent field DSL dict to variant YAML field entry (via TypeInferencer)."""
+    candidate = candidate_from_agent_field(field)
+    inferred = infer_field(candidate)
+    inferred.warnings = validate_inferred(inferred, candidate)
+    return field_to_yaml_from_inferred(inferred)
 
-    for key in _SCALAR_KEYS:
-        if key in field and field[key] not in (None, ""):
-            yaml_key = "desc" if key == "description" else key
-            out[yaml_key] = field[key]
 
-    if field_type == "struct" and isinstance(field.get("fields"), list):
-        out["fields"] = [field_to_yaml(child) for child in field["fields"]]
+def field_to_yaml_from_inferred(inferred: InferredField) -> dict[str, Any]:
+    """Emit variant YAML field from InferredField — sole write path for inferred scalars."""
+    if inferred.semantic_type == "array":
+        return _emit_array(inferred)
+
+    out: dict[str, Any] = {"name": inferred.name}
+    codec = dict(inferred.codec)
+
+    if inferred.desc:
+        out["desc"] = inferred.desc
+
+    if inferred.semantic_type == "object" and codec.get("type") == "struct":
+        out["type"] = "struct"
+        if inferred.subfields:
+            out["fields"] = [field_to_yaml_from_inferred(child) for child in inferred.subfields]
         return out
 
-    if field_type != "array":
-        return out
+    field_type = codec.pop("type", "uint8")
+    out["type"] = field_type
 
-    count_ref = field.get("count_ref")
-    if count_ref:
-        out["count_ref"] = count_ref
-
-    item_type = field.get("item_type")
-    if item_type:
-        out["item_type"] = item_type
-
-    item_name = field.get("item_name")
-    if item_name:
-        out["item_name"] = item_name
-
-    item_params = _array_item_params(field, item_type or "")
-    if item_params:
-        out["item_params"] = item_params
+    for key in _ENUM_KEYS + _SCALAR_KEYS:
+        if key in codec and codec[key] not in (None, ""):
+            out[key] = codec[key]
 
     return out
 
 
-def _array_item_params(field: dict[str, Any], item_type: str) -> dict[str, Any]:
-    params = dict(field.get("item_params") or {})
+def _emit_array(inferred: InferredField) -> dict[str, Any]:
+    codec = inferred.codec
+    out: dict[str, Any] = {
+        "name": inferred.name,
+        "type": "array",
+    }
+    if inferred.desc:
+        out["desc"] = inferred.desc
+    if codec.get("count_ref"):
+        out["count_ref"] = codec["count_ref"]
+    if codec.get("item_name"):
+        out["item_name"] = codec["item_name"]
 
-    if item_type == "struct":
-        sub_fields = field.get("item_fields") or params.get("fields")
-        if isinstance(sub_fields, list) and sub_fields:
-            params["fields"] = [field_to_yaml(child) for child in sub_fields]
-        return params
+    item_type = codec.get("item_type", "uint8")
+    out["item_type"] = item_type
 
-    for key in _ARRAY_ITEM_SCALAR_KEYS:
-        if key in field and field[key] not in (None, "") and key not in params:
-            params[key] = field[key]
-    return params
+    if inferred.subfields and item_type == "struct":
+        struct_inf = inferred.subfields[0]
+        inner = struct_inf.subfields or [struct_inf]
+        out["item_params"] = {
+            "fields": [field_to_yaml_from_inferred(child) for child in inner],
+        }
+    elif inferred.subfields:
+        child = inferred.subfields[0]
+        params = {k: v for k, v in child.codec.items() if k != "type"}
+        if params:
+            out["item_params"] = params
+    elif codec.get("item_params"):
+        out["item_params"] = dict(codec["item_params"])
+
+    return out
 
 
 def missing_field_metadata(fields: list[dict[str, Any]], *, prefix: str = "fields") -> list[str]:

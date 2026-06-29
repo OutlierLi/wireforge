@@ -28,6 +28,15 @@ class TestUIntCodec:
         c.encode(f, 0x1234, w, BuildContext())
         assert w.bytes() == b'\x34\x12'
 
+    def test_uint24_le(self):
+        c = UIntCodec(3, "little")
+        f = FieldNode(id="x", name="x", type_ref="uint24_le")
+        w = ByteWriter()
+        c.encode(f, 0x010203, w, BuildContext())
+        assert w.bytes() == b'\x03\x02\x01'
+        r = DecodeReader(w.bytes(), 0)
+        assert c.decode(f, r, DecodeContext()) == 0x010203
+
 
 class TestBcdCodec:
     def test_decode(self):

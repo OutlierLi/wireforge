@@ -34,10 +34,10 @@ INPUT_SCHEMA: list[dict[str, Any]] = [
     {"name": "description", "type": "string", "required": True, "desc": "报文中文描述，写入 variant description"},
     {"name": "dir", "type": "enum", "required": False, "values": ["downlink", "uplink", "0", "1"], "desc": "传输方向；AFN00 不需要"},
     {"name": "add", "type": "bool", "required": False, "desc": "是否带地址域；AFN00–07 均必填"},
-    {"name": "fields", "type": "array", "required": False, "desc": "用户数据区字段；支持 struct、array+count_ref+item_type(struct|bcd|uint8...)，见 FIELD_DSL_EXAMPLES"},
+    {"name": "fields", "type": "array", "required": False, "desc": "用户数据区字段；提供 evidence（取值表/单位/子字段），勿按字节宽度选 type；见 FIELD_DSL_EXAMPLES"},
     {"name": "pair", "type": "bool", "required": False, "default": False, "desc": "是否同时生成 request+response 两条 variant"},
     {"name": "resp_description", "type": "string", "required": False, "desc": "响应报文描述（pair=true 时）"},
-    {"name": "resp_fields", "type": "array", "required": False, "desc": "响应 payload 字段（pair=true 时）"},
+    {"name": "resp_fields", "type": "array", "required": False, "desc": "响应 payload 字段（pair=true 时）；同样使用 evidence 驱动，由 TypeInferencer 推断 semantic_type"},
     {"name": "confirm", "type": "bool", "required": False, "desc": "true 确认写入 YAML 并编译"},
 ]
 

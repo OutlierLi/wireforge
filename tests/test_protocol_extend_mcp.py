@@ -26,6 +26,7 @@ HEX_PREVIEW_DI = "E80304E1"
 HEX_NEW_DI_PAIR = "E80304F2"
 HEX_NEW_DI_STRUCT = "E80304F3"
 HEX_EXISTING_DI = "E8000301"
+HEX_NEW_DI_EVIDENCE = "E80304F5"
 
 
 @pytest.fixture
@@ -315,6 +316,9 @@ def test_extend_params_includes_field_dsl_examples():
 
 
 # ── 冲突 / 不支持 ─────────────────────────────────────────────────────────
+
+
+def test_extend_duplicate_di_downlink_rejected():
     result = run_protocol_extend(
         f"扩展 AFN03 DI={HEX_EXISTING_DI} 查询厂商",
         user_input={
@@ -575,3 +579,64 @@ def test_mcp_stdio_json_lines():
     response = json.loads(output.getvalue().decode("utf-8"))
     text = response["result"]["content"][0]["text"]
     assert "WAITING_INPUT" in text or "params" in text
+
+
+def test_extend_evidence_driven_device_type_enum(real_ext_dir):
+    """Evidence with value table → enum in YAML, not bare uint8."""
+    preview = _params_step(
+        f"扩展 AFN03 DI={HEX_NEW_DI_EVIDENCE} 查询设备类型",
+        dir="downlink",
+        add=False,
+        description="查询设备类型",
+        fields=[{
+            "name": "device_type",
+            "desc": "设备类型",
+            "bytes": 2,
+            "type": "uint8",
+            "evidence": [
+                "00H：单相表",
+                "01H：三相表",
+                "02H：采集器",
+            ],
+        }],
+    )
+    assert preview.get("inference_report") or preview["need"] in ("confirm", "field_types")
+    report = preview.get("inference_report") or []
+    if report:
+        assert report[0]["semantic_type"] == "enum"
+    assert preview["need"] in ("confirm", "field_types")
+    assert "type: enum" in preview["yaml_preview"]
+    assert "单相表" in preview["yaml_preview"]
+    assert "type: uint8" not in preview["yaml_preview"]
+
+    result = _confirm(preview["run_id"])
+    assert result["state"] == "SUCCEEDED"
+    written = list(REAL_EXT_DIR.glob(f"*_{HEX_NEW_DI_EVIDENCE}_*.yaml"))
+    real_ext_dir.append(written[0])
+    doc = yaml.safe_load(written[0].read_text(encoding="utf-8"))
+    field = doc["variants"][0]["body"]["fields"][0]
+    assert field["type"] == "enum"
+    assert field["values"][0] == "单相表"
+
+
+def test_extend_unknown_field_type_warning(ext_dir, monkeypatch):
+    monkeypatch.setattr(yaml_writer, "EXTENSIONS_DIR", ext_dir)
+    first = run_protocol_extend(f"扩展 AFN03 DI=E80304F6 未知字段")
+    second = run_protocol_extend(
+        run_id=first["run_id"],
+        user_input={
+            "dir": "downlink",
+            "add": False,
+            "description": "未知字段测试",
+            "fields": [{"name": "mystery", "desc": "无证据字段"}],
+        },
+    )
+    assert second["need"] in ("field_types", "confirm")
+    warnings = second.get("field_type_warnings") or []
+    report = second.get("inference_report") or []
+    if second["need"] == "field_types":
+        assert report and report[0]["semantic_type"] == "unknown"
+        assert warnings
+    third = run_protocol_extend(run_id=first["run_id"], user_input={"confirm": True})
+    assert third["state"] in ("SUCCEEDED", "WAITING_INPUT", "FAILED")
+

@@ -245,11 +245,18 @@ Use `protocol_extend_run` when the user wants to **add a new CSG 2016 message va
     "add": false,
     "description": "查询通信延时时长",
     "fields": [
-      {"name": "timeout", "type": "uint16_le", "desc": "超时(秒)"}
+      {
+        "name": "device_type",
+        "desc": "设备类型",
+        "bytes": 2,
+        "evidence": ["00H：单相表", "01H：三相表", "02H：采集器"]
+      }
     ]
   }
 }
 ```
+
+**TypeInferencer 铁律**：不要根据字节长度决定 semantic_type。优先提供 `evidence`（取值表/开关/单位/子字段）。`uint8/u16/bytes` 只能出现在 codec 层，由程序推断。`bool` 语义落地为 `enum`（2 值）；推断为 `unknown` 时返回 `field_type_warnings`，可补 `semantic_override` 或直接 `confirm`。
 
 **结构体数组**（`count_ref` 必须引用同列表中靠前字段名）：
 
@@ -268,7 +275,7 @@ Use `protocol_extend_run` when the user wants to **add a new CSG 2016 message va
         "desc": "节点地址+设备类型列表",
         "item_fields": [
           {"name": "address", "type": "bcd", "length": 6, "byte_order": "little", "desc": "地址"},
-          {"name": "device_type", "type": "uint8", "desc": "设备类型"}
+          {"name": "device_type", "desc": "设备类型", "evidence": ["00H：单相表", "01H：三相表"]}
         ]
       }
     ]
@@ -276,7 +283,7 @@ Use `protocol_extend_run` when the user wants to **add a new CSG 2016 message va
 }
 ```
 
-3. MCP returns `need: "confirm"` with `yaml_preview`. After user approval:
+3. MCP returns `need: "confirm"` (or `need: "field_types"` when unknown fields need review) with `yaml_preview` and `inference_report`. After user approval:
 
 ```json
 {"run_id": "<run_id>", "user_input": {"confirm": true}}

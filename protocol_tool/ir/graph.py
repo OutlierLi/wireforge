@@ -270,6 +270,8 @@ def _field_size(field_node: FieldNode) -> int | None:
         return 1
     if codec in {"uint16", "uint16_le", "uint16_be", "int16", "crc16_modbus", "crc16_ccitt"}:
         return 2
+    if codec in {"uint24_le", "uint24_be"}:
+        return 3
     if codec in {"uint32", "uint32_le", "uint32_be", "int32"}:
         return 4
     value = field_node.params.get("value")

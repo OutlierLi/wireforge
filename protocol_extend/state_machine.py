@@ -20,7 +20,7 @@ from protocol_extend.schema import (
     normalize_protocol,
     partial_with_defaults,
 )
-from protocol_extend.fields import FIELD_DSL_EXAMPLES
+from protocol_extend.fields import FIELD_DSL_EXAMPLES, process_agent_fields
 from protocol_extend.validator import find_conflicts
 from protocol_extend import yaml_writer
 from protocol_extend.map_verify import (
@@ -133,6 +133,17 @@ def _advance(record: ExtendRecord, user_input: dict[str, Any]) -> None:
         record.results["conflicts"] = conflicts[:5]
         return
 
+    inference_report, field_type_warnings = _run_inference(record, spec)
+
+    if (
+        field_type_warnings
+        and _has_unknown_warnings(inference_report)
+        and not user_input.get("confirm")
+        and record.waiting_input.get("need") != "field_types"
+    ):
+        _wait_field_types(record, spec, inference_report, field_type_warnings)
+        return
+
     yaml_text = yaml_writer.render_extension_yaml(spec, record.raw_input)
     rel_path = f"protocol_tool/protocols/csg_2016/variants/extensions/{yaml_writer.extension_filename(spec)}"
     record.yaml_preview = yaml_text
@@ -148,6 +159,8 @@ def _advance(record: ExtendRecord, user_input: dict[str, Any]) -> None:
             "yaml_preview": yaml_text,
             "extension_file": rel_path,
             "variant_ids": [v["id"] for v in yaml_writer.build_variants(spec)],
+            "inference_report": inference_report,
+            "field_type_warnings": field_type_warnings,
         }
         return
 
@@ -254,6 +267,62 @@ def _store_spec(record: ExtendRecord, spec: ExtensionSpec) -> None:
         record.spec["resp_fields"] = spec.resp_fields
 
 
+def _wait_field_types(
+    record: ExtendRecord,
+    spec: ExtensionSpec,
+    inference_report: list[dict[str, Any]],
+    field_type_warnings: list[str],
+) -> None:
+    yaml_text = yaml_writer.render_extension_yaml(spec, record.raw_input)
+    rel_path = f"protocol_tool/protocols/csg_2016/variants/extensions/{yaml_writer.extension_filename(spec)}"
+    record.yaml_preview = yaml_text
+    record.extension_file = rel_path
+    record.state = "WAITING_INPUT"
+    record.waiting_input = {
+        "field": "field_types",
+        "need": "field_types",
+        "message": (
+            "部分字段 semantic_type 未能自动推断（unknown）。"
+            "可补充 evidence / semantic_override，或直接 confirm=true 继续。"
+        ),
+        "inference_report": inference_report,
+        "field_type_warnings": field_type_warnings,
+        "yaml_preview": yaml_text,
+        "extension_file": rel_path,
+        "variant_ids": [v["id"] for v in yaml_writer.build_variants(spec)],
+        "field_dsl_examples": FIELD_DSL_EXAMPLES,
+    }
+    _store_spec(record, spec)
+
+
+def _run_inference(
+    record: ExtendRecord,
+    spec: ExtensionSpec,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    report: list[dict[str, Any]] = []
+    warnings: list[str] = []
+
+    if spec.fields:
+        _, field_report, field_warnings = process_agent_fields(spec.fields)
+        report.extend(field_report)
+        warnings.extend(field_warnings)
+
+    if spec.resp_fields:
+        _, resp_report, resp_warnings = process_agent_fields(spec.resp_fields)
+        for entry in resp_report:
+            entry = dict(entry)
+            entry["name"] = f"resp.{entry['name']}"
+            report.append(entry)
+        warnings.extend(resp_warnings)
+
+    record.results["inference_report"] = report
+    return report, warnings
+
+
+def _has_unknown_warnings(inference_report: list[dict[str, Any]]) -> bool:
+    return any(entry.get("semantic_type") == "unknown" for entry in inference_report)
+
+
 def _wait_params(record: ExtendRecord, spec: ExtensionSpec, missing: list[str]) -> None:
     record.state = "WAITING_INPUT"
     record.waiting_input = {
@@ -326,6 +395,18 @@ def _public_result(record: ExtendRecord, *, debug: bool = False) -> dict[str, An
             out["yaml_preview"] = wi.get("yaml_preview") or record.yaml_preview
             out["extension_file"] = wi.get("extension_file") or record.extension_file
             out["variant_ids"] = wi.get("variant_ids") or []
+            if wi.get("inference_report"):
+                out["inference_report"] = wi["inference_report"]
+            if wi.get("field_type_warnings"):
+                out["field_type_warnings"] = wi["field_type_warnings"]
+        elif need == "field_types":
+            out["inference_report"] = wi.get("inference_report") or []
+            out["field_type_warnings"] = wi.get("field_type_warnings") or []
+            out["yaml_preview"] = wi.get("yaml_preview") or record.yaml_preview
+            out["extension_file"] = wi.get("extension_file") or record.extension_file
+            out["variant_ids"] = wi.get("variant_ids") or []
+            out["field_dsl_examples"] = wi.get("field_dsl_examples") or FIELD_DSL_EXAMPLES
+            out["message"] = wi.get("message") or ""
     elif record.state == "SUCCEEDED":
         out["extension_file"] = record.results.get("extension_file") or record.extension_file
         out["compile_ok"] = record.results.get("compile_ok", True)
