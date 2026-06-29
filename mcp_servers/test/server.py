@@ -26,24 +26,27 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "test.validate",
-        "description": "只做 TestPlan 结构校验，不连接串口。",
+        "description": "TestPlan 结构校验 + 各 build 步骤 route input_schema 校验（不连接串口）。",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "plan": {"type": "object", "description": "inline TestPlan"},
                 "file": {"type": "string", "description": "TestPlan YAML 文件路径"},
+                "vars": {"type": "object", "description": "变量覆盖（用于 build schema 校验）"},
+                "skip_build_check": {"type": "boolean", "description": "跳过 build/route schema 校验"},
             },
         },
     },
     {
         "name": "test.dry_run",
-        "description": "展开变量、检查 action、生成 resolved_plan，不执行。",
+        "description": "展开变量、检查 action、build/route schema 校验、生成 resolved_plan，不执行。",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "plan": {"type": "object"},
                 "file": {"type": "string"},
                 "vars": {"type": "object", "description": "变量覆盖"},
+                "skip_build_check": {"type": "boolean", "description": "跳过 build/route schema 校验"},
             },
         },
     },
@@ -64,6 +67,7 @@ TOOLS: list[dict[str, Any]] = [
                         "stop_on_error": {"type": "boolean"},
                         "vars": {"type": "object"},
                         "report": {"type": "string"},
+                        "skip_build_check": {"type": "boolean"},
                     },
                 },
             },
@@ -156,12 +160,15 @@ def call_tool(name: str, arguments: dict[str, Any]) -> Any:
         return RunCommand.validate(
             plan=arguments.get("plan"),
             file=arguments.get("file"),
+            vars=as_object(arguments.get("vars")) if arguments.get("vars") else None,
+            skip_build_check=bool(arguments.get("skip_build_check", False)),
         )
     if name == "test.dry_run":
         return RunCommand.dry_run(
             plan=arguments.get("plan"),
             file=arguments.get("file"),
             vars=as_object(arguments.get("vars")) if arguments.get("vars") else None,
+            skip_build_check=bool(arguments.get("skip_build_check", False)),
         )
     if name == "test.run":
         return RunCommand.run(
@@ -210,11 +217,14 @@ Then use this test MCP to validate and run the plan.
 
 ### Phase 2 — test MCP (this server)
 
-1. `test.schema` — template, examples, conventions, protocol paths
-2. `test.validate` — fix schema errors
-3. `test.dry_run` — fix variable/action errors (optional `vars` override)
-4. `test.run` — execute; read compact summary
+1. `test.schema` — template, examples, build_field_types, workflow
+2. `test.validate` — YAML structure + **build/route schema check** per build step
+3. `test.dry_run` — resolve vars + build schema check on resolved args
+4. `test.run` — execute (also runs build check unless `options.skip_build_check`)
 5. On failure: `test.read_report` with `step_id`
+
+Build field names must come from protocol MCP `input_schema`. On mismatch, errors include
+`unknown_fields`, `missing_required`, and `input_schema` for that step.
 
 ## Serial port
 
@@ -241,7 +251,7 @@ Then use this test MCP to validate and run the plan.
 - `auto_rule.then`: dict format with `command` and `args.hex`
 - Repeat steps: `action: loop` with `args.over` (list) or `args.count`
 - Conditional steps: `action: if` with `args.when` (`eq` / `not` / `all`)
-- Arithmetic: `action: expr` or `${qi * 32 + 1}` in values
+- Arithmetic: `action: expr` or `${qi * 32 + 1}`; count loop without `index_as` auto-injects `i` and `qi`
 - Composite vars: `${batches.0.addrs[1]}`, `${device.port}`
 - dry_run adds `loop_preview` when loop bounds are statically known (max 32 iterations)
 

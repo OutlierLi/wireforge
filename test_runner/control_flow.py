@@ -6,6 +6,7 @@ from typing import Any
 from test_runner.conditions import evaluate_when
 from test_runner.context import RunContext
 from test_runner.error_codes import RUN_TIMEOUT, RunError, classify_step_failure
+from test_runner.loop_helpers import loop_index_bindings, loop_temp_index_keys
 from test_runner.step_executor import StepExecutor, StepRecord
 from test_runner.variables import VariableError, resolve_value
 
@@ -86,6 +87,7 @@ def _execute_loop_step(
     scope = executor._scope(ctx)
     item_var = str(args.get("as") or args.get("item_as") or "item")
     index_var = args.get("index_as")
+    count_mode = "count" in args
 
     iterations: list[tuple[int, Any | None]] = []
     if "over" in args:
@@ -109,15 +111,11 @@ def _execute_loop_step(
     loop_result: dict[str, Any] = {"iterations": len(iterations)}
 
     outer = dict(ctx.vars)
-    loop_temp_keys = {item_var}
-    if index_var:
-        loop_temp_keys.add(str(index_var))
+    loop_temp_keys = {item_var, *loop_temp_index_keys(index_var, count_mode=count_mode)}
     last_body_vars: dict[str, Any] = {}
 
     for iter_index, (i, item) in enumerate(iterations):
-        loop_scope = {item_var: item}
-        if index_var:
-            loop_scope[str(index_var)] = i
+        loop_scope = {item_var: item, **loop_index_bindings(i, index_var, count_mode=count_mode)}
 
         ctx.vars.clear()
         ctx.vars.update(outer)

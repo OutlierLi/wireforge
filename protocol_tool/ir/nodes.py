@@ -58,6 +58,7 @@ class FieldNode:
         - const_repeat: {"value": 0xFE, "min": 0, "max": 4}
         - uint*: {"byte_order": "little"}
         - bcd: {"length": 6, "byte_order": "little", "canonical_format": "decimal_string"}
+        - ascii: {"length": N, "byte_order": "little"} (default, same as bcd/hex)
         - bitset: {"bits": [{"name": "func", "offset": 0, "width": 5}, ...]}
         - checksum: {"algorithm": "sum8", "cover": {"start": "control", "end": "data"}}
         - routed_payload: {"router": "main", "length_from": "length"}

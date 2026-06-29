@@ -14,12 +14,18 @@ from test_runner.context import RunContext, create_run_id
 from test_runner.error_codes import (
     INTERNAL_ERROR,
     KNOWN_ACTIONS,
+    PLAN_BUILD_SCHEMA_MISMATCH,
     PLAN_SCHEMA_INVALID,
     RUN_TIMEOUT,
     RunError,
     classify_exception,
     classify_step_failure,
     extract_diagnostics,
+)
+from test_runner.build_schema_check import (
+    build_field_types_catalog,
+    check_plan_builds,
+    workflow_catalog,
 )
 from test_runner.plan_loader import PlanError, load_plan, load_plan_dict
 from test_runner.plan_resolver import dry_resolve, resolve_plan_for_report
@@ -40,6 +46,7 @@ class RunOptions:
     stop_on_error: bool = True
     vars: dict[str, Any] = field(default_factory=dict)
     report: str | None = None
+    skip_build_check: bool = False
 
 
 class RunCommand:
@@ -134,8 +141,8 @@ class RunCommand:
                 "repeat_steps": "use action: loop with args.over or args.count",
                 "conditional_steps": "use action: if with args.when (eq/not/all)",
                 "composite_vars": "arrays and structs in vars; paths like batches.0.addrs[1]",
-                "expressions": "use action: expr or ${i * 32} for arithmetic (+ - * // %)",
-                "loop_scope": "each loop iteration is isolated; last iteration vars remain after loop",
+                "expressions": "use action: expr or ${qi * 32}; count loop without index_as auto-injects i/qi",
+                "loop_scope": "each loop iteration is isolated; count loop defaults index vars i and qi",
                 "dry_run_loop_preview": "dry_run adds loop_preview with expanded steps when over/count is static",
             },
             "prerequisite": {
@@ -149,15 +156,29 @@ class RunCommand:
                     "missing protocol_map (run bootstrap)",
                 ],
             },
+            "workflow": workflow_catalog(),
+            "build_field_types": build_field_types_catalog(),
         }
 
     @staticmethod
-    def validate(*, plan: dict[str, Any] | None = None, file: str | None = None) -> dict[str, Any]:
+    def validate(
+        *,
+        plan: dict[str, Any] | None = None,
+        file: str | None = None,
+        vars: dict[str, Any] | None = None,
+        skip_build_check: bool = False,
+    ) -> dict[str, Any]:
         try:
             loaded = _load_raw(plan=plan, file=file)
         except PlanError as exc:
             return {"ok": False, "errors": [RunError(PLAN_SCHEMA_INVALID, str(exc)).to_dict()]}
-        return validate_plan(deepcopy(loaded))
+        result = validate_plan(deepcopy(loaded))
+        if not result["ok"]:
+            return result
+        if skip_build_check:
+            return result
+        build_result = check_plan_builds(loaded, vars=vars)
+        return _merge_build_check(result, build_result)
 
     @staticmethod
     def dry_run(
@@ -165,12 +186,26 @@ class RunCommand:
         plan: dict[str, Any] | None = None,
         file: str | None = None,
         vars: dict[str, Any] | None = None,
+        skip_build_check: bool = False,
     ) -> dict[str, Any]:
-        validation = RunCommand.validate(plan=plan, file=file)
+        validation = RunCommand.validate(
+            plan=plan,
+            file=file,
+            vars=vars,
+            skip_build_check=skip_build_check,
+        )
         if not validation["ok"]:
             return validation
         loaded = _load_input(plan=plan, file=file)
-        return dry_resolve(loaded, vars)
+        resolved = dry_resolve(loaded, vars)
+        if skip_build_check:
+            return resolved
+        build_result = check_plan_builds(
+            loaded,
+            vars=vars,
+            resolved_plan=resolved.get("resolved_plan") or loaded,
+        )
+        return _merge_build_check(resolved, build_result)
 
     @staticmethod
     def run(
@@ -194,6 +229,18 @@ class RunCommand:
                 step_id=validation["errors"][0].get("step_id", ""),
             )
             return _error_response(err)
+
+        if not opts.skip_build_check:
+            build_result = check_plan_builds(loaded, vars=opts.vars)
+            if not build_result["ok"]:
+                err_dict = build_result["errors"][0]
+                err = RunError(
+                    err_dict["code"],
+                    err_dict["message"],
+                    step_id=err_dict.get("step_id", ""),
+                    details=err_dict.get("details") or {},
+                )
+                return _error_response(err)
 
         plan_name = str(loaded["name"])
         now = datetime.now().astimezone()
@@ -316,6 +363,19 @@ def run_test_plan(
     return result
 
 
+def _merge_build_check(base: dict[str, Any], build_result: dict[str, Any]) -> dict[str, Any]:
+    out = dict(base)
+    out["build_checks"] = build_result.get("build_checks") or []
+    if build_result.get("warnings"):
+        out["build_warnings"] = build_result["warnings"]
+    if not build_result.get("ok"):
+        out["ok"] = False
+        errors = list(out.get("errors") or [])
+        errors.extend(build_result.get("errors") or [])
+        out["errors"] = errors
+    return out
+
+
 def _load_input(*, plan: dict[str, Any] | None, file: str | None) -> dict[str, Any]:
     if plan is not None:
         return load_plan_dict(plan)
@@ -355,6 +415,7 @@ def _normalize_options(options: RunOptions | dict[str, Any] | None) -> RunOption
         stop_on_error=bool(options.get("stop_on_error", True)),
         vars=dict(options.get("vars") or {}),
         report=options.get("report"),
+        skip_build_check=bool(options.get("skip_build_check", False)),
     )
 
 

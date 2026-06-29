@@ -157,6 +157,89 @@ def test_expr_action(tmp_path):
     assert result["ok"] is True
 
 
+def test_loop_count_default_qi_index(tmp_path):
+    """count loop without index_as injects qi/i for batch arithmetic."""
+    plan = {
+        "version": 1,
+        "name": "loop_qi_default",
+        "steps": [
+            {
+                "id": "loop",
+                "action": "loop",
+                "args": {"count": 3},
+                "steps": [
+                    {
+                        "id": "calc",
+                        "action": "expr",
+                        "args": {"name": "batch_offset", "expr": "qi * 32"},
+                    },
+                ],
+            },
+            {
+                "id": "check",
+                "action": "assert",
+                "args": {"expect": {"batch_offset": 64}},
+            },
+        ],
+    }
+    path = tmp_path / "loop_qi_default.yaml"
+    path.write_text(yaml.safe_dump(plan, allow_unicode=True), encoding="utf-8")
+    result = RunCommand.run(file=str(path), options=RunOptions(report=str(tmp_path / "report_qi")))
+    assert result["ok"] is True
+
+
+def test_dry_run_count_loop_resolves_qi_expr():
+    plan = {
+        "version": 1,
+        "name": "dry_qi",
+        "steps": [
+            {
+                "id": "loop_batches",
+                "action": "loop",
+                "args": {"count": 2},
+                "steps": [
+                    {
+                        "id": "calc",
+                        "action": "expr",
+                        "args": {"name": "off", "expr": "${qi * 32}"},
+                    },
+                ],
+            },
+        ],
+    }
+    result = RunCommand.dry_run(plan=plan)
+    assert result["ok"] is True
+    preview = result["resolved_plan"]["steps"][0]["loop_preview"]
+    assert preview["steps"][0]["args"]["expr"] == 0
+    assert preview["steps"][1]["args"]["expr"] == 32
+
+
+def test_loop_explicit_index_as_disables_qi_alias(tmp_path):
+    plan = {
+        "version": 1,
+        "name": "loop_no_qi",
+        "steps": [
+            {
+                "id": "loop",
+                "action": "loop",
+                "args": {"count": 2, "index_as": "batch_idx"},
+                "steps": [
+                    {
+                        "id": "calc",
+                        "action": "expr",
+                        "args": {"name": "off", "expr": "batch_idx * 32"},
+                    },
+                ],
+            },
+            {"id": "check", "action": "assert", "args": {"expect": {"off": 32}}},
+        ],
+    }
+    path = tmp_path / "loop_no_qi.yaml"
+    path.write_text(yaml.safe_dump(plan, allow_unicode=True), encoding="utf-8")
+    result = RunCommand.run(file=str(path), options=RunOptions(report=str(tmp_path / "report_no_qi")))
+    assert result["ok"] is True
+
+
 def test_loop_iteration_scope_isolated(tmp_path):
     plan = {
         "version": 1,

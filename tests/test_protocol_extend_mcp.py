@@ -254,6 +254,18 @@ def test_extend_array_primitive_fields_to_yaml():
     assert yaml_fields[1]["item_params"]["length"] == 6
 
 
+def test_extend_ascii_field_keeps_byte_order():
+    yaml_field = field_to_yaml({
+        "name": "vendor_code",
+        "type": "ascii",
+        "length": 2,
+        "byte_order": "little",
+        "desc": "厂商代码",
+    })
+    assert yaml_field["type"] == "ascii"
+    assert yaml_field["byte_order"] == "little"
+
+
 def test_extend_array_missing_count_ref():
     first = run_protocol_extend(f"扩展 AFN05 DI=E80505A0")
     second = run_protocol_extend(

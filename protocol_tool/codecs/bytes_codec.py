@@ -18,7 +18,7 @@ class HexCodec(FieldCodec):
     Parameters (from FieldNode.params):
         length: byte length (required)
         separator: character between hex bytes (default " ")
-        byte_order: "little" / "reverse" → reverse bytes to logical order
+        byte_order: default ``little``; ``big`` / ``big_endian`` keep wire order
     """
 
     def decode(
@@ -96,6 +96,7 @@ class AsciiCodec(FieldCodec):
 
     Parameters (from FieldNode.params):
         length: byte length (required)
+        byte_order: default ``little`` (reverse on wire); ``big`` keeps native order
     """
 
     def decode(
@@ -108,6 +109,9 @@ class AsciiCodec(FieldCodec):
         if length is None:
             raise ValueError(f"ASCII field {field.name!r} requires explicit length")
         raw = reader.read(length)
+        bo = field.params.get("byte_order", "little")
+        if bo not in ("big", "big_endian"):
+            raw = raw[::-1]
         return raw.decode("ascii", errors="replace")
 
     def encode(
@@ -117,5 +121,17 @@ class AsciiCodec(FieldCodec):
         writer: ByteWriter,
         context: BuildContext,
     ) -> None:
+        length = self.field_length(field, context)
         text = str(value)
-        writer.write(text.encode("ascii", errors="replace"))
+        raw = text.encode("ascii", errors="replace")
+        if length is not None:
+            if len(raw) > length:
+                raise ValueError(
+                    f"ASCII value too long for field {field.name!r}: "
+                    f"{len(raw)} bytes, max {length}"
+                )
+            raw = raw.ljust(length, b"\x00")
+        bo = field.params.get("byte_order", "little")
+        if bo not in ("big", "big_endian"):
+            raw = raw[::-1]
+        writer.write(raw)

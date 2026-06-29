@@ -21,10 +21,12 @@ python3 scripts/python/wireforge_test_mcp_server.py
 ## Test MCP Flow
 
 1. Agent generates a TestPlan (version 1, name, steps).
-2. Call `test.validate` with inline `plan` or `file` — fix schema/action errors before running.
-3. Call `test.dry_run` — fix unresolved variables or action mapping issues.
-4. Call `test.run` with `plan` or `file` and optional `options` (`timeout_ms`, `dry_run`, `vars`, `report`).
+2. Call `test.validate` with inline `plan` or `file` — fix schema/action errors; each `build` step is checked against `/route` `input_schema` (`build_checks`, `PLAN_BUILD_SCHEMA_MISMATCH` on mismatch).
+3. Call `test.dry_run` — resolve variables and re-check build args against route schema (stricter than validate alone).
+4. Call `test.run` with `plan` or `file` and optional `options` (`timeout_ms`, `dry_run`, `vars`, `report`, `skip_build_check` for debug only).
 5. On failure, call `test.read_report` with `report_dir` and optional `step_id` for diagnostics.
+
+Call `test.schema` for `build_field_types` (how to pass bcd/array/struct in YAML) and `workflow` order.
 
 Agent reads `ok` / `status` / `error` from `test.run` — do not infer pass/fail from logs. Full logs are under `log/run_reports/<run_id>/` (or custom `report` path).
 
@@ -72,7 +74,7 @@ vars:
 - `auto_rule.match` 用 build 下行帧的 DI hex 片段，不用宽泛 regex
 - 重复步骤用 `loop`，分支用 `if`（见 TEST_PLAN_AGENT.md）
 - 数组/结构体 vars 用 `${batch.addrs.0}`、`${device.port}` 访问
-- 算术用 `expr` action 或 `${qi * 32}` 表达式
+- 算术用 `expr` action 或 `${qi * 32}`；`count` loop 未写 `index_as` 时自动注入 `i`/`qi`
 
 - 模版：[`database/templates/test_plan_mock_auto.yaml`](database/templates/test_plan_mock_auto.yaml)
 - loop/if 示例：[`database/runs/loop_batch_demo.yaml`](database/runs/loop_batch_demo.yaml)

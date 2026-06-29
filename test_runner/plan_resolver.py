@@ -4,6 +4,7 @@ from copy import deepcopy
 from typing import Any
 
 from test_runner.error_codes import PLAN_VAR_UNRESOLVED, RunError
+from test_runner.loop_helpers import loop_index_bindings
 from test_runner.step_executor import StepExecutor
 from test_runner.variables import VariableError, resolve_value
 
@@ -96,6 +97,7 @@ def _build_loop_preview(
 
     item_var = str(args.get("as") or args.get("item_as") or "item")
     index_var = args.get("index_as")
+    count_mode = "count" in args
     total = len(iterations)
     preview_iterations = iterations[:max_expand]
     preview_steps: list[dict[str, Any]] = []
@@ -103,8 +105,7 @@ def _build_loop_preview(
     for iter_index, (i, item) in enumerate(preview_iterations):
         iter_scope = dict(scope)
         iter_scope[item_var] = item
-        if index_var:
-            iter_scope[str(index_var)] = i
+        iter_scope.update(loop_index_bindings(i, index_var, count_mode=count_mode))
 
         class _IterCtx:
             vars = iter_scope

@@ -3,7 +3,7 @@ from protocol_tool.codecs.uint import UIntCodec
 from protocol_tool.codecs.bcd import BcdCodec
 from protocol_tool.codecs.bitset import BitSetCodec
 from protocol_tool.codecs.const import ConstCodec, ConstRepeatCodec
-from protocol_tool.codecs.bytes_codec import HexCodec
+from protocol_tool.codecs.bytes_codec import HexCodec, AsciiCodec
 from protocol_tool.codecs.checksum import ChecksumCodec, _sum8, _crc16_modbus
 from protocol_tool.codecs.base import ByteWriter
 from protocol_tool.ir.nodes import FieldNode
@@ -108,6 +108,29 @@ class TestHexCodec:
         f = FieldNode(id="x", name="x", type_ref="hex", params={"byte_order": "little"}, length=4)
         r = DecodeReader(bytes([0x01, 0x00, 0x00, 0xE8]), 0)
         assert c.decode(f, r, DecodeContext()) == "E8 00 00 01"
+
+
+class TestAsciiCodec:
+    def test_default_little_endian_roundtrip(self):
+        c = AsciiCodec()
+        f = FieldNode(id="x", name="x", type_ref="ascii", length=2)
+        w = ByteWriter()
+        c.encode(f, "AB", w, BuildContext())
+        assert w.bytes() == b"BA"
+        r = DecodeReader(w.bytes(), 0)
+        assert c.decode(f, r, DecodeContext()) == "AB"
+
+    def test_big_endian_explicit(self):
+        c = AsciiCodec()
+        f = FieldNode(
+            id="x", name="x", type_ref="ascii",
+            params={"byte_order": "big"}, length=2,
+        )
+        w = ByteWriter()
+        c.encode(f, "AB", w, BuildContext())
+        assert w.bytes() == b"AB"
+        r = DecodeReader(bytes([0x41, 0x42]), 0)
+        assert c.decode(f, r, DecodeContext()) == "AB"
 
 
 class TestChecksum:

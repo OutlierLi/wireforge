@@ -60,8 +60,11 @@ class StepExecutor:
                     if not soft:
                         raise
         nested = resolved.get("steps")
-        child_soft = soft or action in {"loop", "if"}
-        if action in {"loop", "if"} and isinstance(nested, list):
+        child_soft = soft or action == "if"
+        if action == "loop" and isinstance(nested, list):
+            # Body steps run in per-iteration scope; do not resolve with outer vars here.
+            resolved["steps"] = [deepcopy(child) for child in nested]
+        elif action == "if" and isinstance(nested, list):
             resolved["steps"] = [self.resolve_step(child, ctx, soft=child_soft) for child in nested]
         else_steps = resolved.get("else_steps")
         if action == "if" and isinstance(else_steps, list):

@@ -23,7 +23,9 @@ Agent 编排测试流程时的主参考文档。模版文件：[`../templates/te
 2. 对清单中每一条调用 `protocol_task_run`（见 [`AGENTS.md`](../../AGENTS.md) Build Flow）
 3. 对照 `input_schema` / `required_fields` / `defaulted_fields` / `derived_fields`
 4. 全部齐备后再复制模版、编写 YAML
-5. `test.validate` → `test.dry_run` → `test.run`
+5. `test.validate` → `test.dry_run` → `test.run`（每步对 `build` 做 route schema 校验；`dry_run` 通过表示字段名与 route 一致）
+
+`test.dry_run` 失败时查看 `errors` / `build_checks` 中的 `unknown_fields`、`missing_required`、`input_schema`，对照 Phase 0 的 route 结果修正 YAML。
 
 ### 依赖清单示例
 
@@ -292,18 +294,26 @@ vars:
 
 ### expr — 算术表达式
 
-```yaml
-- id: calc_start
-  action: expr
-  args:
-    name: start_index
-    expr: qi * 32
+`count` 循环未写 `index_as` 时，自动注入 **`i`** 与 **`qi`**（均为当前轮次索引，从 `start` 起算）。`over` 循环未写时仅注入 **`i`**。显式 `index_as: xxx` 时只用 `xxx`。
 
-- id: inline_expr
-  action: set_var
+```yaml
+- id: loop_batches
+  action: loop
   args:
-    name: start_index
-    value: ${qi * 32 + 1}
+    count: 33
+    # 等价于 index_as: qi；子步骤可用 qi 或 i
+  steps:
+    - id: calc_start
+      action: expr
+      args:
+        name: start_index
+        expr: qi * 32
+
+    - id: inline_expr
+      action: set_var
+      args:
+        name: start_index
+        value: ${qi * 32 + 1}
 ```
 
 支持运算符：`+`、`-`、`*`、`//`、`%`；变量须为数值（或数字字符串）。
@@ -359,10 +369,10 @@ Phase 0: protocol_task_run（每条报文确认 schema）
     ↓
 编写 YAML（从模版复制）
     ↓
-test.schema（可选，了解模版与约定）
-test.validate(plan)
-test.dry_run(plan, vars?)
-test.run(plan, options)
+test.schema（build_field_types、workflow、模版与约定）
+test.validate(plan) — 结构 + build/route schema
+test.dry_run(plan, vars?) — 展开变量 + build schema（通过 ≈ 字段与 route 一致）
+test.run(plan, options) — 默认同样 build check（options.skip_build_check 仅调试）
     ↓ 失败
 test.read_report(report_dir, step_id)
 ```
