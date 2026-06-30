@@ -1,10 +1,13 @@
 """单元测试: 编解码器"""
+import pytest
+
 from protocol_tool.codecs.uint import UIntCodec
 from protocol_tool.codecs.bcd import BcdCodec
 from protocol_tool.codecs.bitset import BitSetCodec
 from protocol_tool.codecs.const import ConstCodec, ConstRepeatCodec
 from protocol_tool.codecs.bytes_codec import HexCodec, AsciiCodec
 from protocol_tool.codecs.checksum import ChecksumCodec, _sum8, _crc16_modbus
+from protocol_tool.codecs.enum_codec import EnumCodec
 from protocol_tool.codecs.base import ByteWriter
 from protocol_tool.ir.nodes import FieldNode
 from protocol_tool.runtime.reader import DecodeReader
@@ -140,6 +143,98 @@ class TestAsciiCodec:
         assert w.bytes() == b"AB"
         r = DecodeReader(bytes([0x41, 0x42]), 0)
         assert c.decode(f, r, DecodeContext()) == "AB"
+
+
+class TestEnumCodec:
+    _VALUES = {"0x00": "禁止上报", "0x01": "允许上报"}
+
+    def _field(self) -> FieldNode:
+        return FieldNode(
+            id="enable",
+            name="enable",
+            type_ref="enum",
+            params={"values": self._VALUES},
+        )
+
+    def test_encode_hex_string_01(self):
+        c = EnumCodec()
+        w = ByteWriter()
+        c.encode(self._field(), "01", w, BuildContext())
+        assert w.bytes() == b"\x01"
+
+    def test_encode_0x_prefix(self):
+        c = EnumCodec()
+        w = ByteWriter()
+        c.encode(self._field(), "0x01", w, BuildContext())
+        assert w.bytes() == b"\x01"
+
+    def test_encode_label(self):
+        c = EnumCodec()
+        w = ByteWriter()
+        c.encode(self._field(), "允许上报", w, BuildContext())
+        assert w.bytes() == b"\x01"
+
+    def test_encode_int(self):
+        c = EnumCodec()
+        w = ByteWriter()
+        c.encode(self._field(), 1, w, BuildContext())
+        assert w.bytes() == b"\x01"
+
+    def test_decode_string_key_values(self):
+        c = EnumCodec()
+        r = DecodeReader(b"\x01", 0)
+        decoded = c.decode(self._field(), r, DecodeContext())
+        assert decoded == {"raw": 1, "label": "允许上报"}
+
+    def test_encode_in_struct_array_item(self):
+        from protocol_tool.codecs.array_codec import ArrayCodec
+        from protocol_tool.codecs.struct_codec import StructCodec
+        from protocol_tool.codecs import create_builtin_registry
+
+        registry = create_builtin_registry()
+        StructCodec.codec_registry = registry
+
+        device_values = {"0x01": "单相电子表", "0x02": "多功能表"}
+        array_field = FieldNode(
+            id="nodes",
+            name="nodes",
+            type_ref="array",
+            params={
+                "count_ref": "node_count",
+                "item_name": "node",
+                "item_type": "struct",
+                "item_params": {
+                    "fields": [
+                        {
+                            "name": "node_addr",
+                            "type": "bcd",
+                            "length": 6,
+                            "byte_order": "little",
+                        },
+                        {
+                            "name": "device_type",
+                            "type": "enum",
+                            "values": device_values,
+                        },
+                    ],
+                },
+            },
+        )
+        w = ByteWriter()
+        ArrayCodec().encode(
+            array_field,
+            [{"node_addr": "000000000001", "device_type": "01"}],
+            w,
+            BuildContext(values={"node_count": 1}),
+        )
+        assert w.bytes() == bytes([0x01, 0, 0, 0, 0, 0, 0x01])
+
+    def test_encode_invalid_enum_raises(self):
+        from protocol_tool.codecs.enum_codec import EnumValueError
+
+        c = EnumCodec()
+        with pytest.raises(EnumValueError):
+            c.encode(self._field(), "invalid", ByteWriter(), BuildContext())
 
 
 class TestChecksum:

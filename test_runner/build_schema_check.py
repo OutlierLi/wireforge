@@ -342,14 +342,11 @@ def _values_contain_unresolved(value: Any) -> bool:
 
 
 def _type_hints(business: dict[str, Any], schema_by_name: dict[str, Any]) -> list[str]:
-    hints: list[str] = []
-    for name, value in business.items():
-        field = schema_by_name.get(name)
-        if field is None:
-            continue
-        ftype = str(getattr(field, "type", "") or "")
-        if ftype == "array" and not isinstance(value, list):
-            hints.append(f"{name}: expected list for array field, got {type(value).__name__}")
-        elif ftype == "struct" and not isinstance(value, dict):
-            hints.append(f"{name}: expected object for struct field, got {type(value).__name__}")
-    return hints
+    from console.build_resolver import InputField
+    from console.schema_validate import validate_business_values
+
+    schema = [
+        field for field in schema_by_name.values()
+        if isinstance(field, InputField)
+    ]
+    return validate_business_values(business, schema)

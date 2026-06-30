@@ -443,6 +443,11 @@ def encode(target: BuildTarget, user_values: dict[str, Any]) -> str:
     from protocol_tool.ir.nodes import ProtocolIR
     from protocol_tool.codecs import create_builtin_registry
     from protocol_tool.runtime.engine import BuildEngine, DecodeEngine
+    from console.schema_validate import validate_business_values
+
+    errors = validate_business_values(user_values, target.input_schema)
+    if errors:
+        raise ValueError("; ".join(errors))
 
     ir = ProtocolIR.from_json_file(str(ROOT / "compiled" / f"{target.protocol}.ir.json"))
     be = BuildEngine(ir, create_builtin_registry())

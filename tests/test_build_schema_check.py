@@ -81,6 +81,43 @@ def test_missing_required_mismatch():
     assert "slave_addrs" in result.missing_required
 
 
+def test_invalid_enum_mismatch():
+    result = check_build_step(
+        {
+            "proto": "csg",
+            "afn": "04",
+            "di": "E8020404",
+            "dir": "downlink",
+            "enable": "invalid",
+        },
+        scope={},
+        step_id="bad_enum",
+    )
+    assert result.status == "mismatch"
+    assert result.type_hints
+    assert any("enable" in hint for hint in result.type_hints)
+
+
+def test_invalid_bcd_mismatch():
+    result = check_build_step(
+        _add_slave_build(slave_addrs=["00000000000G"]),
+        scope={},
+        step_id="bad_bcd",
+    )
+    assert result.status == "mismatch"
+    assert any("slave_addrs" in hint for hint in result.type_hints)
+
+
+def test_invalid_uint_mismatch():
+    result = check_build_step(
+        _add_slave_build(slave_count="abc"),
+        scope={},
+        step_id="bad_uint",
+    )
+    assert result.status == "mismatch"
+    assert any("slave_count" in hint for hint in result.type_hints)
+
+
 def test_incomplete_locator_skipped():
     result = check_build_step(
         {"proto": "csg", "afn": "02", "dir": "downlink", "node_count": 1},

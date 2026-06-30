@@ -95,3 +95,31 @@ def test_build_query_slave_info_resp_ten_addresses():
     })
     assert hex_out.endswith("16")
     assert len(hex_out.replace(" ", "")) > 40
+
+
+def test_build_event_report_ctl_enable_hex_string():
+    from console.build_resolver import encode, resolve
+
+    target = resolve({
+        "proto": "csg",
+        "afn": "04",
+        "di": "E8020404",
+        "dir": "downlink",
+        "has_address": False,
+    })
+    hex_out = encode(target, {"enable": "01"})
+    assert "01" in hex_out.replace(" ", "")
+
+
+def test_build_event_report_ctl_invalid_enum_rejected():
+    from console.build_resolver import encode, resolve
+
+    target = resolve({
+        "proto": "csg",
+        "afn": "04",
+        "di": "E8020404",
+        "dir": "downlink",
+        "has_address": False,
+    })
+    with pytest.raises(ValueError, match="enable"):
+        encode(target, {"enable": "99"})
