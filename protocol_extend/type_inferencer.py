@@ -6,6 +6,14 @@ from typing import Any
 
 from protocol_extend.candidate import FieldCandidate, InferredField
 from protocol_extend import evidence_parser as ep
+from protocol_extend.domain_types import (
+    DOMAIN_TYPE_NAMES,
+    NODE_ADDRESS,
+    domain_type_entry,
+    is_domain_type,
+    match_array_item_domain_type,
+    match_domain_type,
+)
 
 
 _EXPLICIT_CODEC_TYPES = frozenset({
@@ -24,6 +32,17 @@ def infer_field(candidate: FieldCandidate) -> InferredField:
 
     if candidate.agent_type == "struct" or candidate.subfields:
         return _infer_object(candidate)
+
+    domain = match_domain_type(candidate)
+    if domain:
+        return InferredField(
+            name=candidate.name,
+            desc=candidate.desc,
+            semantic_type=domain,
+            codec=domain_type_entry(domain),
+            confidence="high",
+            reasons=[f"domain_type:{domain}"],
+        )
 
     texts = list(candidate.evidence)
     if candidate.desc and candidate.desc not in texts:
@@ -236,6 +255,7 @@ def _infer_object(candidate: FieldCandidate) -> InferredField:
 
 
 def _infer_array(candidate: FieldCandidate) -> InferredField:
+    item_domain = match_array_item_domain_type(candidate)
     item_inferred: InferredField | None = None
     if candidate.item_type == "struct" and candidate.item_fields:
         item_inferred = infer_field(FieldCandidate(
@@ -244,6 +264,15 @@ def _infer_array(candidate: FieldCandidate) -> InferredField:
             subfields=candidate.item_fields,
             agent_type="struct",
         ))
+    elif item_domain:
+        item_inferred = InferredField(
+            name=candidate.item_name or "item",
+            desc="",
+            semantic_type=item_domain,
+            codec=domain_type_entry(item_domain),
+            confidence="high",
+            reasons=[f"domain_item_type:{item_domain}"],
+        )
     elif candidate.item_type:
         item_inferred = infer_field(FieldCandidate(
             name=candidate.item_name or "item",
@@ -251,15 +280,18 @@ def _infer_array(candidate: FieldCandidate) -> InferredField:
             type_guess=candidate.item_type,
             agent_type=candidate.item_type,
             extra=dict(candidate.item_params),
+            bytes=candidate.bytes,
         ))
 
     codec: dict[str, Any] = {"type": "array"}
     if candidate.count_ref:
         codec["count_ref"] = candidate.count_ref
-    if candidate.item_type:
-        codec["item_type"] = item_inferred.codec.get("type", candidate.item_type) if item_inferred else candidate.item_type
     if candidate.item_name:
         codec["item_name"] = candidate.item_name
+    if item_inferred:
+        codec["item_type"] = item_inferred.codec.get("type", candidate.item_type or "uint8")
+    elif candidate.item_type:
+        codec["item_type"] = candidate.item_type
 
     return InferredField(
         name=candidate.name,
@@ -364,6 +396,18 @@ def _apply_override(candidate: FieldCandidate) -> InferredField:
             desc=candidate.desc,
             semantic_type="integer",
             codec={"type": codec_type},
+            confidence="medium",
+            reasons=reasons,
+            overridden=True,
+        )
+
+    if override in DOMAIN_TYPE_NAMES or override in ("address", "node_addr", "node_address"):
+        domain = NODE_ADDRESS if override in ("address", "node_addr", "node_address") else override
+        return InferredField(
+            name=candidate.name,
+            desc=candidate.desc,
+            semantic_type=domain,
+            codec=domain_type_entry(domain),
             confidence="medium",
             reasons=reasons,
             overridden=True,

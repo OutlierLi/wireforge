@@ -97,4 +97,6 @@ def verify_route_handle(spec: ExtensionSpec, *, dir_value: int | None) -> dict[s
     args: dict[str, Any] = {"proto": "csg", "afn": f"{spec.afn:02X}", "di": spec.di}
     if dir_value is not None:
         args["dir"] = "downlink" if dir_value == 0 else "uplink"
+    if spec.add is not None:
+        args["has_address"] = spec.add
     return route_handle(args)

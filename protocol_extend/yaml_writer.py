@@ -18,13 +18,6 @@ DEFAULT_EXTENSIONS_DIR = ROOT / "protocol_tool" / "protocols" / "csg_2016" / "va
 EXTENSIONS_DIR = DEFAULT_EXTENSIONS_DIR
 
 
-def _slug(text: str) -> str:
-    ascii_part = re.sub(r"[^a-zA-Z0-9]+", "_", text).strip("_").lower()
-    if ascii_part:
-        return ascii_part[:40]
-    return "ext"
-
-
 from protocol_extend.fields import field_to_yaml as _field_to_yaml
 def _body_fields(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if not fields:
@@ -88,10 +81,19 @@ def build_variants(spec: ExtensionSpec) -> list[dict[str, Any]]:
 
 
 def extension_filename(spec: ExtensionSpec) -> str:
-    afn_part = f"{spec.afn:02d}" if spec.afn is not None else "xx"
-    di_part = spec.di.upper()
-    slug = _slug(spec.description or "extension")
-    return f"{afn_part}_{di_part}_{slug}.yaml"
+    """Return `{AFN}_{DI}.yaml`, e.g. `03_E80304F5.yaml`.
+
+    AFN: 2 uppercase hex digits (00–07).
+    DI: 4-byte CSG identifier — 8 uppercase hex chars starting with E8.
+    """
+    if spec.afn is None:
+        raise ValueError("afn is required for extension filename")
+    di = spec.di.upper().replace(" ", "")
+    if len(di) != 8 or not re.fullmatch(r"[0-9A-F]{8}", di):
+        raise ValueError(f"DI must be 8 hex chars (4 bytes), got {spec.di!r}")
+    if not di.startswith("E8"):
+        raise ValueError(f"CSG DI must start with E8, got {di}")
+    return f"{spec.afn:02X}_{di}.yaml"
 
 
 def render_extension_yaml(spec: ExtensionSpec, raw_input: str) -> str:

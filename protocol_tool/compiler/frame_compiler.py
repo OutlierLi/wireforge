@@ -78,6 +78,18 @@ class FrameCompiler:
         # Build params
         params = self.resolver.resolve_field_params(item)
 
+        if type_ref == "array" and params.get("item_type"):
+            item_type_name = str(params["item_type"])
+            item_def = self.resolver.resolve_field_type(item_type_name)
+            if item_def.get("type") != item_type_name:
+                base_item = item_def.get("type", item_type_name)
+                merged_item_params = {
+                    **{k: v for k, v in item_def.items() if k != "type"},
+                    **(params.get("item_params") or {}),
+                }
+                params["item_type"] = base_item
+                params["item_params"] = merged_item_params
+
         # Handle bitset sub-fields
         if type_ref == "bitset" and "bits" in item:
             params["bits"] = item["bits"]

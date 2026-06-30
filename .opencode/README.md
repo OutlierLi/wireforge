@@ -28,6 +28,8 @@ MCP servers are configured in `opencode.json`:
 - command: `python3 scripts/python/wireforge_extend_mcp_server.py`
 - tool: `protocol_extend_run`
 
+两阶段：Phase 1 `collection_ready`（原始 DI/字段采集）→ Phase 2 逐条 `message_review`（用户 accept/skip/modify，可附 `modify_reason`）。详见 [`../AGENTS.md`](../AGENTS.md) Protocol Extend Flow。
+
 Restart OpenCode after changing this file so the MCP registry is reloaded.
 
 ## Agent output

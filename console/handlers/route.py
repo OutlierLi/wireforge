@@ -38,6 +38,8 @@ def handle(args: dict[str, Any]) -> dict:
         target_info["di"] = di
     if dir_val:
         target_info["dir"] = dir_val
+    if args.get("has_address") is not None:
+        target_info["has_address"] = args["has_address"]
 
     try:
         target = resolve(target_info)

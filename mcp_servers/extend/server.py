@@ -33,7 +33,9 @@ TOOLS: list[dict[str, Any]] = [
                 "user_input": {
                     "type": "object",
                     "description": (
-                        "补参或确认：protocol, afn, di, description, dir, add, fields, pair, confirm"
+                        "补参或审阅：protocol, afn, di, description, dir, add, fields, pair, "
+                        "action (start|accept|skip|modify), modify_reason, skip_reason, "
+                        "confirm (兼容 accept), document_path, allow_empty_fields"
                     ),
                 },
                 "debug": {
@@ -126,20 +128,38 @@ def _usage_text() -> str:
 
 Tool: `protocol_extend_run`
 
+Two-phase workflow (manual + DOCX unified):
+
+1. **Phase 1 — raw collection** (`need: collection_ready`): DI, AFN, fields extracted; **source_snapshot frozen**; no YAML/inference.
+2. **Phase 2 — per-message review** (`need: message_review`): yaml_preview + **fidelity_preview** vs frozen snapshot; user must choose accept / skip / modify.
+
+**Source fidelity**: compare final YAML to `source_snapshot` (not mutable draft). Only `confidence: high` allows accept; else modify or `force_fidelity: true` (user-confirmed only).
+
 - New run: pass `raw_input` (natural language or structured hints).
-- Resume: pass `run_id` + `user_input` to supply missing `dir`, `add`, `fields`, or `confirm`.
+- Resume: pass `run_id` + `user_input` (`action`, params, fields, modify_reason, `force_fidelity`, …).
+- `confirm: true` maps to `action: accept` (compat).
 - Extensions write to `protocol_tool/protocols/csg_2016/variants/extensions/*.yaml` only.
 - v1 supports AFN 00–07 new DI; AFN 08+ requires manual router in protocol.yaml.
+
+## DOCX document flow
+
+1. Pass `user_input.document_path` (workspace-relative or absolute `.docx`). **Do not** paste DOCX text into `raw_input`.
+2. Program parses → `DocumentIR` → batch `collect_all_drafts` (all DI/fields at once).
+3. `need: collection_ready` with `message_drafts[]` (incl. `source_excerpt`, `field_details`); user confirms → `action: start`.
+4. Each message → `message_review` with `source_excerpt`, `fidelity_report`, `fidelity_preview`; on `unknown` fields, `agent_context` snippets only (not full document).
+
+Install: `pip install python-docx` or `pip install -e ".[doc]"`.
 
 ## TypeInferencer rules
 
 1. Do **not** pick semantic type from byte width. Provide `evidence` (value tables, units, subfields).
 2. `uint8/u16/bytes` are codec hints only; program infers `semantic_type` + YAML codec.
-3. `bool` semantic → YAML `enum` with 2 values; `unknown` → `field_type_warnings`, still confirmable.
+3. `bool` semantic → YAML `enum` with 2 values; `unknown` → `field_type_warnings`; use `action: modify` with evidence or `action: accept` to force.
+4. Switch/value-table fields in snapshot must become `enum` in YAML or fidelity will block accept.
 
 Field DSL: scalar with evidence, struct, array (count_ref + item_type). See `field_dsl_examples` in params response.
 
-Flow: missing params → `need: params` → (optional `need: field_types`) → `need: confirm` → write + compile + map → `SUCCEEDED`.
+Flow: `raw_input` → (`params`?) → `collection_ready` → `action: start` → (`field_types`?) → `message_review` (+ fidelity) → accept/skip/modify → `SUCCEEDED` + `batch_summary`.
 See AGENTS.md Protocol Extend Flow for examples.
 """
 

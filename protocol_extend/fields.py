@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from protocol_extend.candidate import FieldCandidate, InferredField, candidate_from_agent_field
+from protocol_extend.domain_types import is_domain_type
 from protocol_extend.type_inferencer import infer_field, infer_fields, inference_entry
 from protocol_extend.semantic_validator import validate_all, validate_inferred
 
@@ -51,7 +52,7 @@ FIELD_DSL_EXAMPLES: list[dict[str, Any]] = [
         "item_name": "node",
         "desc": "节点列表",
         "item_fields": [
-            {"name": "address", "type": "bcd", "length": 6, "byte_order": "little", "desc": "地址"},
+            {"name": "address", "type": "node_address", "desc": "地址"},
             {
                 "name": "device_type",
                 "desc": "设备类型",
@@ -194,7 +195,7 @@ def missing_field_metadata(fields: list[dict[str, Any]], *, prefix: str = "field
                 missing.extend(missing_field_metadata(sub_fields, prefix=f"{path}.item_fields"))
             continue
 
-        if item_type in {"bcd", "ascii", "hex", "bytes"}:
+        if item_type in {"bcd", "ascii", "hex", "bytes"} and not is_domain_type(item_type):
             params = field.get("item_params") or {}
             length = field.get("length") or params.get("length")
             if length in (None, ""):

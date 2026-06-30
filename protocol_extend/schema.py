@@ -38,7 +38,15 @@ INPUT_SCHEMA: list[dict[str, Any]] = [
     {"name": "pair", "type": "bool", "required": False, "default": False, "desc": "是否同时生成 request+response 两条 variant"},
     {"name": "resp_description", "type": "string", "required": False, "desc": "响应报文描述（pair=true 时）"},
     {"name": "resp_fields", "type": "array", "required": False, "desc": "响应 payload 字段（pair=true 时）；同样使用 evidence 驱动，由 TypeInferencer 推断 semantic_type"},
-    {"name": "confirm", "type": "bool", "required": False, "desc": "true 确认写入 YAML 并编译"},
+    {"name": "confirm", "type": "bool", "required": False, "desc": "兼容旧版：等价于 action=accept"},
+    {"name": "action", "type": "enum", "required": False, "values": ["start", "accept", "skip", "modify"], "desc": "两阶段工作流动作：start 进入逐条扩展；accept/skip/modify 审阅当前报文"},
+    {"name": "modify_reason", "type": "string", "required": False, "desc": "action=modify 时的修改原因（自然语言）"},
+    {"name": "skip_reason", "type": "string", "required": False, "desc": "action=skip 时的跳过原因"},
+    {"name": "draft_index", "type": "integer", "required": False, "desc": "指定当前处理的 draft 索引（默认 record 内当前索引）"},
+    {"name": "force_field_types", "type": "bool", "required": False, "desc": "跳过 unknown 字段类型审查，直接进入 message_review"},
+    {"name": "document_path", "type": "string", "required": False, "desc": "DOCX 文件路径（相对仓库根或绝对路径）；程序解析为 DocumentIR，禁止 Agent 直接读全文"},
+    {"name": "section_id", "type": "string", "required": False, "desc": "DOCX section_id（批量采集时自动关联，一般无需手动指定）"},
+    {"name": "chapter_hint", "type": "string", "required": False, "desc": "可选：限定 DOCX 章节标题关键词，缩小扫描范围"},
 ]
 
 
@@ -148,14 +156,21 @@ def normalize_add(raw: Any) -> bool | None:
 
 
 from protocol_extend.fields import FIELD_DSL_EXAMPLES, missing_field_metadata
+from doc_parser.metadata_extractor import derive_afn_from_di, infer_afn_from_semantics
 def missing_fields(spec: ExtensionSpec) -> list[str]:
     missing: list[str] = []
+    if not spec.di:
+        missing.append("di")
+    if spec.afn is None and spec.di:
+        derived = derive_afn_from_di(spec.di)
+        if derived is None:
+            derived = infer_afn_from_semantics(spec.description or "")
+        if derived is not None:
+            spec.afn = derived
     if spec.afn is None:
         missing.append("afn")
     elif spec.afn not in AFN_ROUTERS:
         missing.append("afn_supported")
-    if not spec.di:
-        missing.append("di")
     if not spec.description:
         missing.append("description")
     if spec.afn is not None and spec.afn in AFN_ROUTERS:

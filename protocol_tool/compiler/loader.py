@@ -136,11 +136,20 @@ def load_protocol(
 
     # Load variants/*.yaml
     var_sources = unit.protocol_data.get("sources", {}).get("variants", "variants/**/*.yaml")
-    for yaml_path in glob_yaml(proto_root, var_sources):
-        data = load_yaml(yaml_path)
-        if data:
-            unit.variant_data.append(data)
-            rel = str(yaml_path.relative_to(proto_root))
-            unit.source_files[rel] = str(yaml_path)
+    if isinstance(var_sources, list):
+        for pattern in var_sources:
+            for yaml_path in glob_yaml(proto_root, pattern):
+                data = load_yaml(yaml_path)
+                if data:
+                    unit.variant_data.append(data)
+                    rel = str(yaml_path.relative_to(proto_root))
+                    unit.source_files[rel] = str(yaml_path)
+    else:
+        for yaml_path in glob_yaml(proto_root, var_sources):
+            data = load_yaml(yaml_path)
+            if data:
+                unit.variant_data.append(data)
+                rel = str(yaml_path.relative_to(proto_root))
+                unit.source_files[rel] = str(yaml_path)
 
     return unit

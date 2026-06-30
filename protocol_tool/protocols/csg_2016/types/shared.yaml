@@ -27,6 +27,9 @@ datetime_ymdhm:  { type: bcd, length: 5, format: "YYMMDDhhmm" }
 datetime_ymdhms: { type: bcd, length: 6, format: "YYMMDDhhmmss" }
 count_time_6: { type: bcd, length: 6, format: "XXXXXX.XXXXXX" }
 
+# ── 地址类型（CSG 节点/从节点/主节点通信地址，固定 6 字节 BCD 小端）──
+node_address: { type: bcd, length: 6, byte_order: little }
+
 # ── 电能量/需量/测量类型 ──
 energy_4:       { type: bcd_numeric, length: 4, format: "XXXXXX.XX", unit: "kWh", signed: false }
 energy_5:       { type: bcd_numeric, length: 5, format: "XXXXXX.XXXX", unit: "kWh", signed: false }

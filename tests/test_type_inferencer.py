@@ -158,3 +158,31 @@ class TestIntegerFallback:
         cand = _c(name="delay", desc="延时", type="uint24_le", bytes=3)
         inf = infer_field(cand)
         assert inf.codec["type"] == "uint24_le"
+
+
+class TestNodeAddressDomainType:
+    def test_scalar_node_address(self):
+        cand = _c(name="slave_addr", desc="从节点地址", bytes=6)
+        inf = infer_field(cand)
+        assert inf.semantic_type == "node_address"
+        yaml_out = field_to_yaml_from_inferred(inf)
+        assert yaml_out["type"] == "node_address"
+        assert "length" not in yaml_out
+
+    def test_blacklist_address_list_array(self):
+        yaml_out = field_to_yaml({
+            "name": "blacklist_nodes",
+            "desc": "黑名单节点地址列表",
+            "type": "array",
+            "count_ref": "resp_count",
+            "item_name": "blacklist_node",
+        })
+        assert yaml_out["type"] == "array"
+        assert yaml_out["item_type"] == "node_address"
+        assert "item_params" not in yaml_out or "length" not in (yaml_out.get("item_params") or {})
+
+    def test_bytes_six_with_address_desc_prefers_node_address(self):
+        cand = _c(name="field_1", desc="节点地址", bytes=6, type="bytes")
+        inf = infer_field(cand)
+        assert inf.semantic_type == "node_address"
+        assert inf.codec["type"] == "node_address"
