@@ -1,0 +1,351 @@
+# auto_rule 全场景 TestPlan — add / update / remove / 覆盖 / DI+字段 / match.any
+# 用法: test.validate → test.dry_run → test.run（默认 mock://auto）
+# 对应 pytest: tests/test_auto_rule.py + tests/test_auto_rule_port.py
+
+version: 1
+name: auto_rule_coverage
+description: mock://auto 下 auto_rule 增删改、规则覆盖、多分支匹配
+timeout_ms: 120000
+
+purpose: |
+  验证 auto_rule 在 mock://auto 串口上的完整生命周期：
+  添加规则并收到 then 回复、update 修改 then、同 DI 后加覆盖先加、
+  match.all 组合 DI 与 decoded 字段、match.any 多分支、delete 后无回复。
+
+expected_results:
+  - step_id: assert_add_reply
+    description: add 后 send 收到 AA
+  - step_id: assert_update_reply
+    description: update 后收到 33 44 而非旧 11 22
+  - step_id: assert_override_reply
+    description: 同 DI 两条规则时仅后加规则 BB 生效
+  - step_id: assert_field_reply
+    description: DI+slave_count=32 才回复 CC DD
+  - step_id: assert_no_reply_after_delete
+    description: remove 后 received_bytes 为 0
+
+test_flow:
+  - setup connect + build 下行帧
+  - auto_rule.add → send → assert
+  - auto_rule.update → send → assert
+  - 双规则覆盖 → send → assert
+  - match.all DI+字段 → auto_rule.test + send
+  - auto_rule.remove → send 无回复
+  - match.any → auto_rule.test
+  - teardown disconnect
+
+vars:
+  port: mock://auto
+  conn: cco
+  baudrate: 9600
+  proto: csg
+  rx_timeout_s: 0.5
+
+setup:
+  - id: connect
+    action: serial.connect
+    args:
+      conn: ${conn}
+      port: ${port}
+      baudrate: ${baudrate}
+
+  - id: build_query_slave_32
+    action: build
+    args:
+      proto: ${proto}
+      afn: '0x03'
+      di: E8030306
+      dir: downlink
+      start_slave_index: 0
+      slave_count: 32
+    save_as: query32
+
+  - id: build_query_slave_20
+    action: build
+    args:
+      proto: ${proto}
+      afn: '0x03'
+      di: E8030306
+      dir: downlink
+      start_slave_index: 0
+      slave_count: 20
+    save_as: query20
+
+  - id: build_init_archive
+    action: build
+    args:
+      proto: ${proto}
+      afn: '0x01'
+      di: E8020102
+      dir: downlink
+    save_as: init_frame
+
+steps:
+  # ── 1. add ──
+  - id: add_rule
+    action: auto_rule.add
+    args:
+      id: rule_add
+      match: '060303E8'
+      then:
+        - command: /send
+          args:
+            hex: AA
+
+  - id: send_after_add
+    action: send
+    args:
+      conn: ${conn}
+      hex: ${query32.frame_hex}
+      timeout: ${rx_timeout_s}
+    save_as: add_reply
+
+  - id: assert_add_reply
+    action: assert
+    args:
+      expect:
+        add_reply.received: AA
+        add_reply.received_bytes: 1
+
+  - id: remove_rule_add
+    action: auto_rule.remove
+    args:
+      id: rule_add
+
+  # ── 2. update ──
+  - id: add_rule_upd
+    action: auto_rule.add
+    args:
+      id: rule_upd
+      match: '060303E8'
+      then:
+        - command: /send
+          args:
+            hex: '11 22'
+
+  - id: update_rule_upd
+    action: auto_rule.update
+    args:
+      id: rule_upd
+      then:
+        - command: /send
+          args:
+            hex: '33 44'
+
+  - id: send_after_update
+    action: send
+    args:
+      conn: ${conn}
+      hex: ${query32.frame_hex}
+      timeout: ${rx_timeout_s}
+    save_as: update_reply
+
+  - id: assert_update_reply
+    action: assert
+    args:
+      expect:
+        update_reply.received: '33 44'
+        update_reply.received_bytes: 2
+
+  - id: remove_rule_upd
+    action: auto_rule.remove
+    args:
+      id: rule_upd
+
+  # ── 3. 规则覆盖（后加优先）──
+  - id: add_rule_first
+    action: auto_rule.add
+    args:
+      id: rule_first
+      match: '060303E8'
+      then:
+        - command: /send
+          args:
+            hex: AA
+
+  - id: add_rule_second
+    action: auto_rule.add
+    args:
+      id: rule_second
+      match: '060303E8'
+      then:
+        - command: /send
+          args:
+            hex: BB
+
+  - id: send_after_override
+    action: send
+    args:
+      conn: ${conn}
+      hex: ${query32.frame_hex}
+      timeout: ${rx_timeout_s}
+    save_as: override_reply
+
+  - id: assert_override_reply
+    action: assert
+    args:
+      expect:
+        override_reply.received: BB
+        override_reply.received_bytes: 1
+
+  - id: remove_rule_first
+    action: auto_rule.remove
+    args:
+      id: rule_first
+
+  - id: remove_rule_second
+    action: auto_rule.remove
+    args:
+      id: rule_second
+
+  # ── 4. match.all：DI + decoded 字段 ──
+  - id: add_rule_di_field
+    action: auto_rule.add
+    args:
+      id: rule_di_field
+      match:
+        all:
+          - '060303E8'
+          - type: decoded
+            fields:
+              user_data.slave_count: '32'
+      then:
+        - command: /send
+          args:
+            hex: 'CC DD'
+
+  - id: test_di_field_hit
+    action: auto_rule.test
+    args:
+      id: rule_di_field
+      hex: ${query32.frame_hex}
+    save_as: test_hit
+
+  - id: assert_test_hit
+    action: assert
+    args:
+      expect:
+        test_hit.matched: true
+
+  - id: test_di_field_miss
+    action: auto_rule.test
+    args:
+      id: rule_di_field
+      hex: ${query20.frame_hex}
+    save_as: test_miss
+
+  - id: assert_test_miss
+    action: assert
+    args:
+      expect:
+        test_miss.matched: false
+
+  - id: send_field_hit
+    action: send
+    args:
+      conn: ${conn}
+      hex: ${query32.frame_hex}
+      timeout: ${rx_timeout_s}
+    save_as: field_hit_reply
+
+  - id: assert_field_reply
+    action: assert
+    args:
+      expect:
+        field_hit_reply.received: 'CC DD'
+        field_hit_reply.received_bytes: 2
+
+  - id: send_field_miss
+    action: send
+    args:
+      conn: ${conn}
+      hex: ${query20.frame_hex}
+      timeout: ${rx_timeout_s}
+    save_as: field_miss_reply
+
+  - id: assert_field_miss_no_reply
+    action: assert
+    args:
+      expect:
+        field_miss_reply.received_bytes: 0
+
+  # ── 5. delete ──
+  - id: remove_rule_di_field
+    action: auto_rule.remove
+    args:
+      id: rule_di_field
+
+  - id: list_after_delete
+    action: auto_rule.list
+    save_as: rules_list
+
+  - id: assert_rule_removed
+    action: assert
+    args:
+      expect:
+        rules_list.count: 0
+
+  - id: send_after_delete
+    action: send
+    args:
+      conn: ${conn}
+      hex: ${query32.frame_hex}
+      timeout: ${rx_timeout_s}
+    save_as: after_delete_reply
+
+  - id: assert_no_reply_after_delete
+    action: assert
+    args:
+      expect:
+        after_delete_reply.received_bytes: 0
+
+  # ── 6. match.any 多分支 ──
+  - id: add_rule_any
+    action: auto_rule.add
+    args:
+      id: rule_any
+      match:
+        any:
+          - '020102E8'
+          - '060303E8'
+      then:
+        - command: /send
+          args:
+            hex: EE
+
+  - id: test_any_init
+    action: auto_rule.test
+    args:
+      id: rule_any
+      hex: ${init_frame.frame_hex}
+    save_as: any_init
+
+  - id: assert_any_init
+    action: assert
+    args:
+      expect:
+        any_init.matched: true
+
+  - id: test_any_query
+    action: auto_rule.test
+    args:
+      id: rule_any
+      hex: ${query32.frame_hex}
+    save_as: any_query
+
+  - id: assert_any_query
+    action: assert
+    args:
+      expect:
+        any_query.matched: true
+
+  - id: remove_rule_any
+    action: auto_rule.remove
+    args:
+      id: rule_any
+
+teardown:
+  - id: disconnect
+    action: serial.disconnect
+    args:
+      conn: ${conn}

@@ -89,6 +89,7 @@ class RunCommand:
                 "serial.connect": "Open serial connection",
                 "serial.disconnect": "Close serial connection",
                 "auto_rule.add": "Add auto-reply rule",
+                "auto_rule.update": "Update auto-reply rule",
                 "auto_rule.remove": "Remove auto-reply rule",
                 "assert": "Compare expect values against vars",
                 "set_var": "Set a variable in scope",
@@ -108,6 +109,11 @@ class RunCommand:
                     "file": "database/runs/mock_auto_ack.yaml",
                     "doc": "database/examples/mock_auto_ack.md",
                     "scenario": "单连接 mock://auto + auto_rule 确认帧",
+                },
+                {
+                    "name": "auto_rule_coverage",
+                    "file": "database/runs/auto_rule_coverage.yaml",
+                    "scenario": "auto_rule add/update/remove、规则覆盖、DI+字段、match.any",
                 },
                 {
                     "name": "add_slave_nodes_loop",

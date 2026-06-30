@@ -54,7 +54,7 @@ def handle(args: dict[str, Any]) -> dict:
     if not sub:
         sub = "list"
     cmd_map = {
-        "add":    _add,    "list":   _list,   "show":   _show,
+        "add":    _add,    "update": _update, "list":   _list,   "show":   _show,
         "enable": _enable, "disable": _disable, "delete": _delete,
         "test":   _test,   "load":   _load,   "history": _history,
     }
@@ -129,6 +129,30 @@ def _delete(args: dict) -> dict:
     return ok({"deleted": rid})
 
 
+def _update(args: dict) -> dict:
+    rid = args.get("id", "")
+    if rid not in _rules:
+        return fail(f"rule {rid} not found")
+
+    rule = _rules[rid]
+    if args.get("name"):
+        rule["name"] = args["name"]
+    if any(k in args for k in ("match", "pattern", "field", "match_type", "condition_type")):
+        rule["condition"] = _parse_condition(args)
+    if any(k in args for k in ("then", "actions")):
+        rule["actions"] = _parse_actions(args)
+    if "enabled" in args:
+        enabled = args["enabled"]
+        if isinstance(enabled, str):
+            enabled = enabled.lower() in ("true", "1", "yes")
+        rule["enabled"] = bool(enabled)
+    if "cooldown" in args:
+        rule.setdefault("execution", {})["cooldown_ms"] = int(args["cooldown"])
+    if "source" in args:
+        rule.setdefault("trigger", {})["source"] = args["source"]
+    return ok({"updated": rid, "rule": rule})
+
+
 def _test(args: dict) -> dict:
     rid = args.get("id", "")
     rule = _rules.get(rid)
@@ -185,11 +209,13 @@ def _history(args: dict) -> dict:
 
 def match_all(frame_hex: str, frame_bytes: bytes,
               decoded: dict | None = None) -> list[MatchResult]:
-    """对所有启用的规则执行匹配。后添加优先。"""
-    results = []
+    """对所有启用的规则执行匹配。后添加的规则优先，命中即返回（覆盖较早规则）。"""
     for rid, rule in reversed(list(_rules.items())):
         if not rule.get("enabled", True):
             continue
+        cond = rule.get("condition", {})
+        if decoded is None and _condition_needs_decode(cond):
+            decoded = _decode_request_flat("csg", frame_bytes)
         match = _match_rule(rule, frame_bytes, decoded)
         if match:
             _rule_history.append({
@@ -197,8 +223,8 @@ def match_all(frame_hex: str, frame_bytes: bytes,
                 "matched_frame": frame_hex, "match_result": "hit",
                 "actions": match.actions,
             })
-            results.append(match)
-    return results
+            return [match]
+    return []
 
 
 def execute_actions(match: MatchResult, context: dict | None = None) -> list[dict]:
@@ -350,6 +376,8 @@ def _parse_actions(args: dict) -> list[dict]:
 def _match_rule(rule: dict, frame_bytes: bytes, decoded: dict | None = None) -> MatchResult | None:
     cond = rule.get("condition", {})
     hex_str = frame_bytes.hex().upper()
+    if decoded is None and _condition_needs_decode(cond):
+        decoded = _decode_request_flat("csg", frame_bytes)
 
     if _eval_condition(cond, hex_str, frame_bytes, decoded):
         return MatchResult(
@@ -393,6 +421,20 @@ def _eval_condition(
     if cond_type == "any":
         return True
 
+    return False
+
+
+def _condition_needs_decode(cond: dict) -> bool:
+    if not cond:
+        return False
+    if cond.get("type") == "decoded":
+        return True
+    for key in ("all", "any"):
+        if key in cond:
+            items = cond[key]
+            if not isinstance(items, list):
+                items = [items]
+            return any(_condition_needs_decode(item) for item in items)
     return False
 
 

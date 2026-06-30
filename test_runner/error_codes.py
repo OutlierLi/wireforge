@@ -53,6 +53,7 @@ KNOWN_ACTIONS = {
     "serial.set",
     "serial.ports",
     "auto_rule.add",
+    "auto_rule.update",
     "auto_rule.remove",
     "auto_rule.list",
     "auto_rule.show",

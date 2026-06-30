@@ -303,3 +303,106 @@ class TestHistory:
     def test_history_filter_by_id(self):
         r = exec_cmd("auto_rule", {"sub": "history", "id": "hist_test"})
         _ok(r)
+
+
+# ═══════════════════════════════════════════════════════════════
+# 10. update — 修改规则
+# ═══════════════════════════════════════════════════════════════
+
+class TestUpdate:
+    def test_update_match_and_then(self):
+        exec_cmd("auto_rule", {
+            "sub": "add", "id": "upd_rule",
+            "match": "AA.*BB",
+            "then": [{"command": "/send", "args": {"hex": "11 22"}}],
+        })
+        r = exec_cmd("auto_rule", {
+            "sub": "update", "id": "upd_rule",
+            "match": "CC.*DD",
+            "then": [{"command": "/send", "args": {"hex": "33 44"}}],
+        })
+        _ok(r, "修改规则")
+        assert r["data"]["updated"] == "upd_rule"
+        assert r["data"]["rule"]["condition"]["pattern"] == "CC.*DD"
+        assert r["data"]["rule"]["actions"][0]["args"]["hex"] == "33 44"
+
+        hit = exec_cmd("auto_rule", {"sub": "test", "id": "upd_rule", "hex": "CC BB DD"})
+        _ok(hit)
+        assert hit["data"]["matched"] is True
+        miss = exec_cmd("auto_rule", {"sub": "test", "id": "upd_rule", "hex": "AA BB"})
+        _ok(miss)
+        assert miss["data"]["matched"] is False
+
+    def test_update_nonexistent(self):
+        r = exec_cmd("auto_rule", {"sub": "update", "id": "no_such", "match": "00"})
+        _fail(r)
+
+
+# ═══════════════════════════════════════════════════════════════
+# 11. decoded field — DI + 数据域字段组合匹配
+# ═══════════════════════════════════════════════════════════════
+
+class TestDecodedFieldMatch:
+    _QUERY_SLAVE_HEX = "68 0F 00 40 03 01 06 03 03 E8 00 00 20 58 16"
+
+    def test_decoded_field_only(self):
+        exec_cmd("auto_rule", {
+            "sub": "add", "id": "dec_only",
+            "field": "user_data.slave_count=32",
+            "then": "/log --message matched",
+        })
+        r = exec_cmd("auto_rule", {
+            "sub": "test", "id": "dec_only",
+            "hex": self._QUERY_SLAVE_HEX,
+        })
+        _ok(r)
+        assert r["data"]["matched"] is True
+
+    def test_decoded_field_miss(self):
+        exec_cmd("auto_rule", {
+            "sub": "add", "id": "dec_miss",
+            "field": "user_data.slave_count=99",
+            "then": "/log",
+        })
+        r = exec_cmd("auto_rule", {
+            "sub": "test", "id": "dec_miss",
+            "hex": self._QUERY_SLAVE_HEX,
+        })
+        _ok(r)
+        assert r["data"]["matched"] is False
+
+    def test_composite_di_and_decoded_field(self):
+        exec_cmd("auto_rule", {
+            "sub": "add", "id": "di_and_field",
+            "match": {
+                "all": [
+                    "060303E8",
+                    {"type": "decoded", "fields": {"user_data.slave_count": "32"}},
+                ],
+            },
+            "then": [{"command": "/send", "args": {"hex": "AA BB"}}],
+        })
+        r = exec_cmd("auto_rule", {
+            "sub": "test", "id": "di_and_field",
+            "hex": self._QUERY_SLAVE_HEX,
+        })
+        _ok(r)
+        assert r["data"]["matched"] is True
+
+    def test_composite_di_hit_field_miss(self):
+        exec_cmd("auto_rule", {
+            "sub": "add", "id": "di_hit_field_miss",
+            "match": {
+                "all": [
+                    "060303E8",
+                    {"type": "decoded", "fields": {"user_data.slave_count": "99"}},
+                ],
+            },
+            "then": [{"command": "/send", "args": {"hex": "AA BB"}}],
+        })
+        r = exec_cmd("auto_rule", {
+            "sub": "test", "id": "di_hit_field_miss",
+            "hex": self._QUERY_SLAVE_HEX,
+        })
+        _ok(r)
+        assert r["data"]["matched"] is False
