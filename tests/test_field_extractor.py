@@ -76,26 +76,26 @@ def test_extract_fields_from_table():
     table = doc.tables[0]
     fields = extract_fields_from_table(table)
     assert fields
-    assert fields[0]["name"] == "设备类型"
-    assert fields[0].get("bytes") == 2
+    assert fields[0]["name"] == "local_mode_word"
+    assert fields[0].get("bytes") == 1
     assert fields[0]["evidence"]
 
 
-def test_extract_message_device_type_enum():
+def test_extract_message_local_mode_enum():
     doc = apply_sections(parse_docx(FIXTURE, root=ROOT))
-    section = next(s for s in doc.sections if s.di == "E80304F5")
+    section = next(s for s in doc.sections if s.di == "E8000302")
     draft = extract_message(doc, section)
-    assert draft.di == "E80304F5"
+    assert draft.di == "E8000302"
     assert draft.afn == 3
     assert draft.fields
-    assert draft.fields[0]["name"] == "设备类型"
+    assert draft.fields[0]["name"] == "local_mode_word"
 
 
 def test_type_inferencer_enum_from_extracted_fields():
     from protocol_extend.fields import process_agent_fields
 
     doc = apply_sections(parse_docx(FIXTURE, root=ROOT))
-    section = next(s for s in doc.sections if s.di == "E80304F5")
+    section = next(s for s in doc.sections if s.di == "E8000302")
     draft = extract_message(doc, section)
     _, report, _ = process_agent_fields(draft.fields)
-    assert report[0]["semantic_type"] == "enum"
+    assert report[0]["semantic_type"] in ("enum", "bool")

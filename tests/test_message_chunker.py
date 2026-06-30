@@ -20,14 +20,14 @@ def test_chunk_messages_multiple_sections():
     sections = chunk_messages(doc)
     assert len(sections) >= 2
     dis = {s.di for s in sections if s.di}
-    assert "E80304F5" in dis
-    assert "E80304F6" in dis
+    assert "E8000302" in dis
+    assert "E8030304" in dis
 
 
 def test_extract_afn_di_from_heading():
-    afn, di = extract_afn_di_from_text("AFN03 DI=E80304F5 查询设备类型")
+    afn, di = extract_afn_di_from_text("AFN03 DI=E8030304 查询通信延时时长")
     assert afn == 3
-    assert di == "E80304F5"
+    assert di == "E8030304"
 
 
 def test_section_has_table_ids():

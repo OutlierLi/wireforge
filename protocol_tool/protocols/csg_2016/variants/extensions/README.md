@@ -4,7 +4,7 @@
 
 - 编译器通过 `variants/**/*.yaml` 自动加载，**不修改** `afn_payloads.yaml`
 - 首版仅支持 AFN 00–07 下新增 DI
-- 文件名规范：`{AFN}_{DI}.yaml`（AFN 两位十六进制，DI 为 8 位十六进制且以 E8 开头，例 `03_E80304F5.yaml`）
+- 文件名规范：`{AFN}_{DI}.yaml`（AFN 两位十六进制，DI 为 8 位十六进制且以 E8 开头，例 `03_E8030304.yaml`）
 
 写入后运行：
 

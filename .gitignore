@@ -31,3 +31,4 @@ venv/
 *.swo
 tests/check_output/
 log/
+.DS_Store

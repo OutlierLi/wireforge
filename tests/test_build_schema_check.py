@@ -11,14 +11,14 @@ from test_runner.error_codes import PLAN_BUILD_SCHEMA_MISMATCH
 from test_runner.run_command import RunCommand
 
 
-def _blacklist_build(**extra) -> dict:
+def _add_slave_build(**extra) -> dict:
     args = {
         "proto": "csg",
-        "afn": "02",
-        "di": "E80204A1",
+        "afn": "04",
+        "di": "E8020402",
         "dir": "downlink",
-        "node_count": 1,
-        "nodes": ["000000000001"],
+        "slave_count": 1,
+        "slave_addrs": ["000000000001"],
     }
     args.update(extra)
     return args
@@ -37,7 +37,7 @@ def test_collect_build_steps_in_loop():
                     {
                         "id": "build_batch",
                         "action": "build",
-                        "args": _blacklist_build(),
+                        "args": _add_slave_build(),
                     }
                 ],
             }
@@ -48,8 +48,8 @@ def test_collect_build_steps_in_loop():
     assert refs[0].step_id == "loop_add.build_batch"
 
 
-def test_blacklist_build_ok():
-    result = check_build_step(_blacklist_build(), scope={}, step_id="ok_step")
+def test_add_slave_build_ok():
+    result = check_build_step(_add_slave_build(), scope={}, step_id="ok_step")
     assert result.status == "ok"
     assert not result.unknown_fields
     assert not result.missing_required
@@ -57,7 +57,7 @@ def test_blacklist_build_ok():
 
 def test_unknown_field_mismatch():
     result = check_build_step(
-        _blacklist_build(slave_address="000000000001"),
+        _add_slave_build(slave_address="000000000001"),
         scope={},
         step_id="bad_field",
     )
@@ -69,16 +69,16 @@ def test_missing_required_mismatch():
     result = check_build_step(
         {
             "proto": "csg",
-            "afn": "02",
-            "di": "E80204A1",
+            "afn": "04",
+            "di": "E8020402",
             "dir": "downlink",
-            "node_count": 1,
+            "slave_count": 1,
         },
         scope={},
         step_id="missing_nodes",
     )
     assert result.status == "mismatch"
-    assert "nodes" in result.missing_required
+    assert "slave_addrs" in result.missing_required
 
 
 def test_incomplete_locator_skipped():
@@ -100,11 +100,11 @@ def test_dynamic_args_skipped_on_validate():
                 "action": "build",
                 "args": {
                     "proto": "${proto}",
-                    "afn": "02",
-                    "di": "E80204A1",
+                    "afn": "04",
+                    "di": "E8020402",
                     "dir": "downlink",
-                    "node_count": 1,
-                    "nodes": "${batch.addrs}",
+                    "slave_count": 1,
+                    "slave_addrs": "${batch.addrs}",
                 },
             }
         ],
@@ -129,11 +129,11 @@ def test_dynamic_resolved_on_dry_run(tmp_path):
                 "action": "build",
                 "args": {
                     "proto": "${proto}",
-                    "afn": "02",
-                    "di": "E80204A1",
+                    "afn": "04",
+                    "di": "E8020402",
                     "dir": "downlink",
-                    "node_count": 2,
-                    "nodes": "${batch.addrs}",
+                    "slave_count": 2,
+                    "slave_addrs": "${batch.addrs}",
                 },
             }
         ],
@@ -154,7 +154,7 @@ def test_validate_returns_build_schema_mismatch():
             {
                 "id": "build_bad",
                 "action": "build",
-                "args": _blacklist_build(slave_address="x"),
+                "args": _add_slave_build(slave_address="x"),
             }
         ],
     }
@@ -173,7 +173,7 @@ def test_run_blocks_on_build_mismatch(tmp_path):
             {
                 "id": "build_bad",
                 "action": "build",
-                "args": _blacklist_build(slave_address="x"),
+                "args": _add_slave_build(slave_address="x"),
             }
         ],
     }

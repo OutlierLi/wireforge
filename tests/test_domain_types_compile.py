@@ -17,5 +17,5 @@ def test_compile_extension_with_node_address_array():
     ir_path = ROOT / "compiled" / "csg_2016.ir.json"
     assert ir_path.exists()
     text = ir_path.read_text(encoding="utf-8")
-    assert "E80303A1" in text
-    assert "blacklist_nodes" in text
+    assert "E8020402" in text
+    assert "slave_addrs" in text

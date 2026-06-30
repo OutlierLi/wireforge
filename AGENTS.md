@@ -256,7 +256,7 @@ Use `protocol_extend_run` when the user wants to **add a new CSG 2016 message va
 ### Phase 1 示例
 
 ```json
-{"raw_input": "扩展 CSG 报文 AFN03 DI=E80304FF，查询延时时长"}
+{"raw_input": "扩展 CSG 报文 AFN03 DI=E8030304，查询通信延时时长"}
 ```
 
 缺参时 `need: params`：
@@ -270,10 +270,16 @@ Use `protocol_extend_run` when the user wants to **add a new CSG 2016 message va
     "description": "查询通信延时时长",
     "fields": [
       {
-        "name": "device_type",
-        "desc": "设备类型",
-        "bytes": 2,
-        "evidence": ["00H：单相表", "01H：三相表", "02H：采集器"]
+        "name": "dest_addr",
+        "desc": "通信目的地址",
+        "bytes": 6,
+        "evidence": ["6 字节 BCD 小端地址"]
+      },
+      {
+        "name": "payload_length",
+        "desc": "报文长度",
+        "bytes": 1,
+        "evidence": ["报文长度(字节)"]
       }
     ]
   }

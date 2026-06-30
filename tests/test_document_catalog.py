@@ -31,8 +31,8 @@ def test_catalog_has_di_with_titles(catalog):
     ready = [c for c in catalog if c.get("ready_to_extend")]
     assert len(ready) >= 2
     dis = {c["di"] for c in ready}
-    assert "E80505A0" in dis
-    assert "E80505A1" in dis
+    assert "E8030304" in dis
+    assert "E8030306" in dis
     for entry in ready:
         assert entry.get("title")
         assert entry.get("candidate_id")

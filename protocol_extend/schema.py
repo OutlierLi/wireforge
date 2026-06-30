@@ -30,7 +30,7 @@ UNSUPPORTED_AFN_HINT = (
 INPUT_SCHEMA: list[dict[str, Any]] = [
     {"name": "protocol", "type": "string", "required": False, "default": "csg", "desc": "协议标识，首版仅 csg"},
     {"name": "afn", "type": "uint8", "required": True, "desc": "AFN，十六进制或十进制，如 03 或 0x03"},
-    {"name": "di", "type": "hex", "required": True, "desc": "4 字节 DI，如 E80304FF"},
+    {"name": "di", "type": "hex", "required": True, "desc": "4 字节 DI，如 E8030304"},
     {"name": "description", "type": "string", "required": True, "desc": "报文中文描述，写入 variant description"},
     {"name": "dir", "type": "enum", "required": False, "values": ["downlink", "uplink", "0", "1"], "desc": "传输方向；AFN00 不需要"},
     {"name": "add", "type": "bool", "required": False, "desc": "是否带地址域；AFN00–07 均必填"},

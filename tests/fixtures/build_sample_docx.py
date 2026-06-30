@@ -15,7 +15,7 @@ def build_sample_docx(path: Path) -> Path:
         raise ImportError("python-docx required")
 
     doc = Document()
-    doc.add_heading("AFN03 DI=E80304F5 查询设备类型", level=2)
+    doc.add_heading("AFN03 DI=E8000302 查询本地通信模块运行模式信息", level=2)
     doc.add_paragraph("下行请求，无地址域。")
 
     t1 = doc.add_table(rows=1, cols=3)
@@ -23,11 +23,11 @@ def build_sample_docx(path: Path) -> Path:
     t1.rows[0].cells[1].text = "长度"
     t1.rows[0].cells[2].text = "说明"
     r1 = t1.add_row().cells
-    r1[0].text = "设备类型"
-    r1[1].text = "2字节"
-    r1[2].text = "00H：单相表；01H：三相表；02H：采集器"
+    r1[0].text = "local_mode_word"
+    r1[1].text = "1字节"
+    r1[2].text = "0：路由模式；1：中继模式"
 
-    doc.add_heading("AFN03 DI=E80304F6 查询通信延时", level=2)
+    doc.add_heading("AFN03 DI=E8030304 查询通信延时时长", level=2)
     doc.add_paragraph("下行请求。")
 
     t2 = doc.add_table(rows=1, cols=3)
@@ -35,14 +35,13 @@ def build_sample_docx(path: Path) -> Path:
     t2.rows[0].cells[1].text = "长度"
     t2.rows[0].cells[2].text = "说明"
     r2 = t2.add_row().cells
-    r2[0].text = "timeout"
-    r2[1].text = "2字节"
-    r2[2].text = "超时时间(秒)"
-
+    r2[0].text = "dest_addr"
+    r2[1].text = "6字节"
+    r2[2].text = "通信目的地址"
     r3 = t2.add_row().cells
-    r3[0].text = "保留"
-    r3[1].text = "4字节"
-    r3[2].text = "厂家私有透明数据"
+    r3[0].text = "payload_length"
+    r3[1].text = "1字节"
+    r3[2].text = "报文长度"
 
     path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(path))
