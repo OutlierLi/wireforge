@@ -510,6 +510,60 @@ def test_protocol_task_builds_csg_add_slave_with_address_array():
     assert ["slave_addrs", True] in result["checks"]
 
 
+def test_protocol_task_builds_csg_event_report_ctl_with_enum():
+    first = run_agent_protocol("构造允许上报从节点事件报文")
+    entry = _find_entry(
+        _saved_protocol_map(first),
+        "afn04_event_report_ctl",
+        proto="csg",
+        dir="downlink",
+        has_address=False,
+    )
+    run_agent_protocol(
+        run_id=first["run_id"],
+        user_input={"entry_id": entry["id"], "route_params": entry["route_params"]},
+    )
+
+    result = run_agent_protocol(
+        run_id=first["run_id"],
+        user_input={"fields": {"enable": "0x01"}},
+    )
+
+    assert result["state"] == "SUCCEEDED"
+    assert result["variant_id"] == "csg_2016.afn04_event_report_ctl"
+    assert result["decode_verified"] is True
+    assert ["enable", True] in result["checks"]
+
+
+def test_protocol_task_builds_csg_report_slave_info_with_mixed_bcd_addresses():
+    first = run_agent_protocol("构造上报从节点信息报文")
+    entry = _find_entry(
+        _saved_protocol_map(first),
+        "afn05_report_slave_info",
+        proto="csg",
+        dir="uplink",
+        has_address=False,
+    )
+    run_agent_protocol(
+        run_id=first["run_id"],
+        user_input={"entry_id": entry["id"], "route_params": entry["route_params"]},
+    )
+
+    result = run_agent_protocol(
+        run_id=first["run_id"],
+        user_input={"fields": {
+            "slave_count": 2,
+            "slave_addrs": ["000000000001", "00 00 00 00 00 02"],
+        }},
+    )
+
+    assert result["state"] == "SUCCEEDED"
+    assert result["variant_id"] == "csg_2016.afn05_report_slave_info"
+    assert result["decode_verified"] is True
+    assert ["slave_count", True] in result["checks"]
+    assert ["slave_addrs", True] in result["checks"]
+
+
 def test_protocol_task_build_failure_stops_after_three_attempts():
     first = run_agent_protocol("构造 csg 添加任务")
     entry = _find_entry(_saved_protocol_map(first), "afn02_add_task", proto="csg")

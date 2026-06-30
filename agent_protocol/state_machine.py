@@ -720,6 +720,25 @@ def _compact_value(value: Any) -> Any:
     return value
 
 
+def _is_enum_decoded(value: Any) -> bool:
+    return isinstance(value, dict) and "raw" in value
+
+
+def _enum_raw(value: Any) -> Any:
+    if _is_enum_decoded(value):
+        return value["raw"]
+    return value
+
+
+def _schema_children(schema: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    children = (schema or {}).get("children") or []
+    return {
+        str(item.get("name")): item
+        for item in children
+        if isinstance(item, dict) and item.get("name")
+    }
+
+
 def _values_match(expected: Any, actual: Any, schema: dict[str, Any] | None = None) -> bool:
     if actual is None:
         return False
@@ -728,14 +747,45 @@ def _values_match(expected: Any, actual: Any, schema: dict[str, Any] | None = No
     if str(expected).lower() == "downlink":
         return _normalize_compare_value(actual) in {"0", "downlink"}
     field_type = str((schema or {}).get("type") or "")
+
+    if field_type == "array" or (isinstance(expected, list) and isinstance(actual, list)):
+        if not isinstance(expected, list) or not isinstance(actual, list):
+            return False
+        if len(expected) != len(actual):
+            return False
+        child_schema = _schema_children(schema)
+        scalar_child = next(iter(child_schema.values()), None) if len(child_schema) == 1 else None
+        for exp_item, act_item in zip(expected, actual):
+            if isinstance(exp_item, dict) and isinstance(act_item, dict):
+                for key, exp_val in exp_item.items():
+                    if not _values_match(exp_val, act_item.get(key), child_schema.get(key)):
+                        return False
+            elif not _values_match(exp_item, act_item, scalar_child):
+                return False
+        return True
+
+    if field_type == "struct" or (
+        isinstance(expected, dict)
+        and isinstance(actual, dict)
+        and not _is_enum_decoded(actual)
+    ):
+        child_schema = _schema_children(schema)
+        for key, exp_val in expected.items():
+            if not _values_match(exp_val, actual.get(key), child_schema.get(key)):
+                return False
+        return True
+
+    if field_type == "enum" or _is_enum_decoded(actual):
+        return _parse_decimal_or_prefixed_int(expected) == _parse_decimal_or_prefixed_int(_enum_raw(actual))
+
     if field_type.startswith("uint"):
         return _parse_decimal_or_prefixed_int(expected) == _parse_decimal_or_prefixed_int(actual)
     if field_type in {"bcd", "bcd_numeric"}:
-        return str(expected).zfill(2)[-2:] == str(actual).zfill(2)[-2:]
+        return _normalize_bcd_compare_value(expected) == _normalize_bcd_compare_value(actual)
     if field_type in {"hex", "bytes"}:
         return _normalize_hex_compare_value(expected) == _normalize_hex_compare_value(actual)
     expected_text = re.sub(r"\s+", "", str(expected).strip())
-    actual_text = re.sub(r"\s+", "", str(actual).strip())
+    actual_text = re.sub(r"\s+", "", str(_enum_raw(actual)).strip())
     if expected_text.isdigit() and actual_text.isdigit() and max(len(expected_text), len(actual_text)) > 2:
         return int(expected_text) == int(actual_text)
     return _normalize_compare_value(expected) == _normalize_compare_value(actual)
@@ -758,11 +808,23 @@ def _normalize_hex_compare_value(value: Any) -> str:
     return re.sub(r"[^0-9A-Fa-f]", "", str(value)).lower()
 
 
+def _normalize_bcd_compare_value(value: Any) -> str:
+    normalized = _normalize_hex_compare_value(value)
+    if len(normalized) <= 2:
+        return normalized.zfill(2)[-2:]
+    return normalized
+
+
 def _normalize_compare_value(value: Any) -> str:
     if isinstance(value, int):
         return str(value)
     if isinstance(value, dict):
-        return _normalize_compare_value(_compact_value(value))
+        if _is_enum_decoded(value):
+            return str(value["raw"])
+        compacted = _compact_value(value)
+        if compacted is not value:
+            return _normalize_compare_value(compacted)
+        return re.sub(r"\s+", "", str(value)).lower()
     text = str(value).strip()
     compact = re.sub(r"\s+", "", text)
     if re.fullmatch(r"0x[0-9a-fA-F]+", compact):
