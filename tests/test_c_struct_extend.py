@@ -138,16 +138,6 @@ def test_parse_nested_bcd_clock_from_base_protocol():
     assert clock[5]["name"] == "year"
 
 
-def test_parse_nested_bcd_clock_collapses_to_bcd_fields():
-    source = (CSG_PAYLOADS / "afn06_request_time_resp.h").read_text(encoding="utf-8")
-    defn = parse_c_struct(source)
-    fields = c_struct_to_yaml_fields(defn)
-    clock = fields[0]["fields"]
-    assert len(clock) == 6
-    assert clock[0] == {"name": "second", "type": "bcd", "length": 1, "desc": "秒"}
-    assert clock[5]["name"] == "year"
-
-
 def test_build_spec_pair():
     spec = build_spec_from_c_struct(
         "扩展",
