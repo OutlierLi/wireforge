@@ -116,6 +116,12 @@ class RunCommand:
                     "scenario": "auto_rule add/update/remove、规则覆盖、DI+字段、match.any",
                 },
                 {
+                    "name": "auto_rule_decoded_match",
+                    "file": "database/runs/auto_rule_decoded_match.yaml",
+                    "doc": "database/examples/auto_rule_decoded_match.md",
+                    "scenario": "mock://auto 解析后 di/afn/dir + payload 语义匹配",
+                },
+                {
                     "name": "add_slave_nodes_loop",
                     "file": "database/runs/add_slave_nodes_loop.yaml",
                     "doc": "database/examples/add_slave_nodes_loop.md",
@@ -151,7 +157,7 @@ class RunCommand:
                 "default_port": "mock://auto",
                 "real_port_override": "test.run options.vars.port",
                 "send_before_wait_frame": "send args.timeout must be 0",
-                "auto_rule_match": "use DI hex substring from build downlink frame; match.all/match.any for composite",
+                "auto_rule_match": "hex DI substring from build, or semantic di/afn/dir (auto decode); match.all/match.any for composite",
                 "auto_rule_then": "dict: command /send + args.hex, or command build + $request/$generated",
                 "auto_rule_no_fallback": "mock://auto returns empty RX when no rule matches",
                 "build_fields": "field names from protocol MCP input_schema only",

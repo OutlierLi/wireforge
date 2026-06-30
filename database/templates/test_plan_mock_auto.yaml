@@ -11,6 +11,7 @@
 #   - send 后接 wait-frame 时 timeout: 0（避免 send 读走 mock 回复）
 #   - auto_rule.then 用 dict 格式（command + args），不用字符串 then
 #   - auto_rule.match 用 build 下行帧 DI 的 hex 片段（无空格），不用宽泛 regex
+#   - 语义匹配（推荐）: di/afn/dir 或 match: {di: E8030306, slave_count: '32'}（自动 decode）
 #   - 多分支: match.all / match.any；动态上行: then command: build + $request.* / $generated.slave_addrs
 #   - 重复步骤: parametrize + include（推荐）；或 loop
 #   - mock 专用: include 片段 + when: port == mock://auto

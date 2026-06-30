@@ -165,6 +165,19 @@ class TestAutoRulePort:
         port2.write(bytes.fromhex(wrong_count.replace(" ", "")))
         assert port2.read(4096) == b""
 
+    def test_di_sugar_on_port(self):
+        exec_cmd("auto_rule", {
+            "sub": "add",
+            "id": "di_port",
+            "di": "E8030306",
+            "dir": "downlink",
+            "slave_count": "32",
+            "then": [{"command": "/send", "args": {"hex": "EE FF"}}],
+        })
+        port = _AutoRulePort()
+        port.write(bytes.fromhex(QUERY_SLAVE_DOWNLINK.replace(" ", "")))
+        assert port.read(4096) == bytes.fromhex("EEFF")
+
     def test_match_any_branches(self):
         """any 多分支：DI 或 另一 DI 均可触发不同规则（后加覆盖同 pattern）。"""
         exec_cmd("auto_rule", {

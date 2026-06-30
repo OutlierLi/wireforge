@@ -406,3 +406,63 @@ class TestDecodedFieldMatch:
         })
         _ok(r)
         assert r["data"]["matched"] is False
+
+
+# ═══════════════════════════════════════════════════════════════
+# 12. route sugar — di / afn / dir 语义匹配（decode + 归一化）
+# ═══════════════════════════════════════════════════════════════
+
+class TestRouteSugarMatch:
+    _QUERY_SLAVE_HEX = "68 0F 00 40 03 01 06 03 03 E8 00 00 20 58 16"
+
+    def test_top_level_di_normalized(self):
+        exec_cmd("auto_rule", {
+            "sub": "add", "id": "di_sugar",
+            "di": "E8030306",
+            "then": "/log",
+        })
+        r = exec_cmd("auto_rule", {
+            "sub": "test", "id": "di_sugar",
+            "hex": self._QUERY_SLAVE_HEX,
+        })
+        _ok(r)
+        assert r["data"]["matched"] is True
+
+    def test_match_object_di_afn_dir(self):
+        exec_cmd("auto_rule", {
+            "sub": "add", "id": "route_all",
+            "match": {"all": [{"di": "E8030306", "afn": "0x03", "dir": "downlink"}]},
+            "then": "/log",
+        })
+        r = exec_cmd("auto_rule", {
+            "sub": "test", "id": "route_all",
+            "hex": self._QUERY_SLAVE_HEX,
+        })
+        _ok(r)
+        assert r["data"]["matched"] is True
+
+    def test_match_di_and_payload_field(self):
+        exec_cmd("auto_rule", {
+            "sub": "add", "id": "di_payload",
+            "match": {"di": "E8030306", "slave_count": "32"},
+            "then": "/log",
+        })
+        r = exec_cmd("auto_rule", {
+            "sub": "test", "id": "di_payload",
+            "hex": self._QUERY_SLAVE_HEX,
+        })
+        _ok(r)
+        assert r["data"]["matched"] is True
+
+    def test_match_di_payload_miss(self):
+        exec_cmd("auto_rule", {
+            "sub": "add", "id": "di_payload_miss",
+            "match": {"di": "E8030306", "slave_count": "99"},
+            "then": "/log",
+        })
+        r = exec_cmd("auto_rule", {
+            "sub": "test", "id": "di_payload_miss",
+            "hex": self._QUERY_SLAVE_HEX,
+        })
+        _ok(r)
+        assert r["data"]["matched"] is False

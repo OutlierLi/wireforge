@@ -137,7 +137,9 @@ def _update(args: dict) -> dict:
     rule = _rules[rid]
     if args.get("name"):
         rule["name"] = args["name"]
-    if any(k in args for k in ("match", "pattern", "field", "match_type", "condition_type")):
+    if any(k in args for k in (
+        "match", "pattern", "field", "match_type", "condition_type", "di", "afn", "dir", "proto",
+    )):
         rule["condition"] = _parse_condition(args)
     if any(k in args for k in ("then", "actions")):
         rule["actions"] = _parse_actions(args)
@@ -279,28 +281,39 @@ def append_action_replies_to_buf(
 
 # ── helpers ───────────────────────────────────────────────────────────
 
+_ROUTE_KEYS = ("di", "afn", "dir")
+_ROUTE_FIELD_MAP = {"di": "user_data.di", "afn": "user_data.afn", "dir": "dir"}
+
+
 def _parse_condition(args: dict) -> dict:
     cond_type = args.get("match_type", args.get("condition_type", "regex"))
     pattern = args.get("match", args.get("pattern", ""))
 
-    # decoded field matching
-    fields = {}
-    raw_fields = args.get("field", [])
-    if not isinstance(raw_fields, list):
-        raw_fields = [raw_fields]
-    for f in raw_fields:
-        if "=" in str(f):
-            k, v = str(f).split("=", 1)
-            fields[k.strip()] = v.strip()
-
-    if fields:
+    fields = _collect_decoded_fields(args)
+    if fields and not pattern:
         return {"type": "decoded", "fields": fields}
 
     if isinstance(pattern, dict):
         if "all" in pattern or "any" in pattern:
             return _normalize_composite(pattern)
+        if pattern.get("type") == "decoded":
+            merged = dict(pattern.get("fields") or {})
+            merged.update(_collect_decoded_fields(pattern))
+            return {"type": "decoded", "fields": merged}
+        route_or_payload = _collect_decoded_fields(pattern)
+        extra = {
+            k: v for k, v in pattern.items()
+            if k not in _ROUTE_KEYS and k not in ("type", "fields", "all", "any")
+        }
+        for key, value in extra.items():
+            route_or_payload[_decoded_field_path(key)] = str(value).strip()
+        if route_or_payload:
+            return {"type": "decoded", "fields": route_or_payload}
         if "type" in pattern:
             return pattern
+
+    if fields:
+        return {"type": "decoded", "fields": fields}
 
     if isinstance(pattern, list):
         return {"any": [_normalize_leaf_item(item) for item in pattern]}
@@ -308,6 +321,29 @@ def _parse_condition(args: dict) -> dict:
     if pattern:
         return {"type": cond_type, "pattern": str(pattern)}
     return {"type": "any"}
+
+
+def _collect_decoded_fields(src: dict) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    raw_fields = src.get("field", [])
+    if not isinstance(raw_fields, list):
+        raw_fields = [raw_fields]
+    for f in raw_fields:
+        if f and "=" in str(f):
+            k, v = str(f).split("=", 1)
+            fields[k.strip()] = v.strip()
+    for key in _ROUTE_KEYS:
+        if key in src and src[key] not in (None, ""):
+            fields[_ROUTE_FIELD_MAP[key]] = str(src[key]).strip()
+    return fields
+
+
+def _decoded_field_path(name: str) -> str:
+    if name in ("dir", "add"):
+        return name
+    if "." in name:
+        return name
+    return f"user_data.{name}"
 
 
 def _normalize_composite(cond: dict) -> dict:
@@ -327,6 +363,25 @@ def _normalize_leaf_item(item: Any) -> dict:
     if isinstance(item, dict):
         if "all" in item or "any" in item:
             return _normalize_composite(item)
+        if item.get("type") == "decoded":
+            merged = dict(item.get("fields") or {})
+            merged.update(_collect_decoded_fields(item))
+            extra = {
+                k: v for k, v in item.items()
+                if k not in _ROUTE_KEYS and k not in ("type", "fields", "all", "any")
+            }
+            for key, value in extra.items():
+                merged[_decoded_field_path(key)] = str(value).strip()
+            return {"type": "decoded", "fields": merged}
+        if any(k in item for k in _ROUTE_KEYS):
+            fields = _collect_decoded_fields(item)
+            extra = {
+                k: v for k, v in item.items()
+                if k not in _ROUTE_KEYS and k not in ("type", "fields", "all", "any")
+            }
+            for key, value in extra.items():
+                fields[_decoded_field_path(key)] = str(value).strip()
+            return {"type": "decoded", "fields": fields}
         if "type" not in item and "pattern" in item:
             return {"type": "regex", **item}
         return item
@@ -416,12 +471,46 @@ def _eval_condition(
         fields = cond.get("fields", {})
         if not decoded:
             return False
-        return all(str(decoded.get(k, "")) == str(v) for k, v in fields.items())
+        return all(_decoded_value_matches(decoded, k, v) for k, v in fields.items())
 
     if cond_type == "any":
         return True
 
     return False
+
+
+def _normalize_hex_token(value: Any) -> str:
+    return re.sub(r"[^0-9A-Fa-f]", "", str(value)).upper()
+
+
+def _parse_int_token(value: Any) -> int | None:
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    if text.startswith("0x"):
+        try:
+            return int(text, 16)
+        except ValueError:
+            return None
+    try:
+        return int(text, 10)
+    except ValueError:
+        return None
+
+
+def _decoded_value_matches(decoded: dict, field_path: str, expected: Any) -> bool:
+    actual = decoded.get(field_path, "")
+    if field_path == "user_data.di":
+        return _normalize_hex_token(actual) == _normalize_hex_token(expected)
+    if field_path == "user_data.afn":
+        actual_int = _parse_int_token(actual)
+        expected_int = _parse_int_token(expected)
+        if actual_int is not None and expected_int is not None:
+            return actual_int == expected_int
+        return str(actual) == str(expected)
+    if field_path == "dir":
+        return str(actual).lower() == str(expected).lower()
+    return str(actual) == str(expected)
 
 
 def _condition_needs_decode(cond: dict) -> bool:

@@ -1,0 +1,218 @@
+# auto_rule 语义匹配示例 — mock://auto + decode（di/afn/dir + 数据域字段）
+# 说明: database/examples/auto_rule_decoded_match.md
+# 用法: test.validate → test.dry_run → test.run
+
+version: 1
+name: auto_rule_decoded_match
+description: 解析报文后按 DI/AFN/方向及 payload 字段匹配，mock://auto 自动回复
+timeout_ms: 120000
+
+purpose: |
+  演示 auto_rule 不依赖 hex 正则，而是 decode 后按路由字段与数据域匹配：
+  1) 顶层 di/afn/dir 语法（E8030306 自动归一化）
+  2) match.all 组合 DI + slave_count
+  3) match 对象内 di + 短字段名
+
+expected_results:
+  - step_id: assert_di_only_reply
+    description: di=E8030306 命中并回复 AA
+  - step_id: assert_route_all_reply
+    description: di+afn+dir 全部满足才回复 BB
+  - step_id: assert_di_field_reply
+    description: di+slave_count=32 才回复 CC DD
+  - step_id: assert_wrong_count_no_reply
+    description: slave_count=20 不命中
+
+vars:
+  port: mock://auto
+  conn: cco
+  baudrate: 9600
+  proto: csg
+  rx_timeout_s: 0.5
+
+setup:
+  - id: connect
+    action: serial.connect
+    args:
+      conn: ${conn}
+      port: ${port}
+      baudrate: ${baudrate}
+
+  - id: build_query_slave_32
+    action: build
+    args:
+      proto: ${proto}
+      afn: '0x03'
+      di: E8030306
+      dir: downlink
+      start_slave_index: 0
+      slave_count: 32
+    save_as: query32
+
+  - id: build_query_slave_20
+    action: build
+    args:
+      proto: ${proto}
+      afn: '0x03'
+      di: E8030306
+      dir: downlink
+      start_slave_index: 0
+      slave_count: 20
+    save_as: query20
+
+steps:
+  # ── 1. 顶层 di 语法（解析匹配，非 hex 正则）──
+  - id: add_rule_di_only
+    action: auto_rule.add
+    args:
+      id: rule_di_only
+      di: E8030306
+      then:
+        - command: /send
+          args:
+            hex: AA
+
+  - id: test_di_only_hit
+    action: auto_rule.test
+    args:
+      id: rule_di_only
+      hex: ${query32.frame_hex}
+    save_as: di_only_hit
+
+  - id: assert_di_only_test
+    action: assert
+    args:
+      expect:
+        di_only_hit.matched: true
+
+  - id: send_di_only
+    action: send
+    args:
+      conn: ${conn}
+      hex: ${query32.frame_hex}
+      timeout: ${rx_timeout_s}
+    save_as: di_only_reply
+
+  - id: assert_di_only_reply
+    action: assert
+    args:
+      expect:
+        di_only_reply.received: AA
+
+  - id: remove_rule_di_only
+    action: auto_rule.remove
+    args:
+      id: rule_di_only
+
+  # ── 2. di + afn + dir 多条路由条件（全部满足）──
+  - id: add_rule_route_all
+    action: auto_rule.add
+    args:
+      id: rule_route_all
+      match:
+        all:
+          - di: E8030306
+            afn: '03'
+            dir: downlink
+      then:
+        - command: /send
+          args:
+            hex: BB
+
+  - id: send_route_all
+    action: send
+    args:
+      conn: ${conn}
+      hex: ${query32.frame_hex}
+      timeout: ${rx_timeout_s}
+    save_as: route_all_reply
+
+  - id: assert_route_all_reply
+    action: assert
+    args:
+      expect:
+        route_all_reply.received: BB
+
+  - id: remove_rule_route_all
+    action: auto_rule.remove
+    args:
+      id: rule_route_all
+
+  # ── 3. di + 数据域字段 slave_count（解析后组合）──
+  - id: add_rule_di_field
+    action: auto_rule.add
+    args:
+      id: rule_di_field
+      match:
+        di: E8030306
+        dir: downlink
+        slave_count: '32'
+      then:
+        - command: /send
+          args:
+            hex: 'CC DD'
+
+  - id: test_di_field_hit
+    action: auto_rule.test
+    args:
+      id: rule_di_field
+      hex: ${query32.frame_hex}
+    save_as: di_field_hit
+
+  - id: assert_di_field_test_hit
+    action: assert
+    args:
+      expect:
+        di_field_hit.matched: true
+
+  - id: test_di_field_miss
+    action: auto_rule.test
+    args:
+      id: rule_di_field
+      hex: ${query20.frame_hex}
+    save_as: di_field_miss
+
+  - id: assert_di_field_test_miss
+    action: assert
+    args:
+      expect:
+        di_field_miss.matched: false
+
+  - id: send_di_field_hit
+    action: send
+    args:
+      conn: ${conn}
+      hex: ${query32.frame_hex}
+      timeout: ${rx_timeout_s}
+    save_as: di_field_reply
+
+  - id: assert_di_field_reply
+    action: assert
+    args:
+      expect:
+        di_field_reply.received: 'CC DD'
+
+  - id: send_wrong_count
+    action: send
+    args:
+      conn: ${conn}
+      hex: ${query20.frame_hex}
+      timeout: ${rx_timeout_s}
+    save_as: wrong_count_reply
+
+  - id: assert_wrong_count_no_reply
+    action: assert
+    args:
+      expect:
+        wrong_count_reply.received_bytes: 0
+
+  - id: remove_rule_di_field
+    action: auto_rule.remove
+    args:
+      id: rule_di_field
+
+teardown:
+  - id: disconnect
+    action: serial.disconnect
+    args:
+      conn: ${conn}
