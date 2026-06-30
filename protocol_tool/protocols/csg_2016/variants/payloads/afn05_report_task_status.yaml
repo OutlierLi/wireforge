@@ -1,0 +1,24 @@
+# Generated from payloads/afn05_report_task_status.h
+# Source: c_struct manifest — do not edit by hand
+
+variants:
+- kind: variant
+  id: csg_2016.afn05_report_task_status
+  router: afn05_di_router
+  match:
+    di: E8050505
+    control.dir: 1
+    control.add: 0
+  body:
+    type: struct
+    fields:
+    - name: task_id
+      type: uint16_le
+      description: 任务ID
+    - name: slave_addr
+      type: node_address
+      description: 从节点地址
+    - name: task_status
+      type: uint8
+      description: 任务状态
+  description: 上报任务状态

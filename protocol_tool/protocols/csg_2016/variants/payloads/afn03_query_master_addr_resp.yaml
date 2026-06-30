@@ -1,0 +1,18 @@
+# Generated from payloads/afn03_query_master_addr_resp.h
+# Source: c_struct manifest — do not edit by hand
+
+variants:
+- kind: variant
+  id: csg_2016.afn03_query_master_addr_resp
+  router: afn03_di_router
+  match:
+    di: E8000303
+    control.dir: 1
+    control.add: 0
+  body:
+    type: struct
+    fields:
+    - name: master_addr
+      type: node_address
+      description: 主节点地址
+  description: 返回主节点地址

@@ -293,3 +293,82 @@ def check_fidelity(
         "source_excerpt": source_excerpt(snapshot),
     }
     return report
+
+
+def _yaml_field_issues(fields: list[dict[str, Any]], *, prefix: str = "fields") -> list[str]:
+    issues: list[str] = []
+    names: list[str] = []
+
+    for idx, field in enumerate(fields):
+        name = str(field.get("name") or "").strip()
+        path = f"{prefix}[{idx}]"
+        if not name:
+            issues.append(f"{path}.name missing")
+            continue
+        names.append(name)
+
+        if field.get("type") == "array":
+            count_ref = str(field.get("count_ref") or "").strip()
+            if not count_ref:
+                issues.append(f"{path}.count_ref missing")
+            elif count_ref not in names:
+                issues.append(f"{path}.count_ref '{count_ref}' not found in prior fields")
+            item_type = field.get("item_type")
+            if not item_type:
+                issues.append(f"{path}.item_type missing")
+
+        for scalar_type in ("hex", "bytes"):
+            if field.get("type") == scalar_type and field.get("length_from"):
+                ref = str(field.get("length_from") or "").strip()
+                if ref and ref not in names:
+                    issues.append(f"{path}.length_from '{ref}' not found in prior fields")
+
+        if field.get("type") == "enum":
+            values = field.get("values") or {}
+            if len(values) < 2:
+                issues.append(f"{path}.enum needs >=2 values")
+
+        nested = field.get("fields")
+        if field.get("type") == "struct" and isinstance(nested, list):
+            issues.extend(_yaml_field_issues(nested, prefix=f"{path}.fields"))
+
+    return issues
+
+
+def check_layout_fidelity(spec: ExtensionSpec) -> dict[str, Any]:
+    """Layout-only fidelity for C struct pipeline (no DOCX snapshot)."""
+    checks: list[dict[str, Any]] = []
+    earned = 0
+    total_weight = 0
+
+    def add_check(check_id: str, ok: bool, weight: int, **extra: Any) -> None:
+        nonlocal earned, total_weight
+        total_weight += weight
+        if ok:
+            earned += weight
+        checks.append({"id": check_id, "ok": ok, "weight": weight, **extra})
+
+    add_check("di_present", bool(spec.di), 15, expected=spec.di)
+    add_check("afn_present", spec.afn is not None, 10, expected=spec.afn)
+    add_check("description_present", bool(spec.description), 10)
+
+    field_issues = _yaml_field_issues(spec.fields or [])
+    if spec.resp_fields:
+        field_issues.extend(_yaml_field_issues(spec.resp_fields, prefix="resp_fields"))
+    add_check("field_layout", not field_issues, 40, issues=field_issues)
+
+    has_payload = bool(spec.fields or spec.resp_fields)
+    add_check("payload_defined", True, 25, empty=not has_payload)
+
+    score = int(round(100 * earned / total_weight)) if total_weight else 0
+    confidence = _confidence_from_score(score)
+    failed = [c["id"] for c in checks if not c.get("ok")]
+    summary = "layout ok" if not failed else f"layout issues: {', '.join(failed)}"
+
+    return {
+        "confidence": confidence,
+        "score": score,
+        "checks": checks,
+        "summary": summary,
+        "source": "c_struct_layout",
+    }

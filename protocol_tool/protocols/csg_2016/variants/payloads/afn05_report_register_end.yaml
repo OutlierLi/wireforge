@@ -1,0 +1,15 @@
+# Generated from payloads/afn05_report_register_end.h
+# Source: c_struct manifest — do not edit by hand
+
+variants:
+- kind: variant
+  id: csg_2016.afn05_report_register_end
+  router: afn05_di_router
+  match:
+    di: E8050504
+    control.dir: 1
+    control.add: 0
+  body:
+    type: struct
+    fields: []
+  description: 上报从节点注册结束

@@ -1,0 +1,40 @@
+# Generated from payloads/afn03_query_vendor_resp.h
+# Source: c_struct manifest — do not edit by hand
+
+variants:
+- kind: variant
+  id: csg_2016.afn03_query_vendor_resp
+  router: afn03_di_router
+  match:
+    di: E8000301
+    control.dir: 1
+    control.add: 0
+  body:
+    type: struct
+    fields:
+    - name: vendor_code
+      type: array
+      item_type: ascii
+    - name: chip_code
+      type: array
+      item_type: ascii
+    - name: version_date
+      type: struct
+      fields:
+      - name: year
+        type: array
+        description: 年
+        item_type: bcd
+      - name: month
+        type: array
+        description: 月
+        item_type: bcd
+      - name: day
+        type: array
+        description: 日
+        item_type: bcd
+      description: 版本日期 (YYMMDD)
+    - name: version
+      type: array
+      item_type: bcd
+  description: 返回厂商代码和版本信息

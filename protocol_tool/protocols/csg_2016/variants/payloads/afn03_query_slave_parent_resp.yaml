@@ -1,0 +1,24 @@
+# Generated from payloads/afn03_query_slave_parent_resp.h
+# Source: c_struct manifest — do not edit by hand
+
+variants:
+- kind: variant
+  id: csg_2016.afn03_query_slave_parent_resp
+  router: afn03_di_router
+  match:
+    di: E8040308
+    control.dir: 1
+    control.add: 0
+  body:
+    type: struct
+    fields:
+    - name: slave_addr
+      type: node_address
+      description: 从节点地址
+    - name: parent_addr
+      type: node_address
+      description: 父节点地址
+    - name: link_quality
+      type: uint8
+      description: 链路质量
+  description: 返回查询从节点的父节点

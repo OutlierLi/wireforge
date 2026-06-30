@@ -1,0 +1,15 @@
+# Generated from payloads/afn03_query_slave_count.h
+# Source: c_struct manifest — do not edit by hand
+
+variants:
+- kind: variant
+  id: csg_2016.afn03_query_slave_count
+  router: afn03_di_router
+  match:
+    di: E8000305
+    control.dir: 0
+    control.add: 0
+  body:
+    type: struct
+    fields: []
+  description: 查询从节点数量

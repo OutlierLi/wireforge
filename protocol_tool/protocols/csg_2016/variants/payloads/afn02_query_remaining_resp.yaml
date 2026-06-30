@@ -1,0 +1,18 @@
+# Generated from payloads/afn02_query_remaining_resp.h
+# Source: c_struct manifest — do not edit by hand
+
+variants:
+- kind: variant
+  id: csg_2016.afn02_query_remaining_resp
+  router: afn02_di_router
+  match:
+    di: E8000103
+    control.dir: 1
+    control.add: 0
+  body:
+    type: struct
+    fields:
+    - name: task_count
+      type: uint16_le
+      description: 未完成任务数量
+  description: 返回查询未完成任务数

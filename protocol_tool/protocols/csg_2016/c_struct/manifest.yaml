@@ -1,0 +1,512 @@
+variants:
+- id: csg_2016.afn00_ack
+  router: afn00_di_router
+  match:
+    di: E8010001
+    control.add: 0
+  source: c_struct
+  description: 确认
+  c_struct: payloads/afn00_ack.h
+- id: csg_2016.afn00_nak
+  router: afn00_di_router
+  match:
+    di: E8010002
+    control.add: 0
+  source: c_struct
+  description: 否认
+  c_struct: payloads/afn00_nak.h
+- id: csg_2016.afn02_add_task
+  router: afn02_di_router
+  match:
+    di: E8020201
+    control.dir: 0
+    control.add: 1
+  source: c_struct
+  description: 添加任务
+  c_struct: payloads/afn02_add_task.h
+- id: csg_2016.afn02_delete_task
+  router: afn02_di_router
+  match:
+    di: E8020202
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 删除任务
+  c_struct: payloads/afn02_delete_task.h
+- id: csg_2016.afn02_query_remaining_resp
+  router: afn02_di_router
+  match:
+    di: E8000103
+    control.dir: 1
+    control.add: 0
+  source: c_struct
+  description: 返回查询未完成任务数
+  c_struct: payloads/afn02_query_remaining_resp.h
+- id: csg_2016.afn02_query_task_list
+  router: afn02_di_router
+  match:
+    di: E8030204
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 查询未完成任务列表
+  c_struct: payloads/afn02_query_task_list.h
+- id: csg_2016.afn02_query_task_list_resp
+  router: afn02_di_router
+  match:
+    di: E8040204
+    control.dir: 1
+    control.add: 0
+  source: c_struct
+  description: 返回查询未完成任务列表
+  c_struct: payloads/afn02_query_task_list_resp.h
+- id: csg_2016.afn02_query_task_detail
+  router: afn02_di_router
+  match:
+    di: E8030205
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 查询未完成任务详细信息
+  c_struct: payloads/afn02_query_task_detail.h
+- id: csg_2016.afn02_query_task_detail_resp
+  router: afn02_di_router
+  match:
+    di: E8040205
+    control.dir: 1
+    control.add: 0
+  source: c_struct
+  description: 返回查询未完成任务详细信息
+  c_struct: payloads/afn02_query_task_detail_resp.h
+- id: csg_2016.afn02_query_remaining_allocatable_resp
+  router: afn02_di_router
+  match:
+    di: E8000206
+    control.dir: 1
+    control.add: 0
+  source: c_struct
+  description: 返回查询剩余可分配任务数
+  c_struct: payloads/afn02_query_remaining_allocatable_resp.h
+- id: csg_2016.afn02_add_multicast_task
+  router: afn02_di_router
+  match:
+    di: E8020207
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 添加多播任务（选配）
+  c_struct: payloads/afn02_add_multicast_task.h
+- id: csg_2016.afn03_query_vendor_resp
+  router: afn03_di_router
+  match:
+    di: E8000301
+    control.dir: 1
+    control.add: 0
+  source: c_struct
+  description: 返回厂商代码和版本信息
+  c_struct: payloads/afn03_query_vendor_resp.h
+- id: csg_2016.afn03_query_mode_resp
+  router: afn03_di_router
+  match:
+    di: E8000302
+    control.dir: 1
+    control.add: 0
+  source: c_struct
+  description: 返回本地通信模块运行模式信息
+  c_struct: payloads/afn03_query_mode_resp.h
+- id: csg_2016.afn03_query_master_addr_resp
+  router: afn03_di_router
+  match:
+    di: E8000303
+    control.dir: 1
+    control.add: 0
+  source: c_struct
+  description: 返回主节点地址
+  c_struct: payloads/afn03_query_master_addr_resp.h
+- id: csg_2016.afn03_query_delay
+  router: afn03_di_router
+  match:
+    di: E8030304
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 查询通信延时时长
+  c_struct: payloads/afn03_query_delay.h
+- id: csg_2016.afn03_query_delay_resp
+  router: afn03_di_router
+  match:
+    di: E8040304
+    control.dir: 1
+    control.add: 0
+  source: c_struct
+  description: 返回查询通信延时时长
+  c_struct: payloads/afn03_query_delay_resp.h
+- id: csg_2016.afn03_query_slave_count_resp
+  router: afn03_di_router
+  match:
+    di: E8000305
+    control.dir: 1
+    control.add: 0
+  source: c_struct
+  description: 返回查询从节点数量
+  c_struct: payloads/afn03_query_slave_count_resp.h
+- id: csg_2016.afn03_query_slave_info
+  router: afn03_di_router
+  match:
+    di: E8030306
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 查询从节点信息
+  c_struct: payloads/afn03_query_slave_info.h
+- id: csg_2016.afn03_query_slave_info_resp
+  router: afn03_di_router
+  match:
+    di: E8040306
+    control.dir: 1
+    control.add: 0
+  source: c_struct
+  description: 返回查询从节点信息
+  c_struct: payloads/afn03_query_slave_info_resp.h
+- id: csg_2016.afn03_query_slave_register_progress_resp
+  router: afn03_di_router
+  match:
+    di: E8000307
+    control.dir: 1
+    control.add: 0
+  source: c_struct
+  description: 返回查询从节点主动注册进度
+  c_struct: payloads/afn03_query_slave_register_progress_resp.h
+- id: csg_2016.afn03_query_slave_parent
+  router: afn03_di_router
+  match:
+    di: E8030308
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 查询从节点的父节点
+  c_struct: payloads/afn03_query_slave_parent.h
+- id: csg_2016.afn03_query_slave_parent_resp
+  router: afn03_di_router
+  match:
+    di: E8040308
+    control.dir: 1
+    control.add: 0
+  source: c_struct
+  description: 返回查询从节点的父节点
+  c_struct: payloads/afn03_query_slave_parent_resp.h
+- id: csg_2016.afn04_event_report_ctl
+  router: afn04_di_router
+  match:
+    di: E8020404
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 允许/禁止上报从节点事件
+  c_struct: payloads/afn04_event_report_ctl.h
+- id: csg_2016.afn04_set_master_addr
+  router: afn04_di_router
+  match:
+    di: E8020401
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 设置主节点地址
+  c_struct: payloads/afn04_set_master_addr.h
+- id: csg_2016.afn04_add_slave
+  router: afn04_di_router
+  match:
+    di: E8020402
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 添加从节点
+  c_struct: payloads/afn04_add_slave.h
+- id: csg_2016.afn04_delete_slave
+  router: afn04_di_router
+  match:
+    di: E8020403
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 删除从节点
+  c_struct: payloads/afn04_delete_slave.h
+- id: csg_2016.afn05_report_task_data
+  router: afn05_di_router
+  match:
+    di: E8050501
+    control.dir: 1
+    control.add: 1
+  source: c_struct
+  description: 上报任务数据
+  c_struct: payloads/afn05_report_task_data.h
+- id: csg_2016.afn05_report_slave_event
+  router: afn05_di_router
+  match:
+    di: E8050502
+    control.dir: 1
+    control.add: 1
+  source: c_struct
+  description: 上报从节点事件
+  c_struct: payloads/afn05_report_slave_event.h
+- id: csg_2016.afn05_report_slave_info
+  router: afn05_di_router
+  match:
+    di: E8050503
+    control.dir: 1
+    control.add: 0
+  source: c_struct
+  description: 上报从节点信息
+  c_struct: payloads/afn05_report_slave_info.h
+- id: csg_2016.afn05_report_task_status
+  router: afn05_di_router
+  match:
+    di: E8050505
+    control.dir: 1
+    control.add: 0
+  source: c_struct
+  description: 上报任务状态
+  c_struct: payloads/afn05_report_task_status.h
+- id: csg_2016.afn06_request_time_resp
+  router: afn06_di_router
+  match:
+    di: E8060601
+    control.dir: 1
+    control.add: 0
+  source: c_struct
+  description: 请求集中器时间响应
+  c_struct: payloads/afn06_request_time_resp.h
+- id: csg_2016.afn07_file_transfer_start
+  router: afn07_di_router
+  match:
+    di: E8020701
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 启动文件传输
+  c_struct: payloads/afn07_file_transfer_start.h
+- id: csg_2016.afn07_file_transfer_data
+  router: afn07_di_router
+  match:
+    di: E8020702
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 传输文件内容
+  c_struct: payloads/afn07_file_transfer_data.h
+- id: csg_2016.afn07_query_file_info_resp
+  router: afn07_di_router
+  match:
+    di: E8000703
+    control.dir: 1
+    control.add: 0
+  source: c_struct
+  description: 返回查询文件信息
+  c_struct: payloads/afn07_query_file_info_resp.h
+- id: csg_2016.afn07_query_progress_resp
+  router: afn07_di_router
+  match:
+    di: E8000704
+    control.dir: 1
+    control.add: 0
+  source: c_struct
+  description: 返回查询文件处理进度
+  c_struct: payloads/afn07_query_progress_resp.h
+- id: csg_2016.afn07_query_failed_nodes
+  router: afn07_di_router
+  match:
+    di: E8030704
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 查询文件传输失败节点
+  c_struct: payloads/afn07_query_failed_nodes.h
+- id: csg_2016.afn07_query_failed_nodes_v2
+  router: afn07_di_router
+  match:
+    di: E8030705
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 查询文件传输失败节点
+  c_struct: payloads/afn07_query_failed_nodes_v2.h
+- id: csg_2016.afn07_query_failed_nodes_resp
+  router: afn07_di_router
+  match:
+    di: E8040704
+    control.dir: 1
+    control.add: 0
+  source: c_struct
+  description: 返回查询文件传输失败节点
+  c_struct: payloads/afn07_query_failed_nodes_resp.h
+- id: csg_2016.afn07_query_failed_nodes_resp_v2
+  router: afn07_di_router
+  match:
+    di: E8040705
+    control.dir: 1
+    control.add: 0
+  source: c_struct
+  description: 返回查询文件传输失败节点
+  c_struct: payloads/afn07_query_failed_nodes_resp_v2.h
+- id: csg_2016.afn01_reset_hardware
+  router: afn01_di_router
+  match:
+    di: E8020101
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 复位硬件
+  c_struct: payloads/afn01_reset_hardware.h
+- id: csg_2016.afn01_init_archive
+  router: afn01_di_router
+  match:
+    di: E8020102
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 初始化档案,清楚模块保存的档案信息
+  c_struct: payloads/afn01_init_archive.h
+- id: csg_2016.afn01_init_task
+  router: afn01_di_router
+  match:
+    di: E8020103
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 初始化任务,清除模块保存的任务信息,初始化成功后处于暂停任务状态
+  c_struct: payloads/afn01_init_task.h
+- id: csg_2016.afn02_query_remaining
+  router: afn02_di_router
+  match:
+    di: E8000203
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 查询未完成任务数
+  c_struct: payloads/afn02_query_remaining.h
+- id: csg_2016.afn02_query_remaining_allocatable
+  router: afn02_di_router
+  match:
+    di: E8000206
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 查询剩余可分配任务数
+  c_struct: payloads/afn02_query_remaining_allocatable.h
+- id: csg_2016.afn02_start_task
+  router: afn02_di_router
+  match:
+    di: E8020208
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 启动任务
+  c_struct: payloads/afn02_start_task.h
+- id: csg_2016.afn02_pause_task
+  router: afn02_di_router
+  match:
+    di: E8020209
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 暂停任务
+  c_struct: payloads/afn02_pause_task.h
+- id: csg_2016.afn03_query_vendor
+  router: afn03_di_router
+  match:
+    di: E8000301
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 查询厂商代码和版本信息
+  c_struct: payloads/afn03_query_vendor.h
+- id: csg_2016.afn03_query_mode
+  router: afn03_di_router
+  match:
+    di: E8000302
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 查询本地通信模块运行模式信息
+  c_struct: payloads/afn03_query_mode.h
+- id: csg_2016.afn03_query_master_addr
+  router: afn03_di_router
+  match:
+    di: E8000303
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 查询主节点地址
+  c_struct: payloads/afn03_query_master_addr.h
+- id: csg_2016.afn03_query_slave_count
+  router: afn03_di_router
+  match:
+    di: E8000305
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 查询从节点数量
+  c_struct: payloads/afn03_query_slave_count.h
+- id: csg_2016.afn03_query_slave_register_progress
+  router: afn03_di_router
+  match:
+    di: E8000307
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 查询从节点主动注册进度
+  c_struct: payloads/afn03_query_slave_register_progress.h
+- id: csg_2016.afn04_active_register
+  router: afn04_di_router
+  match:
+    di: E8020405
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 激活从节点主动注册
+  c_struct: payloads/afn04_active_register.h
+- id: csg_2016.afn04_stop_register
+  router: afn04_di_router
+  match:
+    di: E8020406
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 终止从节点主动注册
+  c_struct: payloads/afn04_stop_register.h
+- id: csg_2016.afn05_report_register_end
+  router: afn05_di_router
+  match:
+    di: E8050504
+    control.dir: 1
+    control.add: 0
+  source: c_struct
+  description: 上报从节点注册结束
+  c_struct: payloads/afn05_report_register_end.h
+- id: csg_2016.afn06_request_time
+  router: afn06_di_router
+  match:
+    di: E8060601
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 请求集中器时间
+  c_struct: payloads/afn06_request_time.h
+- id: csg_2016.afn07_query_file_info
+  router: afn07_di_router
+  match:
+    di: E8000703
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 查询文件信息
+  c_struct: payloads/afn07_query_file_info.h
+- id: csg_2016.afn07_query_progress
+  router: afn07_di_router
+  match:
+    di: E8000704
+    control.dir: 0
+    control.add: 0
+  source: c_struct
+  description: 查询文件处理进度
+  c_struct: payloads/afn07_query_progress.h

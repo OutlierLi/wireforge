@@ -1,0 +1,24 @@
+# Generated from payloads/afn04_add_slave.h
+# Source: c_struct manifest — do not edit by hand
+
+variants:
+- kind: variant
+  id: csg_2016.afn04_add_slave
+  router: afn04_di_router
+  match:
+    di: E8020402
+    control.dir: 0
+    control.add: 0
+  body:
+    type: struct
+    fields:
+    - name: slave_count
+      type: uint8
+      description: 从节点数量
+    - name: slave_addrs
+      type: array
+      description: 从节点地址列表
+      count_ref: slave_count
+      item_name: slave_addr
+      item_type: node_address
+  description: 添加从节点

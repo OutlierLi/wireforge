@@ -18,11 +18,25 @@ DEFAULT_EXTENSIONS_DIR = ROOT / "protocol_tool" / "protocols" / "csg_2016" / "va
 EXTENSIONS_DIR = DEFAULT_EXTENSIONS_DIR
 
 
+from protocol_extend.fields import FIELD_DSL_EXAMPLES, missing_field_metadata
+
+
+def _is_yaml_ready_field(field: dict[str, Any]) -> bool:
+    """True when field dict is already WireForge variant YAML (from C struct path)."""
+    if "type" not in field or "name" not in field:
+        return False
+    agent_markers = ("evidence", "bytes", "item_fields", "semantic_override")
+    return not any(key in field for key in agent_markers)
+
+
 from protocol_extend.fields import field_to_yaml as _field_to_yaml
 def _body_fields(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if not fields:
         return []
-    return [_field_to_yaml(f) for f in fields]
+    return [
+        f if _is_yaml_ready_field(f) else _field_to_yaml(f)
+        for f in fields
+    ]
 
 
 def _variant_entry(

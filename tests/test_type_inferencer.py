@@ -172,7 +172,7 @@ class TestNodeAddressDomainType:
     def test_blacklist_address_list_array(self):
         yaml_out = field_to_yaml({
             "name": "blacklist_nodes",
-            "desc": "黑名单节点地址列表",
+            "desc": "节点地址列表",
             "type": "array",
             "count_ref": "resp_count",
             "item_name": "blacklist_node",

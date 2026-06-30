@@ -15,7 +15,6 @@ DOMAIN_TYPE_NAMES = frozenset({NODE_ADDRESS})
 _ADDRESS_KEYWORDS = (
     "节点地址",
     "从节点地址",
-    "黑名单节点地址",
     "主节点地址",
     "父节点地址",
     "目的地址",
@@ -23,7 +22,6 @@ _ADDRESS_KEYWORDS = (
     "通信地址",
     "表地址",
     "从节点通信地址",
-    "未识别节点地址",
 )
 
 _ADDRESS_LIST_KEYWORDS = (
@@ -31,7 +29,6 @@ _ADDRESS_LIST_KEYWORDS = (
     "节点列表",
     "节点地址列表",
     "从节点地址列表",
-    "黑名单节点地址列表",
 )
 
 _ADDRESS_NAME_RE = re.compile(

@@ -1,0 +1,36 @@
+# Generated from payloads/afn07_query_file_info_resp.h
+# Source: c_struct manifest — do not edit by hand
+
+variants:
+- kind: variant
+  id: csg_2016.afn07_query_file_info_resp
+  router: afn07_di_router
+  match:
+    di: E8000703
+    control.dir: 1
+    control.add: 0
+  body:
+    type: struct
+    fields:
+    - name: file_type
+      type: uint8
+      description: 文件性质
+    - name: file_id
+      type: uint8
+      description: 文件ID
+    - name: dest_addr
+      type: node_address
+      description: 目的地址
+    - name: total_segments
+      type: uint16_le
+      description: 文件总段数
+    - name: file_size
+      type: uint32_le
+      description: 文件大小
+    - name: file_crc
+      type: uint16_le
+      description: 文件总校验
+    - name: received_segments
+      type: uint16_le
+      description: 已成功接收文件段数
+  description: 返回查询文件信息

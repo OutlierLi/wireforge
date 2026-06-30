@@ -38,6 +38,8 @@ def main(argv: list[str] | None = None) -> int:
     if clean:
         _clean_generated_outputs()
 
+    _generate_csg_variants_from_c_struct()
+
     protocols = _enabled_protocols()
     COMPILED_DIR.mkdir(parents=True, exist_ok=True)
     ir_by_protocol = {}
@@ -56,6 +58,21 @@ def main(argv: list[str] | None = None) -> int:
     print(f"generated {json_path} ({total} entries)")
     print(f"generated {yaml_path}")
     return 0
+
+
+def _generate_csg_variants_from_c_struct() -> None:
+    manifest = ROOT / "protocol_tool" / "protocols" / "csg_2016" / "c_struct" / "manifest.yaml"
+    if not manifest.exists():
+        return
+    import importlib.util
+
+    script = ROOT / "scripts" / "generate_csg_variants_from_c_struct.py"
+    spec = importlib.util.spec_from_file_location("generate_csg_variants_from_c_struct", script)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load {script}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.generate(clean=False)
 
 
 def _clean_generated_outputs() -> None:

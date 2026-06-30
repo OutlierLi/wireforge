@@ -1,4 +1,4 @@
-"""Stateful MCP workflow for protocol variant extensions (DOCX auto pipeline)."""
+"""Stateful MCP workflow for protocol variant extensions (C struct pipeline)."""
 
 from __future__ import annotations
 
@@ -9,38 +9,27 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from doc_parser.document_ir import DocumentIR
 from extractor.extension_draft import ExtensionDraft
 
+from protocol_extend.c_struct.builder import build_spec_from_c_struct, load_c_struct_source, _empty_struct_source
+from protocol_extend.c_struct.parser import parse_c_struct
+from protocol_extend.c_struct.validator import validate_c_struct
 from protocol_extend.schema import (
     ExtensionSpec,
     afn_has_builtin_router,
+    missing_c_struct_input,
     missing_fields,
     normalize_protocol,
     router_compile_hint,
 )
-from doc_parser.metadata_extractor import resolve_afn
-from protocol_extend.document_pipeline import (
-    batch_summary,
-    build_document_catalog,
-    catalog_scan_summary,
-    chapter_hint_from,
-    collect_all_drafts,
-    document_path_from,
-    load_drafts,
-    load_or_parse_document,
-    save_drafts,
-)
 from protocol_extend.validator import find_conflicts
 from protocol_extend import yaml_writer
-from protocol_extend.fidelity_checker import check_fidelity
-from protocol_extend.source_snapshot import freeze_snapshot_if_missing
+from protocol_extend.fidelity_checker import check_layout_fidelity
 from protocol_extend.map_verify import (
     refresh_protocol_map,
     verify_extension_routes,
     verify_route_handle,
 )
-from protocol_extend.fields import process_agent_fields
 from protocol_extend.run_log import ExtendRunLog
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -119,73 +108,70 @@ def run_protocol_extend(
 
 def _advance(record: ExtendRecord, user_input: dict[str, Any]) -> None:
     _merge_run_meta(record, user_input)
-    _run_auto_pipeline(record, user_input)
+    _run_c_struct_pipeline(record, user_input)
 
 
-def _run_auto_pipeline(record: ExtendRecord, user_input: dict[str, Any]) -> None:
+def _run_c_struct_pipeline(record: ExtendRecord, user_input: dict[str, Any]) -> None:
     run_dir = RUNS_DIR / record.run_id
     log = ExtendRunLog(run_dir)
     record.results["log_dir"] = str(run_dir)
     record.results["log_path"] = str(log.log_path)
 
-    doc_path = document_path_from(record.spec, user_input)
-    if not doc_path:
+    missing_input = missing_c_struct_input(user_input)
+    if missing_input:
         record.state = "FAILED"
-        record.error = "document_path is required (DOCX-only extension pipeline)"
+        record.error = f"missing user_input: {', '.join(missing_input)}"
         log.log_stage("failed", {"summary": record.error, "error": record.error})
         return
 
-    try:
-        chapter_hint = chapter_hint_from(record.spec, user_input)
-        doc_ir = load_or_parse_document(
-            doc_path,
-            run_dir=run_dir,
-            root=ROOT,
-            force_reparse=bool(user_input.get("document_path")),
-            chapter_hint=chapter_hint,
+    entries = _variant_entries(user_input)
+    drafts: list[ExtensionDraft] = []
+    parse_reports: list[dict[str, Any]] = []
+
+    for index, entry in enumerate(entries):
+        merged = {**user_input, **entry}
+        try:
+            spec = build_spec_from_c_struct(record.raw_input, merged)
+            report = _c_struct_parse_report(merged)
+            parse_reports.append(report)
+        except Exception as exc:
+            draft = ExtensionDraft(
+                di=str(entry.get("di") or ""),
+                afn=entry.get("afn"),
+                status="failed",
+                last_error=str(exc),
+                candidate_id=f"c_struct_{index}",
+            )
+            drafts.append(draft)
+            log.log_c_struct_parse(
+                index,
+                draft,
+                parse_report={"error": str(exc)},
+                yaml_fields=[],
+            )
+            continue
+
+        draft = _draft_from_spec(spec, index=index)
+        drafts.append(draft)
+        log.log_c_struct_parse(
+            index,
+            draft,
+            parse_report=report,
+            yaml_fields=list(spec.fields),
         )
-    except Exception as exc:
-        record.state = "FAILED"
-        record.error = f"document parse failed: {exc}"
-        log.log_stage("failed", {"summary": record.error, "error": record.error})
-        return
 
-    catalog = build_document_catalog(doc_ir)
-    scan_summary = catalog_scan_summary(catalog)
-    record.results["document_ir_path"] = str(run_dir / "document_ir.json")
-    record.results["document_ir_summary"] = doc_ir.summary()
-    record.results["document_catalog"] = catalog
-    record.results["scan_summary"] = scan_summary
-    log.log_document_parse(
-        document_path=doc_path,
-        ir_summary=doc_ir.summary(),
-        scan_summary=scan_summary,
-    )
-
-    drafts = collect_all_drafts(doc_ir)
-    if not drafts:
-        record.state = "FAILED"
-        record.error = "未能从文档采集任何报文 draft"
-        log.log_stage("failed", {"summary": record.error, "error": record.error})
-        return
-
-    for draft in drafts:
-        if draft.afn is None and draft.di:
-            afn, _ = resolve_afn(di=draft.di, text=draft.description or draft.title)
-            if afn is not None:
-                draft.afn = afn
-        freeze_snapshot_if_missing(draft, doc=doc_ir)
-
-    _persist_drafts(record, drafts)
-    log.log_document_extract(drafts)
+    record.results["c_struct_parse"] = parse_reports
+    record.results["message_drafts"] = [d.to_dict() for d in drafts]
 
     compile_ok = True
     map_ok = True
     template_only_any = False
 
     for draft_index, draft in enumerate(drafts):
-        ok, draft_compile_ok, draft_map_ok, draft_template_only = _process_draft_auto(
-            record, drafts, draft_index, log,
+        if draft.status == "failed":
+            continue
+        accepted, draft_compile_ok, draft_map_ok, draft_template_only = _process_draft_c_struct(
+            record, draft, draft_index, log,
         )
         if draft_template_only:
             template_only_any = True
@@ -194,8 +180,7 @@ def _run_auto_pipeline(record: ExtendRecord, user_input: dict[str, Any]) -> None
         if not draft_map_ok:
             map_ok = False
 
-    _persist_drafts(record, drafts)
-    summary = batch_summary(drafts)
+    summary = _batch_summary(drafts)
     record.results["batch_summary"] = summary
     record.results["compile_ok"] = compile_ok and not template_only_any
     record.results["map_ok"] = map_ok and not template_only_any
@@ -209,6 +194,8 @@ def _run_auto_pipeline(record: ExtendRecord, user_input: dict[str, Any]) -> None
 
     log.log_batch_complete(summary)
 
+    record.results["message_drafts"] = [d.to_dict() for d in drafts]
+
     if summary.get("accepted", 0) > 0:
         record.state = "SUCCEEDED"
         record.error = ""
@@ -217,18 +204,53 @@ def _run_auto_pipeline(record: ExtendRecord, user_input: dict[str, Any]) -> None
         )
     else:
         record.state = "FAILED"
-        record.error = "no drafts accepted; see extend.log and stages/"
-        record.results["bootstrap_hint"] = "see log_dir for per-draft errors"
+        record.error = "no variants accepted; see extend.log and stages/"
+        record.results["bootstrap_hint"] = "see log_dir for per-variant errors"
 
 
-def _process_draft_auto(
+def _variant_entries(user_input: dict[str, Any]) -> list[dict[str, Any]]:
+    variants = user_input.get("variants")
+    if isinstance(variants, list) and variants:
+        return [dict(v) for v in variants]
+    return [dict(user_input)]
+
+
+def _c_struct_parse_report(user_input: dict[str, Any]) -> dict[str, Any]:
+    if user_input.get("empty_payload"):
+        source = _empty_struct_source()
+        path = None
+    else:
+        source, path = load_c_struct_source(user_input, "c_struct", "c_struct_path")
+    defn = parse_c_struct(source, path=path)
+    warnings = validate_c_struct(defn)
+    report = defn.summary()
+    if warnings:
+        report["warnings"] = warnings
+    return report
+
+
+def _draft_from_spec(spec: ExtensionSpec, *, index: int = 0) -> ExtensionDraft:
+    return ExtensionDraft(
+        afn=spec.afn,
+        di=spec.di,
+        description=spec.description,
+        dir=spec.dir,
+        add=spec.add,
+        fields=list(spec.fields),
+        resp_fields=list(spec.resp_fields),
+        pair=spec.pair,
+        resp_description=spec.resp_description,
+        status="pending",
+        candidate_id=f"c_struct_{index}",
+    )
+
+
+def _process_draft_c_struct(
     record: ExtendRecord,
-    drafts: list[ExtensionDraft],
+    draft: ExtensionDraft,
     draft_index: int,
     log: ExtendRunLog,
 ) -> tuple[bool, bool, bool, bool]:
-    """Process one draft: infer → yaml → fidelity log → auto write. Returns (accepted, compile_ok, map_ok, template_only)."""
-    draft = drafts[draft_index]
     spec = draft.to_spec()
 
     if spec.protocol not in {"csg_2016", "csg"} and normalize_protocol(spec.protocol) != "csg_2016":
@@ -244,12 +266,6 @@ def _process_draft_auto(
         log.log_draft_result(draft_index, draft, status="failed", error=draft.last_error, extra={"missing": missing})
         return False, True, True, False
 
-    if not (spec.fields or spec.resp_fields):
-        draft.status = "failed"
-        draft.last_error = "empty payload fields"
-        log.log_draft_result(draft_index, draft, status="failed", error=draft.last_error)
-        return False, True, True, False
-
     conflicts = find_conflicts(spec)
     if conflicts:
         draft.status = "failed"
@@ -261,20 +277,13 @@ def _process_draft_auto(
         )
         return False, True, True, False
 
-    inference_report, field_type_warnings = _run_inference_for_spec(spec)
-    log.log_draft_inference(
-        draft_index, draft,
-        inference_report=inference_report,
-        field_type_warnings=field_type_warnings,
-    )
-
     yaml_text = yaml_writer.render_extension_yaml(spec, record.raw_input)
     rel_path = f"protocol_tool/protocols/csg_2016/variants/extensions/{yaml_writer.extension_filename(spec)}"
     record.yaml_preview = yaml_text
     record.extension_file = rel_path
     log.log_draft_yaml(draft_index, draft, yaml_text=yaml_text, extension_file=rel_path)
 
-    fidelity_report = check_fidelity(draft.source_snapshot, spec, inference_report)
+    fidelity_report = check_layout_fidelity(spec)
     draft.fidelity_report = fidelity_report
     log.log_draft_fidelity(draft_index, draft, fidelity_report=fidelity_report)
 
@@ -411,33 +420,28 @@ def _finalize_template_only_accept(
     return True, False, False, True
 
 
-def _run_inference_for_spec(spec: ExtensionSpec) -> tuple[list[dict[str, Any]], list[str]]:
-    report: list[dict[str, Any]] = []
-    warnings: list[str] = []
-
-    if spec.fields:
-        _, field_report, field_warnings = process_agent_fields(spec.fields)
-        report.extend(field_report)
-        warnings.extend(field_warnings)
-
-    if spec.resp_fields:
-        _, resp_report, resp_warnings = process_agent_fields(spec.resp_fields)
-        for entry in resp_report:
-            entry = dict(entry)
-            entry["name"] = f"resp.{entry['name']}"
-            report.append(entry)
-        warnings.extend(resp_warnings)
-
-    return report, warnings
-
-
-def _persist_drafts(record: ExtendRecord, drafts: list[ExtensionDraft]) -> None:
-    record.results["message_drafts"] = [d.to_dict() for d in drafts]
-    save_drafts(RUNS_DIR / record.run_id, drafts)
+def _batch_summary(drafts: list[ExtensionDraft]) -> dict[str, Any]:
+    accepted = [d for d in drafts if d.status == "accepted"]
+    failed = [d for d in drafts if d.status == "failed"]
+    fidelity_scores = [d.fidelity_report.get("score") for d in drafts if d.fidelity_report]
+    return {
+        "total": len(drafts),
+        "accepted": len(accepted),
+        "failed": len(failed),
+        "files": [d.extension_file for d in accepted if d.extension_file],
+        "errors": [{"di": d.di, "error": d.last_error} for d in failed if d.last_error],
+        "fidelity_summary": {
+            "avg_score": round(sum(fidelity_scores) / len(fidelity_scores), 1) if fidelity_scores else None,
+        },
+    }
 
 
 def _merge_run_meta(record: ExtendRecord, user_input: dict[str, Any]) -> None:
-    for key in ("document_path", "chapter_hint"):
+    for key in (
+        "afn", "di", "dir", "add", "description", "pair",
+        "c_struct", "c_struct_path", "resp_c_struct", "resp_c_struct_path",
+        "resp_description", "variants",
+    ):
         if key in user_input and user_input[key] not in (None, ""):
             record.spec[key] = user_input[key]
 
@@ -454,7 +458,7 @@ def _load_or_create(run_id: str | None, raw_input: str | None) -> ExtendRecord:
         if raw_input and raw_input != record.raw_input:
             raise ValueError(
                 "run_id belongs to an existing task with different raw_input. "
-                "Omit run_id for a new task."
+                "Omit run_id for a new run."
             )
         return record
     if not raw_input:
@@ -504,8 +508,6 @@ def _public_result(record: ExtendRecord, *, debug: bool = False) -> dict[str, An
             fs = record.results["batch_summary"].get("fidelity_summary")
             if fs:
                 out["fidelity_summary"] = fs
-        if record.results.get("scan_summary"):
-            out["scan_summary"] = record.results["scan_summary"]
     elif record.state == "FAILED":
         if record.results.get("batch_summary"):
             out["batch_summary"] = record.results["batch_summary"]

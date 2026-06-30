@@ -1,0 +1,40 @@
+# Generated from payloads/afn02_add_multicast_task.h
+# Source: c_struct manifest — do not edit by hand
+
+variants:
+- kind: variant
+  id: csg_2016.afn02_add_multicast_task
+  router: afn02_di_router
+  match:
+    di: E8020207
+    control.dir: 0
+    control.add: 0
+  body:
+    type: struct
+    fields:
+    - name: task_id
+      type: uint16_le
+      description: 任务ID
+    - name: task_mode_word
+      type: uint8
+      description: 任务模式字
+    - name: slave_count
+      type: uint16_le
+      description: 从节点数量,0xFFFF 表示广播
+    - name: slave_addrs
+      type: array
+      description: 从节点地址列表
+      count_ref: slave_count
+      item_name: slave_addr
+      item_type: node_address
+    - name: timeout_seconds
+      type: uint16_le
+      description: 任务执行超时时间(秒)
+    - name: payload_length
+      type: uint8
+      description: 报文长度
+    - name: payload
+      type: hex
+      length_from: payload_length
+      description: 原始报文内容
+  description: 添加多播任务（选配）

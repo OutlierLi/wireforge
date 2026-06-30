@@ -1,0 +1,43 @@
+# Generated from payloads/afn06_request_time_resp.h
+# Source: c_struct manifest — do not edit by hand
+
+variants:
+- kind: variant
+  id: csg_2016.afn06_request_time_resp
+  router: afn06_di_router
+  match:
+    di: E8060601
+    control.dir: 1
+    control.add: 0
+  body:
+    type: struct
+    fields:
+    - name: datetime
+      type: struct
+      fields:
+      - name: second
+        type: array
+        description: 秒
+        item_type: bcd
+      - name: minute
+        type: array
+        description: 分
+        item_type: bcd
+      - name: hour
+        type: array
+        description: 时
+        item_type: bcd
+      - name: day
+        type: array
+        description: 日
+        item_type: bcd
+      - name: month
+        type: array
+        description: 月
+        item_type: bcd
+      - name: year
+        type: array
+        description: 年
+        item_type: bcd
+      description: 集中器当前时间 (ssmmhhDDMMYY)
+  description: 请求集中器时间响应

@@ -1,0 +1,34 @@
+# Generated from payloads/afn02_add_task.h
+# Source: c_struct manifest — do not edit by hand
+
+variants:
+- kind: variant
+  id: csg_2016.afn02_add_task
+  router: afn02_di_router
+  match:
+    di: E8020201
+    control.dir: 0
+    control.add: 1
+  body:
+    type: struct
+    fields:
+    - name: task_id
+      type: uint16_le
+      description: 任务ID,区分不同任务的任务标识,取值范围0x0000-0xEFFF
+      default: 0
+    - name: task_mode_word
+      type: uint8
+      description: 任务模式字,D7为任务响应标识,D3-D0为任务优先级
+      default: 16
+    - name: timeout_seconds
+      type: uint16_le
+      description: 任务执行超时时间(秒)
+      default: 70
+    - name: payload_length
+      type: uint8
+      description: 报文长度
+    - name: payload
+      type: hex
+      length_from: payload_length
+      description: 原始报文内容
+  description: 添加任务

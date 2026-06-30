@@ -84,6 +84,8 @@ def merge_user_input(spec: ExtensionSpec, user_input: dict[str, Any]) -> Extensi
         spec.resp_description = str(data["resp_description"]).strip()
     if "resp_fields" in data and isinstance(data["resp_fields"], list):
         spec.resp_fields = list(data["resp_fields"])
+    if "resp_description" in data:
+        spec.resp_description = str(data["resp_description"]).strip()
     return spec
 
 

@@ -16,13 +16,13 @@ from mcp_servers.common.stdio import (
 
 
 SERVER_NAME = "wireforge-protocol-extend"
-SERVER_VERSION = "0.1.0"
+SERVER_VERSION = "0.2.0"
 
 TOOLS: list[dict[str, Any]] = [
     {
         "name": "protocol_extend_run",
         "description": (
-            "从 DOCX 自动扩展 CSG 2016 报文变体：解析文档 → 提取字段 → 推断 YAML → 写盘。"
+            "从 Agent 编写的 C 结构体扩展 CSG 2016 报文变体：解析 C struct → 生成 YAML → 写盘。"
             "关键阶段写入 log/protocol_extend_runs/<run_id>/extend.log 与 stages/。"
         ),
         "inputSchema": {
@@ -32,7 +32,10 @@ TOOLS: list[dict[str, Any]] = [
                 "raw_input": {"type": "string", "description": "简短说明（新任务必填）。"},
                 "user_input": {
                     "type": "object",
-                    "description": "document_path（必填）, chapter_hint（可选）",
+                    "description": (
+                        "afn, di（必填）, c_struct|c_struct_path（必填）, "
+                        "dir, description, add, pair, resp_c_struct*, variants[]"
+                    ),
                 },
                 "debug": {
                     "type": "boolean",
@@ -124,21 +127,18 @@ def _usage_text() -> str:
 
 Tool: `protocol_extend_run`
 
-**DOCX 自动流水线**（无手动补参、无用户审阅）：
+**C 结构体流水线**：
 
-1. 传 `user_input.document_path`（`.docx`）
-2. 程序：解析 DOCX → 批量提取 DI/字段 → TypeInferencer → 写 `variants/extensions/*.yaml`
-3. 各阶段关键信息写入 `log/protocol_extend_runs/<run_id>/`：
-   - `extend.log` — 文本摘要
-   - `stages/*.json` — document_parse / document_extract / inference / yaml_preview / fidelity / draft_result
-   - `extracted_drafts.json` — 从文档提取的原始字段
-   - `draft_NNN_<DI>_preview.yaml` — 每条推断 YAML
+1. Agent 阅读协议，编写 DI payload C 结构体（见 `tests/fixtures/c_struct/`）
+2. 传 `user_input.afn`, `user_input.di`, `c_struct` 或 `c_struct_path`
+3. 程序：C struct → YAML → `variants/extensions/*.yaml` → compile/map
+4. 日志：`log/protocol_extend_runs/<run_id>/`
+   - `c_struct_parse` / `yaml_preview` / `fidelity` / `draft_result`
 
-返回 `SUCCEEDED` + `batch_summary`；失败见 `log_dir` 与 `extend.log`。
+成对报文：`pair: true` + `resp_c_struct_path`。
+批量：`variants: [{afn, di, c_struct_path, ...}, ...]`。
 
-Install: `pip install python-docx` or `pip install -e ".[doc]"`.
-
-TypeInferencer: 提供 evidence（取值表/单位）；bool 语义 → YAML `enum`；详见 AGENTS.md。
+详见 AGENTS.md Protocol Extend Flow。
 """
 
 

@@ -39,8 +39,20 @@ def router_compile_hint(afn: int) -> str:
     )
 
 INPUT_SCHEMA: list[dict[str, Any]] = [
-    {"name": "document_path", "type": "string", "required": True, "desc": "DOCX 文件路径（相对仓库根或绝对路径）；程序解析并自动扩展全部报文"},
-    {"name": "chapter_hint", "type": "string", "required": False, "desc": "可选：限定 DOCX 章节标题关键词，缩小扫描范围"},
+    {"name": "afn", "type": "string", "required": True, "desc": "应用功能码 AFN（hex 或十进制）"},
+    {"name": "di", "type": "string", "required": True, "desc": "8 位 CSG 数据标识 DI（如 E8030304）"},
+    {"name": "c_struct", "type": "string", "required": False, "desc": "inline C 结构体源码（DI payload）"},
+    {"name": "c_struct_path", "type": "string", "required": False, "desc": ".h 文件路径（与 c_struct 二选一）"},
+    {"name": "dir", "type": "string", "required": False, "desc": "downlink/uplink；成对报文 pair=true 时可省略"},
+    {"name": "description", "type": "string", "required": False, "desc": "报文描述（也可写在 @wireforge 注释）"},
+    {"name": "add", "type": "boolean", "required": False, "desc": "是否带地址域；默认 false"},
+    {"name": "pair", "type": "boolean", "required": False, "desc": "是否生成请求/响应成对 variant"},
+    {"name": "empty_payload", "type": "boolean", "required": False, "desc": "true 表示 DI payload 无字段（空 struct）"},
+    {"name": "resp_empty_payload", "type": "boolean", "required": False, "desc": "成对报文响应侧空 payload"},
+    {"name": "resp_c_struct", "type": "string", "required": False, "desc": "响应 payload C 结构体源码"},
+    {"name": "resp_c_struct_path", "type": "string", "required": False, "desc": "响应 payload .h 路径"},
+    {"name": "resp_description", "type": "string", "required": False, "desc": "响应报文描述"},
+    {"name": "variants", "type": "array", "required": False, "desc": "批量扩展 manifest（每项含 afn/di/c_struct*）"},
 ]
 
 
@@ -147,6 +159,26 @@ def normalize_add(raw: Any) -> bool | None:
 
 
 from protocol_extend.fields import FIELD_DSL_EXAMPLES, missing_field_metadata
+
+
+def missing_c_struct_input(user_input: dict[str, Any] | None) -> list[str]:
+    """Return missing keys for C struct extension input."""
+    data = dict(user_input or {})
+    missing: list[str] = []
+    if not data.get("afn"):
+        missing.append("afn")
+    if not data.get("di"):
+        missing.append("di")
+    has_main = bool(data.get("c_struct") or data.get("c_struct_path"))
+    has_empty = bool(data.get("empty_payload"))
+    if not has_main and not has_empty and not data.get("variants"):
+        missing.append("c_struct|c_struct_path|empty_payload")
+    if data.get("pair"):
+        has_resp = bool(data.get("resp_c_struct") or data.get("resp_c_struct_path"))
+        has_resp_empty = bool(data.get("resp_empty_payload"))
+        if not has_resp and not has_resp_empty:
+            missing.append("resp_c_struct|resp_c_struct_path|resp_empty_payload")
+    return missing
 from doc_parser.metadata_extractor import derive_afn_from_di, infer_afn_from_semantics
 def missing_fields(spec: ExtensionSpec) -> list[str]:
     missing: list[str] = []

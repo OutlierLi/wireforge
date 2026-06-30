@@ -1,0 +1,74 @@
+# Generated from payloads/afn03_query_mode_resp.h
+# Source: c_struct manifest — do not edit by hand
+
+variants:
+- kind: variant
+  id: csg_2016.afn03_query_mode_resp
+  router: afn03_di_router
+  match:
+    di: E8000302
+    control.dir: 1
+    control.add: 0
+  body:
+    type: struct
+    fields:
+    - name: local_mode_word
+      type: uint8
+      description: 本地通信模式字
+    - name: max_protocol_frame_length
+      type: uint16_le
+      description: 最大支持的协议报文长度
+    - name: max_file_packet_length
+      type: uint16_le
+      description: 文件传输最大单包长度
+    - name: upgrade_wait_minutes
+      type: uint8
+      description: 升级操作等待时间(分钟)
+    - name: master_addr
+      type: node_address
+      description: 主节点地址
+    - name: max_slave_count
+      type: uint16_le
+      description: 支持的最大从节点数量
+    - name: current_slave_count
+      type: uint16_le
+      description: 当前从节点数量
+    - name: max_slave_rw_count
+      type: uint16_le
+      description: 支持单次读写从节点信息的最大数量
+    - name: protocol_release_date
+      type: struct
+      fields:
+      - name: year
+        type: array
+        item_type: bcd
+      - name: month
+        type: array
+        item_type: bcd
+      - name: day
+        type: array
+        item_type: bcd
+      description: 通信模块接口协议发布日期(YYMMDD)
+    - name: vendor_code
+      type: array
+      item_type: ascii
+    - name: chip_code
+      type: array
+      item_type: ascii
+    - name: version_date
+      type: struct
+      fields:
+      - name: year
+        type: array
+        item_type: bcd
+      - name: month
+        type: array
+        item_type: bcd
+      - name: day
+        type: array
+        item_type: bcd
+      description: 版本日期(YYMMDD)
+    - name: version
+      type: array
+      item_type: bcd
+  description: 返回本地通信模块运行模式信息

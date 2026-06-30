@@ -1,0 +1,17 @@
+# Generated from payloads/afn00_ack.h
+# Source: c_struct manifest — do not edit by hand
+
+variants:
+- kind: variant
+  id: csg_2016.afn00_ack
+  router: afn00_di_router
+  match:
+    di: E8010001
+    control.add: 0
+  body:
+    type: struct
+    fields:
+    - name: wait_time
+      type: uint16_le
+      default: 0
+  description: 确认

@@ -2,7 +2,7 @@
 
 Use the MCP tool `protocol_task_run` for natural-language protocol build/decode/send tasks.
 
-Use the MCP tool `protocol_extend_run` to add CSG 2016 variant extensions from a **DOCX** into `variants/extensions/` (auto pipeline + stage logs under `log/protocol_extend_runs/`). Start with:
+Use the MCP tool `protocol_extend_run` to add CSG 2016 variant extensions via **Agent-authored C structs** into `variants/extensions/` (C struct → YAML pipeline + stage logs under `log/protocol_extend_runs/`). Start with:
 
 ```bash
 wireforge-extend-mcp-server
@@ -227,44 +227,83 @@ For greenfield builds without a source frame, use the standard [Build Flow](#bui
 
 ## Protocol Extend Flow
 
-Use `protocol_extend_run` when the user wants to **add CSG 2016 message variants from a protocol DOCX**. Extensions write only to [`protocol_tool/protocols/csg_2016/variants/extensions/`](protocol_tool/protocols/csg_2016/variants/extensions/).
+CSG 2016 **所有报文 payload** 均通过 **C 结构体 → YAML** 构造：
 
-**DOCX 自动流水线**（无手动补参、无用户审阅/confirm）：
+| 范围 | C struct 位置 | 生成 YAML |
+|------|---------------|-----------|
+| 内置报文（afn_payloads 原 DI 字段） | [`protocol_tool/protocols/csg_2016/c_struct/payloads/`](protocol_tool/protocols/csg_2016/c_struct/payloads/) + [`manifest.yaml`](protocol_tool/protocols/csg_2016/c_struct/manifest.yaml) | [`variants/payloads/`](protocol_tool/protocols/csg_2016/variants/payloads/)（`generate_csg_variants_from_c_struct.py`） |
+| Agent 新增扩展 | MCP 传入 `c_struct_path` 或 inline | [`variants/extensions/`](protocol_tool/protocols/csg_2016/variants/extensions/)（`protocol_extend_run`） |
 
-1. 传 `user_input.document_path`（`.docx`）；`raw_input` 仅简短说明
-2. 程序：解析 DOCX → 批量提取 DI/字段 → TypeInferencer → 写 YAML → compile/map（AFN 00–07）
-3. 各阶段关键信息写入 `log/protocol_extend_runs/<run_id>/`：
-   - `extend.log` — 阶段摘要
-   - `stages/*.json` — document_parse / document_extract / inference / yaml_preview / fidelity / draft_result
-   - `extracted_drafts.json` — 从文档提取的原始字段
-   - `draft_NNN_<DI>_preview.yaml` — 推断 YAML 预览
+[`afn_payloads.yaml`](protocol_tool/protocols/csg_2016/variants/afn_payloads.yaml) 仅保留 **AFN 路由分组** 与 **空 payload 占位**；具体字段不在此文件手改。
 
-返回 `SUCCEEDED` + `batch_summary`；单条失败不阻断批次，详情见日志。
+**C 结构体中间层**（Agent 读协议 → 写 C struct → 代码生成 YAML）：
+
+1. Agent **直接阅读**协议文档（DOCX / 导出 markdown / 规约原文）
+2. 按 DI **payload**（不含 afn/seq/di/address_area）编写或修改 `c_struct/payloads/*.h`
+3. 内置报文：更新 `c_struct/manifest.yaml` 后运行 `python3 scripts/generate_csg_variants_from_c_struct.py`（或 `bootstrap_protocol_cache.py`）
+4. 新增 DI：调用 `protocol_extend_run`，传 `afn`、`di` 及 `c_struct` 或 `c_struct_path`
+5. 审阅 `log/protocol_extend_runs/<run_id>/` 或 diff `variants/payloads/` / `variants/extensions/`
+
+### C 结构体 DSL 要点
+
+文件头元数据（可选，可替代 user_input 同名字段）：
+
+```c
+/* @wireforge afn=03 di=E8039999 dir=downlink desc="查询从节点信息" pair=true */
+typedef struct __attribute__((packed)) {
+    uint16_t start_slave_index; /* @desc 起始从节点序号 */
+    uint8_t device_type;        /* @desc 设备类型 @enum 0x00:单相表 0x01:三相表 */
+    node_address_t addr;        /* @domain node_address */
+    uint8_t slave_count;        /* @desc 数量 */
+    node_address_t addrs[];     /* @count_ref slave_count @item_name slave_addr */
+} payload_t;
+```
+
+字段注解：`@desc` `@enum` `@domain` `@alias` `@unit` `@count_ref` `@length_ref` `@item_name` `@hex` `@default`
+
+类型映射：`uint8_t`→`uint8`，`uint16_t`→`uint16_le`，`char[N]`→`ascii`，`uint8_t[N]`→`bytes`，嵌套 `struct{}`→`struct`，`T[]`+`@count_ref`→`array`，`struct{} name[]`+`@count_ref`→`array`（`item_type: struct`）。
+
+### C struct 表达能力
+
+**推荐写法：**
+
+| 场景 | C struct 写法 |
+|------|----------------|
+| 纯地址列表 | `node_address_t addrs[]; /* @count_ref n @item_name addr */` |
+| 复合元素列表 | `struct { ... } items[]; /* @count_ref n @item_name item */` |
+| 6 字节时钟 ssmmhhDDMMYY | `bcd_datetime_t t; /* @domain bcd_datetime */` |
+| 嵌套单字节 BCD | `uint8_t second[1]; /* @alias bcd */` → YAML `type: bcd, length: 1` |
+| 定长 BCD 块 | `uint8_t longitude[4]; /* @alias bcd */` → YAML `type: bcd, length: 4` |
+| 空 payload 查询 | MCP 传 `"empty_payload": true` |
+
+**不支持（须改 parser 或暂用手写 `variants/extensions/*.yaml`）：**
+
+- 定长 `struct { ... } items[N]`（N 为常数）
+
+**兜底：** 若 `protocol_extend_run` 报 `unsupported field syntax` 且含 `struct { ... } xxx[]`，检查是否缺少 `@count_ref`；仍失败时可手写 `variants/extensions/{AFN}_{DI}.yaml` 后运行 bootstrap。
 
 ### 调用示例
 
 ```json
 {
-  "raw_input": "从规约 DOCX 扩展 CSG 报文",
+  "raw_input": "扩展 CSG 报文 AFN03 查询从节点信息",
   "user_input": {
-    "document_path": "tests/fixtures/csg_sample.docx"
+    "afn": "03",
+    "di": "E8039999",
+    "dir": "downlink",
+    "description": "查询从节点信息",
+    "pair": true,
+    "c_struct_path": "tests/fixtures/c_struct/query_slave_info_req.h",
+    "resp_c_struct_path": "tests/fixtures/c_struct/query_slave_info_resp.h"
   }
 }
 ```
 
-依赖：`pip install -e ".[doc]"`（python-docx）。
-
-### TypeInferencer 铁律
-
-- 不要按字节宽度决定 semantic_type；表格说明列中的取值表应成为 `evidence`
-- `bool` 语义 → YAML `enum`（2 值）；fidelity 仅记录到日志，不阻断写盘
-- 域类型优先：如 `node_address` 见 `types/shared.yaml`
-
 ### 限制
 
-- 必须提供 `document_path`；不支持纯自然语言/manual fields 补参
-- AFN 08+ 可写 YAML（`template_only`），需在 `protocol.yaml` 添加 router 后 bootstrap
-- 禁止 Agent 直接读 DOCX 全文；审阅时读 `log_dir` 下日志与 `batch_summary`
+- 必须提供 `c_struct` 或 `c_struct_path`（及 `afn`、`di`）；空 payload 可用 `empty_payload: true`；成对报文另需 `resp_c_struct*` 或 `resp_empty_payload`
+- 默认 `add: false`（无地址域）；AFN 08+ 可写 YAML（`template_only`），需在 `protocol.yaml` 添加 router 后 bootstrap
+- C struct 仅描述 DI payload，不含 `user_data` 帧头
 
 Re-run bootstrap when SVG/cache cleanup needed:
 

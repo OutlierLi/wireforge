@@ -1,0 +1,37 @@
+# Generated from payloads/afn02_query_task_detail_resp.h
+# Source: c_struct manifest — do not edit by hand
+
+variants:
+- kind: variant
+  id: csg_2016.afn02_query_task_detail_resp
+  router: afn02_di_router
+  match:
+    di: E8040205
+    control.dir: 1
+    control.add: 0
+  body:
+    type: struct
+    fields:
+    - name: task_id
+      type: uint16_le
+      description: 任务ID
+    - name: task_mode_word
+      type: uint8
+      description: 任务模式字
+    - name: dest_addr_count
+      type: uint16_le
+      description: 目的地址数量
+    - name: dest_addrs
+      type: array
+      description: 目的地址列表
+      count_ref: dest_addr_count
+      item_name: dest_addr
+      item_type: node_address
+    - name: payload_length
+      type: uint8
+      description: 报文长度
+    - name: payload
+      type: hex
+      length_from: payload_length
+      description: 原始报文内容
+  description: 返回查询未完成任务详细信息

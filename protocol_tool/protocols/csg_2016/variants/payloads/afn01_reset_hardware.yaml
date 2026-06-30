@@ -1,0 +1,15 @@
+# Generated from payloads/afn01_reset_hardware.h
+# Source: c_struct manifest — do not edit by hand
+
+variants:
+- kind: variant
+  id: csg_2016.afn01_reset_hardware
+  router: afn01_di_router
+  match:
+    di: E8020101
+    control.dir: 0
+    control.add: 0
+  body:
+    type: struct
+    fields: []
+  description: 复位硬件

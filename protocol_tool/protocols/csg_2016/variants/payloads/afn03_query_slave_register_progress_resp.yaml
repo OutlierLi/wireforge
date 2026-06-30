@@ -1,0 +1,18 @@
+# Generated from payloads/afn03_query_slave_register_progress_resp.h
+# Source: c_struct manifest — do not edit by hand
+
+variants:
+- kind: variant
+  id: csg_2016.afn03_query_slave_register_progress_resp
+  router: afn03_di_router
+  match:
+    di: E8000307
+    control.dir: 1
+    control.add: 0
+  body:
+    type: struct
+    fields:
+    - name: register_status
+      type: uint8
+      description: 从节点主动注册工作标示
+  description: 返回查询从节点主动注册进度

@@ -1,0 +1,22 @@
+# Generated from payloads/afn05_report_slave_event.h
+# Source: c_struct manifest — do not edit by hand
+
+variants:
+- kind: variant
+  id: csg_2016.afn05_report_slave_event
+  router: afn05_di_router
+  match:
+    di: E8050502
+    control.dir: 1
+    control.add: 1
+  body:
+    type: struct
+    fields:
+    - name: payload_length
+      type: uint8
+      description: 报文长度
+    - name: payload
+      type: hex
+      length_from: payload_length
+      description: 状态字原始报文内容
+  description: 上报从节点事件

@@ -32,6 +32,8 @@ MCP servers are configured in `opencode.json`:
 
 Restart OpenCode after changing this file so the MCP registry is reloaded.
 
+**协议扩展 C struct 限制与推荐写法**见 [`../AGENTS.md`](../AGENTS.md) Protocol Extend Flow →「C struct 表达能力」。
+
 ## Agent output
 
 OpenCode loads `../AGENTS.md` as instructions. On protocol BUILD success, always paste the MCP `final_frame` hex verbatim — no `× N` / `[CS]` abbreviations.

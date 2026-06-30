@@ -1,0 +1,27 @@
+# Generated from payloads/afn03_query_slave_info_resp.h
+# Source: c_struct manifest — do not edit by hand
+
+variants:
+- kind: variant
+  id: csg_2016.afn03_query_slave_info_resp
+  router: afn03_di_router
+  match:
+    di: E8040306
+    control.dir: 1
+    control.add: 0
+  body:
+    type: struct
+    fields:
+    - name: slave_total
+      type: uint16_le
+      description: 从节点总数量
+    - name: response_slave_count
+      type: uint8
+      description: 本次应答的从节点数量
+    - name: slave_addrs
+      type: array
+      description: 从节点地址列表
+      count_ref: response_slave_count
+      item_name: slave_addr
+      item_type: node_address
+  description: 返回查询从节点信息
