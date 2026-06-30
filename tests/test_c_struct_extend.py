@@ -24,6 +24,7 @@ from tests.base_protocol_csg import DI_ADD_SLAVE, DI_QUERY_VENDOR
 
 ROOT = Path(__file__).resolve().parent.parent
 C_STRUCT_DIR = ROOT / "tests" / "fixtures" / "c_struct"
+CSG_PAYLOADS = ROOT / "protocol_tool" / "protocols" / "csg_2016" / "c_struct" / "payloads"
 
 TEST_DI = "E8039999"
 TEST_DI_ENUM = "E8039998"
@@ -90,46 +91,55 @@ def test_parse_flexible_array():
 
 
 def test_parse_struct_flex_array():
-    source = (C_STRUCT_DIR / "report_unrecognized_node.h").read_text(encoding="utf-8")
+    source = (C_STRUCT_DIR / "struct_flex_array_sample.h").read_text(encoding="utf-8")
     defn = parse_c_struct(source)
     validate_c_struct(defn)
     fields = c_struct_to_yaml_fields(defn)
-    assert fields[0]["name"] == "node_count"
+    assert fields[0]["name"] == "item_count"
     arr = fields[1]
     assert arr["type"] == "array"
-    assert arr["count_ref"] == "node_count"
-    assert arr["item_name"] == "node_info"
+    assert arr["count_ref"] == "item_count"
+    assert arr["item_name"] == "item"
     assert arr["item_type"] == "struct"
     item_fields = arr["item_params"]["fields"]
     assert item_fields[0]["type"] == "node_address"
     assert item_fields[1]["type"] == "uint8"
 
 
-def test_parse_geo_info_struct_flex_array():
-    source = (C_STRUCT_DIR / "query_geo_info_resp.h").read_text(encoding="utf-8")
+def test_parse_geo_info_struct_flex_array_bcd_lengths():
+    source = """
+typedef struct __attribute__((packed)) {
+    uint8_t response_count;
+    struct {
+        node_address_t node_addr; /* @domain node_address */
+        uint8_t longitude[4]; /* @desc 经度 @alias bcd */
+        uint8_t latitude[4]; /* @desc 纬度 @alias bcd */
+        uint8_t altitude[3]; /* @desc 海拔 @alias bcd */
+    } nodes[]; /* @count_ref response_count @item_name node */
+} sample_t;
+"""
     defn = parse_c_struct(source)
     fields = c_struct_to_yaml_fields(defn)
     arr = fields[1]
     assert arr["item_type"] == "struct"
     geo = arr["item_params"]["fields"]
-    assert geo[1] == {"name": "longitude", "type": "bcd", "length": 4, "desc": "经度(XXXX.XXXX BCD)"}
+    assert geo[1] == {"name": "longitude", "type": "bcd", "length": 4, "desc": "经度"}
     assert geo[2]["length"] == 4
     assert geo[3]["length"] == 3
 
 
-def test_parse_bcd_datetime_domain():
-    source = (C_STRUCT_DIR / "set_cco_time.h").read_text(encoding="utf-8")
+def test_parse_nested_bcd_clock_from_base_protocol():
+    source = (CSG_PAYLOADS / "afn06_request_time_resp.h").read_text(encoding="utf-8")
     defn = parse_c_struct(source)
     fields = c_struct_to_yaml_fields(defn)
-    assert fields[0] == {
-        "name": "datetime",
-        "type": "bcd_datetime",
-        "desc": "CCO时钟 (ssmmhhDDMMYY)",
-    }
+    clock = fields[0]["fields"]
+    assert len(clock) == 6
+    assert clock[0] == {"name": "second", "type": "bcd", "length": 1, "desc": "秒"}
+    assert clock[5]["name"] == "year"
 
 
 def test_parse_nested_bcd_clock_collapses_to_bcd_fields():
-    source = (C_STRUCT_DIR / "nested_bcd_clock.h").read_text(encoding="utf-8")
+    source = (CSG_PAYLOADS / "afn06_request_time_resp.h").read_text(encoding="utf-8")
     defn = parse_c_struct(source)
     fields = c_struct_to_yaml_fields(defn)
     clock = fields[0]["fields"]

@@ -57,44 +57,20 @@ class FrameCompiler:
         prefix: str,
     ) -> FieldNode:
         """Compile a single field YAML dict into a FieldNode."""
+        item = self._resolve_field_yaml(dict(item))
         name = item["name"]
         type_ref = item["type"]
-
-        # Resolve domain types to base codec types
-        # e.g. datetime_ymdhms → bcd with params {length: 6, format: "YYMMDDhhmmss"}
-        type_def = self.resolver.resolve_field_type(type_ref)
-        if type_def.get("type") != type_ref:
-            # Domain type: merge domain params as defaults, field-level params override
-            base_type = type_def.get("type", type_ref)
-            item = {
-                **{k: v for k, v in type_def.items() if k != "type"},
-                **item,  # field-level overrides
-                "type": base_type,
-            }
-            type_ref = base_type
 
         fid = item.get("id", f"{prefix}.{name}")
 
         # Build params
         params = self.resolver.resolve_field_params(item)
 
-        if type_ref == "array" and params.get("item_type"):
-            item_type_name = str(params["item_type"])
-            item_def = self.resolver.resolve_field_type(item_type_name)
-            if item_def.get("type") != item_type_name:
-                base_item = item_def.get("type", item_type_name)
-                merged_item_params = {
-                    **{k: v for k, v in item_def.items() if k != "type"},
-                    **(params.get("item_params") or {}),
-                }
-                params["item_type"] = base_item
-                params["item_params"] = merged_item_params
-
         # Handle bitset sub-fields
         if type_ref == "bitset" and "bits" in item:
             params["bits"] = item["bits"]
 
-        # Handle nested fields for struct/array
+        # Handle nested fields for struct/array (already domain-resolved)
         if "fields" in item:
             params["fields"] = item["fields"]
 
@@ -140,6 +116,46 @@ class FrameCompiler:
             default=item.get("default"),
             optional=item.get("optional", False),
         )
+
+    def _resolve_field_yaml(self, item: dict[str, Any]) -> dict[str, Any]:
+        """Resolve domain types recursively (struct sub-fields, array item_params)."""
+        item = dict(item)
+        type_ref = str(item.get("type", "uint8"))
+        type_def = self.resolver.resolve_field_type(type_ref)
+        if type_def.get("type") != type_ref:
+            base_type = type_def.get("type", type_ref)
+            item = {
+                **{k: v for k, v in type_def.items() if k != "type"},
+                **item,
+                "type": base_type,
+            }
+            type_ref = str(item["type"])
+
+        if type_ref == "struct" and item.get("fields"):
+            item["fields"] = [
+                self._resolve_field_yaml(sf) for sf in item["fields"]
+            ]
+
+        if type_ref == "array":
+            item_type_name = str(item.get("item_type") or "")
+            item_params = dict(item.get("item_params") or {})
+            if item_type_name == "struct":
+                if item_params.get("fields"):
+                    item_params["fields"] = [
+                        self._resolve_field_yaml(sf) for sf in item_params["fields"]
+                    ]
+                item["item_params"] = item_params
+            elif item_type_name:
+                item_def = self.resolver.resolve_field_type(item_type_name)
+                if item_def.get("type") != item_type_name:
+                    base_item = item_def.get("type", item_type_name)
+                    item["item_type"] = base_item
+                    item["item_params"] = {
+                        **{k: v for k, v in item_def.items() if k != "type"},
+                        **item_params,
+                    }
+
+        return item
 
     @staticmethod
     def _compile_transform(cfg: dict[str, Any]) -> TransformSpec:

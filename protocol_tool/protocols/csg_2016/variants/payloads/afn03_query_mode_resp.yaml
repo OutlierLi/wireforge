@@ -40,35 +40,37 @@ variants:
       type: struct
       fields:
       - name: year
-        type: array
-        item_type: bcd
+        type: bcd
+        length: 1
       - name: month
-        type: array
-        item_type: bcd
+        type: bcd
+        length: 1
       - name: day
-        type: array
-        item_type: bcd
+        type: bcd
+        length: 1
       description: 通信模块接口协议发布日期(YYMMDD)
     - name: vendor_code
       type: array
+      length: 2
       item_type: ascii
     - name: chip_code
       type: array
+      length: 2
       item_type: ascii
     - name: version_date
       type: struct
       fields:
       - name: year
-        type: array
-        item_type: bcd
+        type: bcd
+        length: 1
       - name: month
-        type: array
-        item_type: bcd
+        type: bcd
+        length: 1
       - name: day
-        type: array
-        item_type: bcd
+        type: bcd
+        length: 1
       description: 版本日期(YYMMDD)
     - name: version
-      type: array
-      item_type: bcd
+      type: bcd
+      length: 2
   description: 返回本地通信模块运行模式信息

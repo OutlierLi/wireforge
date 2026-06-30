@@ -239,14 +239,38 @@ def _collect_input_fields(ir, leaf, leaf_id, parent_leaf=None) -> list[InputFiel
             # 如果 struct 有条件，子字段标记为不必填
             for sf in lf.params.get("fields", []):
                 default = sf.get("default")
-                _add_field(InputField(
-                    name=f"{lf.name}.{sf.get('name', '?')}",
-                    type=sf.get("type", "uint8"),
-                    required=not has_condition and default is None,
-                    length=sf.get("length"),
-                    desc=sf.get("description", ""),
-                    default=default,
-                ))
+                child = _input_field_from_yaml_dict(sf)
+                child.name = f"{lf.name}.{child.name}"
+                child.required = not has_condition and default is None
+                child.default = default
+                _add_field(child)
+        elif t == "array":
+            derive = lf.params.get("derive")
+            if derive:
+                continue
+            required = not lf.optional and not has_condition and lf.default is None
+            item_type = lf.params.get("item_type")
+            item_params = lf.params.get("item_params") or {}
+            desc = lf.params.get("description", "")
+            children: list[InputField] = []
+            if item_type == "struct":
+                children = [_input_field_from_yaml_dict(sf) for sf in item_params.get("fields", [])]
+            elif item_type:
+                item_name = lf.params.get("item_name") or "item"
+                child = _input_field_from_yaml_dict({
+                    "name": item_name,
+                    "type": item_type,
+                    "description": desc,
+                    **item_params,
+                })
+                children = [child]
+            _add_field(InputField(
+                name=lf.name,
+                type="array",
+                required=required,
+                desc=desc,
+                children=children,
+            ))
         else:
             derive = lf.params.get("derive")
             if derive:
@@ -266,6 +290,25 @@ def _collect_input_fields(ir, leaf, leaf_id, parent_leaf=None) -> list[InputFiel
             ))
 
     return fields
+
+
+def _input_field_from_yaml_dict(field_yaml: dict[str, Any]) -> InputField:
+    """Build InputField from a compiled variant field dict."""
+    ftype = str(field_yaml.get("type", "uint8"))
+    extra: dict[str, Any] = {}
+    if ftype == "enum":
+        extra["enum_values"] = field_yaml.get("values")
+    if ftype == "bcd_numeric":
+        extra["unit"] = field_yaml.get("unit", "")
+    return InputField(
+        name=str(field_yaml.get("name", "?")),
+        type=ftype,
+        required=field_yaml.get("default") is None,
+        length=field_yaml.get("length"),
+        desc=str(field_yaml.get("description", field_yaml.get("desc", ""))),
+        default=field_yaml.get("default"),
+        **extra,
+    )
 
 
 def _direction_from_path(path_info: dict[str, Any], info: dict[str, Any]) -> str:

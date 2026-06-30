@@ -14,27 +14,29 @@ variants:
     fields:
     - name: vendor_code
       type: array
+      length: 2
       item_type: ascii
     - name: chip_code
       type: array
+      length: 2
       item_type: ascii
     - name: version_date
       type: struct
       fields:
       - name: year
-        type: array
+        type: bcd
+        length: 1
         description: 年
-        item_type: bcd
       - name: month
-        type: array
+        type: bcd
+        length: 1
         description: 月
-        item_type: bcd
       - name: day
-        type: array
+        type: bcd
+        length: 1
         description: 日
-        item_type: bcd
       description: 版本日期 (YYMMDD)
     - name: version
-      type: array
-      item_type: bcd
+      type: bcd
+      length: 2
   description: 返回厂商代码和版本信息

@@ -16,28 +16,28 @@ variants:
       type: struct
       fields:
       - name: second
-        type: array
+        type: bcd
+        length: 1
         description: 秒
-        item_type: bcd
       - name: minute
-        type: array
+        type: bcd
+        length: 1
         description: 分
-        item_type: bcd
       - name: hour
-        type: array
+        type: bcd
+        length: 1
         description: 时
-        item_type: bcd
       - name: day
-        type: array
+        type: bcd
+        length: 1
         description: 日
-        item_type: bcd
       - name: month
-        type: array
+        type: bcd
+        length: 1
         description: 月
-        item_type: bcd
       - name: year
-        type: array
+        type: bcd
+        length: 1
         description: 年
-        item_type: bcd
       description: 集中器当前时间 (ssmmhhDDMMYY)
   description: 请求集中器时间响应
