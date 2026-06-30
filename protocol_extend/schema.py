@@ -22,30 +22,24 @@ AFN_ROUTERS: dict[int, str] = {
 
 AFN00_NO_DIR = 0x00
 
-UNSUPPORTED_AFN_HINT = (
-    "AFN 不在 00–07 范围内。首版仅支持已有 AFN 分组；"
-    "扩展新 AFN 需在 protocol.yaml 中手动添加 afnXX_di_router 后再试。"
-)
+def afn_di_router_id(afn: int) -> str:
+    """Return DI router for AFN — built-in 00–07 or convention ``afnXX_di_router``."""
+    return AFN_ROUTERS.get(afn) or f"afn{afn:02x}_di_router"
+
+
+def afn_has_builtin_router(afn: int | None) -> bool:
+    return afn is not None and afn in AFN_ROUTERS
+
+
+def router_compile_hint(afn: int) -> str:
+    router = afn_di_router_id(afn)
+    return (
+        f"AFN {afn:02X} 尚无内置 router；扩展 YAML 已写入 extensions/。"
+        f"请在 protocol.yaml 添加 {router}（及 afn_router 分组）后运行 bootstrap。"
+    )
 
 INPUT_SCHEMA: list[dict[str, Any]] = [
-    {"name": "protocol", "type": "string", "required": False, "default": "csg", "desc": "协议标识，首版仅 csg"},
-    {"name": "afn", "type": "uint8", "required": True, "desc": "AFN，十六进制或十进制，如 03 或 0x03"},
-    {"name": "di", "type": "hex", "required": True, "desc": "4 字节 DI，如 E8030304"},
-    {"name": "description", "type": "string", "required": True, "desc": "报文中文描述，写入 variant description"},
-    {"name": "dir", "type": "enum", "required": False, "values": ["downlink", "uplink", "0", "1"], "desc": "传输方向；AFN00 不需要"},
-    {"name": "add", "type": "bool", "required": False, "desc": "是否带地址域；AFN00–07 均必填"},
-    {"name": "fields", "type": "array", "required": False, "desc": "用户数据区字段；提供 evidence（取值表/单位/子字段），勿按字节宽度选 type；见 FIELD_DSL_EXAMPLES"},
-    {"name": "pair", "type": "bool", "required": False, "default": False, "desc": "是否同时生成 request+response 两条 variant"},
-    {"name": "resp_description", "type": "string", "required": False, "desc": "响应报文描述（pair=true 时）"},
-    {"name": "resp_fields", "type": "array", "required": False, "desc": "响应 payload 字段（pair=true 时）；同样使用 evidence 驱动，由 TypeInferencer 推断 semantic_type"},
-    {"name": "confirm", "type": "bool", "required": False, "desc": "兼容旧版：等价于 action=accept"},
-    {"name": "action", "type": "enum", "required": False, "values": ["start", "accept", "skip", "modify"], "desc": "两阶段工作流动作：start 进入逐条扩展；accept/skip/modify 审阅当前报文"},
-    {"name": "modify_reason", "type": "string", "required": False, "desc": "action=modify 时的修改原因（自然语言）"},
-    {"name": "skip_reason", "type": "string", "required": False, "desc": "action=skip 时的跳过原因"},
-    {"name": "draft_index", "type": "integer", "required": False, "desc": "指定当前处理的 draft 索引（默认 record 内当前索引）"},
-    {"name": "force_field_types", "type": "bool", "required": False, "desc": "跳过 unknown 字段类型审查，直接进入 message_review"},
-    {"name": "document_path", "type": "string", "required": False, "desc": "DOCX 文件路径（相对仓库根或绝对路径）；程序解析为 DocumentIR，禁止 Agent 直接读全文"},
-    {"name": "section_id", "type": "string", "required": False, "desc": "DOCX section_id（批量采集时自动关联，一般无需手动指定）"},
+    {"name": "document_path", "type": "string", "required": True, "desc": "DOCX 文件路径（相对仓库根或绝对路径）；程序解析并自动扩展全部报文"},
     {"name": "chapter_hint", "type": "string", "required": False, "desc": "可选：限定 DOCX 章节标题关键词，缩小扫描范围"},
 ]
 
@@ -86,10 +80,7 @@ class ExtensionSpec:
     def router_id(self) -> str:
         if self.afn is None:
             raise ValueError("afn is required")
-        router = AFN_ROUTERS.get(self.afn)
-        if not router:
-            raise ValueError(UNSUPPORTED_AFN_HINT)
-        return router
+        return afn_di_router_id(self.afn)
 
     def afn_uses_dir(self) -> bool:
         return self.afn is not None and self.afn != AFN00_NO_DIR
@@ -169,11 +160,9 @@ def missing_fields(spec: ExtensionSpec) -> list[str]:
             spec.afn = derived
     if spec.afn is None:
         missing.append("afn")
-    elif spec.afn not in AFN_ROUTERS:
-        missing.append("afn_supported")
     if not spec.description:
         missing.append("description")
-    if spec.afn is not None and spec.afn in AFN_ROUTERS:
+    if spec.afn is not None:
         if spec.add is None:
             missing.append("add")
         if spec.afn_uses_dir() and spec.dir is None and not spec.pair:

@@ -22,21 +22,17 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "protocol_extend_run",
         "description": (
-            "扩展 CSG 2016 报文变体：将自然语言/结构化输入转为 variants/extensions/*.yaml，"
-            "缺 dir/add 等参数时 WAITING_INPUT；确认后 compile 校验。"
+            "从 DOCX 自动扩展 CSG 2016 报文变体：解析文档 → 提取字段 → 推断 YAML → 写盘。"
+            "关键阶段写入 log/protocol_extend_runs/<run_id>/extend.log 与 stages/。"
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "run_id": {"type": "string", "description": "已有任务 run_id；新任务可省略。"},
-                "raw_input": {"type": "string", "description": "自然语言描述扩展报文（新任务必填）。"},
+                "raw_input": {"type": "string", "description": "简短说明（新任务必填）。"},
                 "user_input": {
                     "type": "object",
-                    "description": (
-                        "补参或审阅：protocol, afn, di, description, dir, add, fields, pair, "
-                        "action (start|accept|skip|modify), modify_reason, skip_reason, "
-                        "confirm (兼容 accept), document_path, allow_empty_fields"
-                    ),
+                    "description": "document_path（必填）, chapter_hint（可选）",
                 },
                 "debug": {
                     "type": "boolean",
@@ -128,39 +124,21 @@ def _usage_text() -> str:
 
 Tool: `protocol_extend_run`
 
-Two-phase workflow (manual + DOCX unified):
+**DOCX 自动流水线**（无手动补参、无用户审阅）：
 
-1. **Phase 1 — raw collection** (`need: collection_ready`): DI, AFN, fields extracted; **source_snapshot frozen**; no YAML/inference.
-2. **Phase 2 — per-message review** (`need: message_review`): yaml_preview + **fidelity_preview** vs frozen snapshot; user must choose accept / skip / modify.
+1. 传 `user_input.document_path`（`.docx`）
+2. 程序：解析 DOCX → 批量提取 DI/字段 → TypeInferencer → 写 `variants/extensions/*.yaml`
+3. 各阶段关键信息写入 `log/protocol_extend_runs/<run_id>/`：
+   - `extend.log` — 文本摘要
+   - `stages/*.json` — document_parse / document_extract / inference / yaml_preview / fidelity / draft_result
+   - `extracted_drafts.json` — 从文档提取的原始字段
+   - `draft_NNN_<DI>_preview.yaml` — 每条推断 YAML
 
-**Source fidelity**: compare final YAML to `source_snapshot` (not mutable draft). Only `confidence: high` allows accept; else modify or `force_fidelity: true` (user-confirmed only).
-
-- New run: pass `raw_input` (natural language or structured hints).
-- Resume: pass `run_id` + `user_input` (`action`, params, fields, modify_reason, `force_fidelity`, …).
-- `confirm: true` maps to `action: accept` (compat).
-- Extensions write to `protocol_tool/protocols/csg_2016/variants/extensions/*.yaml` only.
-- v1 supports AFN 00–07 new DI; AFN 08+ requires manual router in protocol.yaml.
-
-## DOCX document flow
-
-1. Pass `user_input.document_path` (workspace-relative or absolute `.docx`). **Do not** paste DOCX text into `raw_input`.
-2. Program parses → `DocumentIR` → batch `collect_all_drafts` (all DI/fields at once).
-3. `need: collection_ready` with `message_drafts[]` (incl. `source_excerpt`, `field_details`); user confirms → `action: start`.
-4. Each message → `message_review` with `source_excerpt`, `fidelity_report`, `fidelity_preview`; on `unknown` fields, `agent_context` snippets only (not full document).
+返回 `SUCCEEDED` + `batch_summary`；失败见 `log_dir` 与 `extend.log`。
 
 Install: `pip install python-docx` or `pip install -e ".[doc]"`.
 
-## TypeInferencer rules
-
-1. Do **not** pick semantic type from byte width. Provide `evidence` (value tables, units, subfields).
-2. `uint8/u16/bytes` are codec hints only; program infers `semantic_type` + YAML codec.
-3. `bool` semantic → YAML `enum` with 2 values; `unknown` → `field_type_warnings`; use `action: modify` with evidence or `action: accept` to force.
-4. Switch/value-table fields in snapshot must become `enum` in YAML or fidelity will block accept.
-
-Field DSL: scalar with evidence, struct, array (count_ref + item_type). See `field_dsl_examples` in params response.
-
-Flow: `raw_input` → (`params`?) → `collection_ready` → `action: start` → (`field_types`?) → `message_review` (+ fidelity) → accept/skip/modify → `SUCCEEDED` + `batch_summary`.
-See AGENTS.md Protocol Extend Flow for examples.
+TypeInferencer: 提供 evidence（取值表/单位）；bool 语义 → YAML `enum`；详见 AGENTS.md。
 """
 
 

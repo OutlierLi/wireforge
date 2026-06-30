@@ -2,7 +2,7 @@
 
 Use the MCP tool `protocol_task_run` for natural-language protocol build/decode/send tasks.
 
-Use the MCP tool `protocol_extend_run` to add CSG 2016 variant extensions (new DI under AFN 00–07) into `variants/extensions/` without editing `afn_payloads.yaml`. Start with:
+Use the MCP tool `protocol_extend_run` to add CSG 2016 variant extensions from a **DOCX** into `variants/extensions/` (auto pipeline + stage logs under `log/protocol_extend_runs/`). Start with:
 
 ```bash
 wireforge-extend-mcp-server
@@ -227,112 +227,21 @@ For greenfield builds without a source frame, use the standard [Build Flow](#bui
 
 ## Protocol Extend Flow
 
-Use `protocol_extend_run` when the user wants to **add a new CSG 2016 message variant** (typically new DI under existing AFN 00–07). Extensions are written only to [`protocol_tool/protocols/csg_2016/variants/extensions/`](protocol_tool/protocols/csg_2016/variants/extensions/).
+Use `protocol_extend_run` when the user wants to **add CSG 2016 message variants from a protocol DOCX**. Extensions write only to [`protocol_tool/protocols/csg_2016/variants/extensions/`](protocol_tool/protocols/csg_2016/variants/extensions/).
 
-**两阶段工作流（手动与 DOCX 统一）**：
+**DOCX 自动流水线**（无手动补参、无用户审阅/confirm）：
 
-| 阶段 | need | 行为 |
-|------|------|------|
-| Phase 1 原始采集 | `params` / `fields` → `collection_ready` | 仅收集 DI/AFN/数据域等原始信息，**不**推断类型、**不**生成 YAML |
-| Phase 2 逐条扩展 | `message_review`（可选 `field_types`） | 每条报文生成 `yaml_preview` + **源一致性** `fidelity_preview`，**必须询问用户** accept / skip / modify |
+1. 传 `user_input.document_path`（`.docx`）；`raw_input` 仅简短说明
+2. 程序：解析 DOCX → 批量提取 DI/字段 → TypeInferencer → 写 YAML → compile/map（AFN 00–07）
+3. 各阶段关键信息写入 `log/protocol_extend_runs/<run_id>/`：
+   - `extend.log` — 阶段摘要
+   - `stages/*.json` — document_parse / document_extract / inference / yaml_preview / fidelity / draft_result
+   - `extracted_drafts.json` — 从文档提取的原始字段
+   - `draft_NNN_<DI>_preview.yaml` — 推断 YAML 预览
 
-### 源一致性校验（snapshot ≠ draft）
+返回 `SUCCEEDED` + `batch_summary`；单条失败不阻断批次，详情见日志。
 
-- Phase 1 结束时为每条报文冻结 **`source_snapshot`**（DOCX 表行/段落或手动首次采集），**modify 不修改 snapshot**
-- Phase 2 展示：`source_excerpt`（原文摘要）→ `yaml_preview` → `fidelity_preview`（confidence/score/summary）
-- **accept 写盘前**程序比对最终 YAML 与 snapshot；仅 `confidence: high` 允许 accept
-- `medium` / `low` → accept 失败（`fidelity_blocked: true`），需 **modify** 修正或用户明确确认后传 `force_fidelity: true`
-- 禁止 Agent 擅自 `force_fidelity`；snapshot 说明列含 0/1 取值表时 YAML 必须为 `enum`
-
-### Agent 编排铁律
-
-1. Phase 1 完成后，向用户展示 `message_drafts` 摘要表（含 `source_excerpt` / `field_details` / DI / AFN / 缺失项），确认后传 `action: start`
-2. Phase 2 **每条报文必须询问用户**（accept / skip / modify），**不得自动 accept**
-3. 展示顺序：`source_excerpt` → `yaml_preview` → `fidelity_preview` → 用户决策
-4. 用户选 modify 时：根据 `modify_reason` + `fidelity_report.checks` + `agent_context` 构造 `fields` 补丁；满意后再 `action: accept`
-5. accept 因 fidelity 被拒时，根据 `failed_checks` 修正，**不要**跳过审阅
-6. 全部完成后汇报 `batch_summary`（含每条 `fidelity_confidence`）
-
-### Phase 1 示例
-
-```json
-{"raw_input": "扩展 CSG 报文 AFN03 DI=E8030304，查询通信延时时长"}
-```
-
-缺参时 `need: params`：
-
-```json
-{
-  "run_id": "<run_id>",
-  "user_input": {
-    "dir": "downlink",
-    "add": false,
-    "description": "查询通信延时时长",
-    "fields": [
-      {
-        "name": "dest_addr",
-        "desc": "通信目的地址",
-        "bytes": 6,
-        "evidence": ["6 字节 BCD 小端地址"]
-      },
-      {
-        "name": "payload_length",
-        "desc": "报文长度",
-        "bytes": 1,
-        "evidence": ["报文长度(字节)"]
-      }
-    ]
-  }
-}
-```
-
-采集完成 `need: collection_ready` → 用户确认后开始：
-
-```json
-{"run_id": "<run_id>", "user_input": {"action": "start"}}
-```
-
-### Phase 2 示例
-
-`need: message_review` 后逐条审阅（响应含 `source_excerpt`、`fidelity_preview`、`variant_plan`、`field_details`）：
-
-```json
-{"run_id": "<run_id>", "user_input": {"action": "accept"}}
-```
-
-fidelity 非 high 时 accept 被阻断；用户明确确认后可：
-
-```json
-{"run_id": "<run_id>", "user_input": {"action": "accept", "force_fidelity": true}}
-```
-
-```json
-{"run_id": "<run_id>", "user_input": {"action": "skip", "skip_reason": "已有同类 DI"}}
-```
-
-```json
-{
-  "run_id": "<run_id>",
-  "user_input": {
-    "action": "modify",
-    "modify_reason": "设备类型应为 enum，证据见表格第三行",
-    "fields": [{"name": "device_type", "evidence": ["00H：单相表", "01H：三相表"]}]
-  }
-}
-```
-
-`confirm: true` 兼容映射为 `action: accept`。
-
-**TypeInferencer 铁律**：不要根据字节长度决定 semantic_type。优先提供 `evidence`（取值表/开关/单位/子字段）。`uint8/u16/bytes` 只能出现在 codec 层，由程序推断。`bool` 语义落地为 `enum`（2 值）；推断为 `unknown` 时返回 `field_type_warnings`，可补 evidence 后 `action: modify`，或 `action: accept` 强制接受。
-
-**扩展类型优先**：域类型在 [`protocol_tool/protocols/csg_2016/types/shared.yaml`](protocol_tool/protocols/csg_2016/types/shared.yaml) 注册（如 `node_address` = 6 字节 BCD 小端节点地址）。匹配「节点地址/地址列表」等语义时，YAML 写 `type: node_address`，不写裸 `bcd`/`bytes` + `length: 6`。
-
-### DOCX 扩展（禁止 Agent 直接读原文）
-
-1. 传 `document_path`（`.docx`，相对仓库根或绝对路径），`raw_input` 仅简短说明即可。
-2. 程序：`DocumentParser` → `DocumentIR` → 批量 `collect_all_drafts`（全部 DI/字段一次采集）。
-3. Phase 1 返回 `need: collection_ready` + `message_drafts[]`；**不再**使用 `document_scan` 手动选 section。
-4. `unknown` 字段时 MCP 返回 `agent_context`（相关表格行/段落片段），**不得**把 DOCX 全文塞给 Agent。
+### 调用示例
 
 ```json
 {
@@ -345,43 +254,23 @@ fidelity 非 high 时 accept 被阻断；用户明确确认后可：
 
 依赖：`pip install -e ".[doc]"`（python-docx）。
 
-**结构体数组**（`count_ref` 必须引用同列表中靠前字段名）：
+### TypeInferencer 铁律
 
-```json
-{
-  "run_id": "<run_id>",
-  "user_input": {
-    "action": "modify",
-    "fields": [
-      {"name": "node_count", "type": "uint8", "desc": "节点数量n"},
-      {
-        "name": "nodes",
-        "type": "array",
-        "count_ref": "node_count",
-        "item_type": "struct",
-        "item_name": "node",
-        "desc": "节点地址+设备类型列表",
-        "item_fields": [
-          {"name": "address", "type": "bcd", "length": 6, "byte_order": "little", "desc": "地址"},
-          {"name": "device_type", "desc": "设备类型", "evidence": ["00H：单相表", "01H：三相表"]}
-        ]
-      }
-    ]
-  }
-}
-```
+- 不要按字节宽度决定 semantic_type；表格说明列中的取值表应成为 `evidence`
+- `bool` 语义 → YAML `enum`（2 值）；fidelity 仅记录到日志，不阻断写盘
+- 域类型优先：如 `node_address` 见 `types/shared.yaml`
 
-5. 每条 accept 后逐条 compile + map 校验；全部处理完 `SUCCEEDED` + `batch_summary`。检查 `map_ok: true`、`map_files`、`route_entries`。Re-run bootstrap only when SVG/cache cleanup is needed:
+### 限制
+
+- 必须提供 `document_path`；不支持纯自然语言/manual fields 补参
+- AFN 08+ 可写 YAML（`template_only`），需在 `protocol.yaml` 添加 router 后 bootstrap
+- 禁止 Agent 直接读 DOCX 全文；审阅时读 `log_dir` 下日志与 `batch_summary`
+
+Re-run bootstrap when SVG/cache cleanup needed:
 
 ```bash
 python3 scripts/bootstrap_protocol_cache.py
 ```
-
-Limitations (v1):
-
-- AFN must be 00–07 (existing routers). AFN 08+ returns `FAILED` with manual router hint.
-- Duplicate DI+dir+add conflicts with existing variants are rejected at accept time.
-- Do not edit `afn_payloads.yaml` directly; use this MCP flow instead.
 
 ## Decode Flow
 

@@ -83,7 +83,7 @@ def build_variants(spec: ExtensionSpec) -> list[dict[str, Any]]:
 def extension_filename(spec: ExtensionSpec) -> str:
     """Return `{AFN}_{DI}.yaml`, e.g. `03_E8030304.yaml`.
 
-    AFN: 2 uppercase hex digits (00–07).
+    AFN: 2 uppercase hex digits.
     DI: 4-byte CSG identifier — 8 uppercase hex chars starting with E8.
     """
     if spec.afn is None:
