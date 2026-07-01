@@ -1,0 +1,41 @@
+# 冻结命令 (FUNC=0x16) — 按 freeze_type 路由的标准载荷
+
+variants:
+  - kind: variant
+    id: dlt645_2007.freeze_instant
+    description: "瞬时冻结"
+    router: freeze_request_di
+    match:
+      freeze_type: "00000000"
+    body:
+      type: struct
+      fields:
+        - name: freeze_time
+          type: datetime_ymdhm
+          description: "冻结时间 (YYMMDDhhmm)"
+
+  - kind: variant
+    id: dlt645_2007.freeze_daily
+    description: "日冻结"
+    router: freeze_request_di
+    match:
+      freeze_type: "00010000"
+    body:
+      type: struct
+      fields:
+        - name: freeze_time
+          type: datetime_ymdhm
+          description: "冻结时间 (YYMMDDhhmm)"
+
+  - kind: variant
+    id: dlt645_2007.freeze_monthly
+    description: "月冻结"
+    router: freeze_request_di
+    match:
+      freeze_type: "00010001"
+    body:
+      type: struct
+      fields:
+        - name: freeze_time
+          type: datetime_ymdhm
+          description: "冻结时间 (YYMMDDhhmm)"

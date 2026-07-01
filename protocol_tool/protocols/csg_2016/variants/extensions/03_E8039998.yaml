@@ -1,0 +1,26 @@
+# CSG 2016 扩展报文 — 设备类型枚举示例
+# AFN=03 DI=E8039998
+# 由 protocol_extend_run 生成
+
+_comment: WireForge extension — created 2026-07-01T08:32:25+08:00
+_raw_input: 扩展 enum
+variants:
+- kind: variant
+  id: csg_2016.ext.afn03_e8039998_up
+  description: 设备类型枚举示例
+  router: afn03_di_router
+  match:
+    di: E8039998
+    control.dir: 1
+    control.add: 0
+  body:
+    type: struct
+    fields:
+    - name: device_type
+      type: enum
+      values:
+        '0x00': 单相表
+        '0x01': 三相表
+        '0x02': 采集器
+        '0x03': 集中器
+      desc: 设备类型

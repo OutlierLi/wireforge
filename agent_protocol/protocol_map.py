@@ -242,6 +242,8 @@ def _route_params_from_key(proto: str, router: dict[str, Any], route_key: str) -
             result["afn"] = _hex_byte(value)
         elif leaf == "di":
             result["di"] = str(value).replace(" ", "").upper()
+        elif leaf in ("freeze_type", "event_type"):
+            result[leaf] = str(value).replace(" ", "").upper()
         elif leaf == "dir":
             result["dir"] = "uplink" if int(value) == 1 else "downlink"
         elif leaf == "add":
@@ -270,7 +272,7 @@ def _route_values(route_key: str) -> list[Any]:
 def _normalize_route_params(proto: str, params: dict[str, Any]) -> dict[str, Any]:
     short_proto = {"csg_2016": "csg", "dlt645_2007": "dlt645"}.get(proto, proto)
     normalized = {"proto": short_proto}
-    for key in ("func", "afn", "di", "dir", "has_address"):
+    for key in ("func", "afn", "di", "freeze_type", "event_type", "dir", "has_address"):
         if key in params:
             normalized[key] = params[key]
     return normalized
@@ -278,7 +280,7 @@ def _normalize_route_params(proto: str, params: dict[str, Any]) -> dict[str, Any
 
 def _route_signature(params: dict[str, Any]) -> str:
     parts: list[str] = []
-    for key in ("dir", "has_address", "func", "afn", "di"):
+    for key in ("dir", "has_address", "func", "afn", "di", "freeze_type", "event_type"):
         if key not in params:
             continue
         name = "add" if key == "has_address" else key

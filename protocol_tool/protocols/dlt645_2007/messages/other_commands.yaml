@@ -177,6 +177,15 @@ messages:
           type: bcd
           length: 4
 
+        - name: event_payload
+          type: routed_payload
+          router: clear_event_request_di
+          boundary:
+            kind: remaining
+          on_unknown:
+            kind: raw
+          description: "按事件类型路由的扩展载荷"
+
   - kind: message
     id: clear_event_response
     router: main

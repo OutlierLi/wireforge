@@ -1,0 +1,41 @@
+# CSG 2016 扩展报文 — 空请求查询
+# AFN=03 DI=E8030399
+# 由 protocol_extend_run 生成
+
+_comment: WireForge extension — created 2026-07-01T08:32:25+08:00
+_raw_input: 查从节点
+variants:
+- kind: variant
+  id: csg_2016.ext.afn03_e8030399_down
+  description: 空请求查询
+  router: afn03_di_router
+  match:
+    di: E8030399
+    control.dir: 0
+    control.add: 0
+  body:
+    type: struct
+    fields: []
+- kind: variant
+  id: csg_2016.ext.afn03_e8030399_up
+  description: 返回查询从节点信息
+  router: afn03_di_router
+  match:
+    di: E8030399
+    control.dir: 1
+    control.add: 0
+  body:
+    type: struct
+    fields:
+    - name: slave_total
+      type: uint16_le
+      desc: 从节点总数量
+    - name: response_slave_count
+      type: uint8
+      desc: 本次应答的从节点数量
+    - name: slave_addrs
+      type: array
+      desc: 从节点地址列表
+      count_ref: response_slave_count
+      item_name: slave_addr
+      item_type: node_address

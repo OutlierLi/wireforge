@@ -16,11 +16,8 @@ from protocol_extend.c_struct.parser import parse_c_struct
 from protocol_extend.c_struct.validator import validate_c_struct
 from protocol_extend.schema import (
     ExtensionSpec,
-    afn_has_builtin_router,
     missing_c_struct_input,
     missing_fields,
-    normalize_protocol,
-    router_compile_hint,
 )
 from protocol_extend.validator import find_conflicts
 from protocol_extend import yaml_writer
@@ -123,6 +120,10 @@ def _run_c_struct_pipeline(record: ExtendRecord, user_input: dict[str, Any]) -> 
         record.error = f"missing user_input: {', '.join(missing_input)}"
         log.log_stage("failed", {"summary": record.error, "error": record.error})
         return
+
+    from protocol_extend.profiles import detect_protocol
+    detected = detect_protocol(record.raw_input, user_input)
+    record.results["protocol"] = detected
 
     entries = _variant_entries(user_input)
     drafts: list[ExtensionDraft] = []
@@ -231,7 +232,9 @@ def _c_struct_parse_report(user_input: dict[str, Any]) -> dict[str, Any]:
 
 def _draft_from_spec(spec: ExtensionSpec, *, index: int = 0) -> ExtensionDraft:
     return ExtensionDraft(
+        protocol=spec.protocol,
         afn=spec.afn,
+        func=spec.func,
         di=spec.di,
         description=spec.description,
         dir=spec.dir,
@@ -253,9 +256,11 @@ def _process_draft_c_struct(
 ) -> tuple[bool, bool, bool, bool]:
     spec = draft.to_spec()
 
-    if spec.protocol not in {"csg_2016", "csg"} and normalize_protocol(spec.protocol) != "csg_2016":
+    try:
+        spec.profile
+    except ValueError as exc:
         draft.status = "failed"
-        draft.last_error = f"unsupported protocol: {spec.protocol}"
+        draft.last_error = str(exc)
         log.log_draft_result(draft_index, draft, status="failed", error=draft.last_error)
         return False, True, True, False
 
@@ -278,7 +283,10 @@ def _process_draft_c_struct(
         return False, True, True, False
 
     yaml_text = yaml_writer.render_extension_yaml(spec, record.raw_input)
-    rel_path = f"protocol_tool/protocols/csg_2016/variants/extensions/{yaml_writer.extension_filename(spec)}"
+    rel_path = (
+        f"protocol_tool/protocols/{spec.protocol}/variants/extensions/"
+        f"{yaml_writer.extension_filename(spec)}"
+    )
     record.yaml_preview = yaml_text
     record.extension_file = rel_path
     log.log_draft_yaml(draft_index, draft, yaml_text=yaml_text, extension_file=rel_path)
@@ -287,7 +295,7 @@ def _process_draft_c_struct(
     draft.fidelity_report = fidelity_report
     log.log_draft_fidelity(draft_index, draft, fidelity_report=fidelity_report)
 
-    target = _extensions_dir() / yaml_writer.extension_filename(spec)
+    target = _extensions_dir(spec) / yaml_writer.extension_filename(spec)
     if target.exists():
         draft.status = "failed"
         draft.last_error = f"extension file already exists: {target}"
@@ -295,14 +303,14 @@ def _process_draft_c_struct(
         return False, True, True, False
 
     try:
-        written = yaml_writer.write_extension_file(spec, record.raw_input, _extensions_dir())
+        written = yaml_writer.write_extension_file(spec, record.raw_input, _extensions_dir(spec))
     except FileExistsError as exc:
         draft.status = "failed"
         draft.last_error = str(exc)
         log.log_draft_result(draft_index, draft, status="failed", error=draft.last_error)
         return False, True, True, False
 
-    if spec.afn is not None and not afn_has_builtin_router(spec.afn):
+    if not spec.profile.has_builtin_router(spec):
         return _finalize_template_only_accept(record, draft, draft_index, spec, written, log)
 
     compile_ok, map_ok = _compile_and_verify(record, draft, draft_index, spec, written, log)
@@ -323,7 +331,7 @@ def _compile_and_verify(
 
     try:
         from protocol_tool.compiler.pipeline import compile_protocol
-        compile_protocol(str(REGISTRY), "csg_2016", output_dir=str(COMPILED_DIR))
+        compile_protocol(str(REGISTRY), spec.profile.compile_name(), output_dir=str(COMPILED_DIR))
     except Exception as exc:
         _rollback()
         draft.status = "failed"
@@ -343,11 +351,16 @@ def _compile_and_verify(
             return True, False
 
         route_errors: list[str] = []
-        if spec.pair and spec.afn != 0:
-            dir_values: list[int | None] = [0, 1]
-        elif spec.pair and spec.afn == 0:
-            dir_values = [None, None]
-        elif spec.afn_uses_dir():
+        if spec.pair:
+            if spec.protocol == "dlt645_2007":
+                dir_values: list[int | None] = [1]
+            elif spec.afn == 0:
+                dir_values = [None, None]
+            else:
+                dir_values = [0, 1]
+        elif spec.protocol == "dlt645_2007":
+            dir_values = [spec.dir if spec.dir is not None else 1]
+        elif spec.protocol == "csg_2016" and spec.afn_uses_dir():
             dir_values = [spec.dir]
         else:
             dir_values = [None]
@@ -403,7 +416,7 @@ def _finalize_template_only_accept(
 ) -> tuple[bool, bool, bool, bool]:
     rel_written = str(written.relative_to(ROOT)) if written.is_relative_to(ROOT) else str(written)
     variant_ids = [v["id"] for v in yaml_writer.build_variants(spec)]
-    hint = router_compile_hint(spec.afn) if spec.afn is not None else ""
+    hint = spec.profile.router_hint(spec)
 
     draft.status = "accepted"
     draft.extension_file = rel_written
@@ -438,7 +451,7 @@ def _batch_summary(drafts: list[ExtensionDraft]) -> dict[str, Any]:
 
 def _merge_run_meta(record: ExtendRecord, user_input: dict[str, Any]) -> None:
     for key in (
-        "afn", "di", "dir", "add", "description", "pair",
+        "protocol", "afn", "func", "di", "dir", "add", "description", "pair",
         "c_struct", "c_struct_path", "resp_c_struct", "resp_c_struct_path",
         "resp_description", "variants",
     ):
@@ -446,8 +459,8 @@ def _merge_run_meta(record: ExtendRecord, user_input: dict[str, Any]) -> None:
             record.spec[key] = user_input[key]
 
 
-def _extensions_dir() -> Path:
-    return yaml_writer.EXTENSIONS_DIR
+def _extensions_dir(spec: ExtensionSpec) -> Path:
+    return spec.profile.extensions_dir(ROOT)
 
 
 def _load_or_create(run_id: str | None, raw_input: str | None) -> ExtendRecord:
@@ -496,6 +509,7 @@ def _public_result(record: ExtendRecord, *, debug: bool = False) -> dict[str, An
 
     if record.state == "SUCCEEDED":
         out["extension_file"] = record.results.get("extension_file") or record.extension_file
+        out["protocol"] = record.results.get("protocol") or record.spec.get("protocol")
         out["compile_ok"] = record.results.get("compile_ok", False)
         out["map_ok"] = record.results.get("map_ok", False)
         out["bootstrap_hint"] = record.results.get("bootstrap_hint", "")

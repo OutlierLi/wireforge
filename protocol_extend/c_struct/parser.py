@@ -12,7 +12,7 @@ from protocol_extend.c_struct.ir import (
     CStructMetadata,
 )
 from protocol_extend.c_struct.type_map import wire_size_for_scalar
-from protocol_extend.schema import normalize_afn, normalize_di, normalize_dir, normalize_add
+from protocol_extend.schema import normalize_afn, normalize_di, normalize_dir, normalize_add, normalize_func
 
 _WIREFORGE_META = re.compile(
     r"@wireforge\b(.*?)(?:\*/|$)",
@@ -91,6 +91,8 @@ def _parse_metadata(text: str) -> CStructMetadata:
             value = match.group(3) or match.group(4) or match.group(5) or ""
             if key == "afn":
                 meta.afn = normalize_afn(value)
+            elif key == "func":
+                meta.func = normalize_func(value)
             elif key == "di":
                 meta.di = normalize_di(value)
             elif key == "dir":

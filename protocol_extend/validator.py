@@ -7,18 +7,29 @@ from typing import Any
 
 import yaml
 
+from protocol_extend.dlt645_funcs import resolve_dlt645_func
 from protocol_extend.schema import ExtensionSpec
 
 ROOT = Path(__file__).resolve().parent.parent
-CSG_VARIANTS_DIR = ROOT / "protocol_tool" / "protocols" / "csg_2016" / "variants"
+
+_SELECTOR_FIELDS = ("di", "freeze_type", "event_type")
+
+
+def _match_selector_value(match: dict[str, Any]) -> str | None:
+    for key in _SELECTOR_FIELDS:
+        val = match.get(key)
+        if val:
+            return str(val).upper().replace(" ", "")
+    return None
 
 
 def iter_variant_entries(variants_dir: Path | None = None) -> list[dict[str, Any]]:
-    base = variants_dir or CSG_VARIANTS_DIR
+    if variants_dir is None:
+        return []
     entries: list[dict[str, Any]] = []
-    if not base.exists():
+    if not variants_dir.exists():
         return entries
-    for path in sorted(base.rglob("*.yaml")):
+    for path in sorted(variants_dir.rglob("*.yaml")):
         try:
             data = yaml.safe_load(path.read_text(encoding="utf-8"))
         except Exception:
@@ -31,7 +42,7 @@ def iter_variant_entries(variants_dir: Path | None = None) -> list[dict[str, Any
         for var in variants:
             if isinstance(var, dict) and var.get("kind", "variant") == "variant":
                 match = var.get("match") or {}
-                if match.get("di"):
+                if _match_selector_value(match):
                     entries.append({
                         "file": str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path),
                         "id": var.get("id", ""),
@@ -41,49 +52,24 @@ def iter_variant_entries(variants_dir: Path | None = None) -> list[dict[str, Any
 
 
 def find_conflicts(spec: ExtensionSpec, variants_dir: Path | None = None) -> list[dict[str, Any]]:
-    """Return existing variants that collide on di+dir+add."""
-    keys_to_check: list[tuple[str, int | None, int | None]] = []
-    if spec.pair:
-        if spec.afn == 0:
-            keys_to_check.append((spec.di, None, spec.add))
-            keys_to_check.append((spec.di, None, spec.add))
-        else:
-            keys_to_check.append((spec.di, 0, spec.add))
-            keys_to_check.append((spec.di, 1, spec.add))
-    else:
-        d = spec.dir if spec.afn_uses_dir() else None
-        keys_to_check.append((spec.di, d, spec.add))
+    profile = spec.profile
+    scan_dir = variants_dir or profile.variants_scan_dir(ROOT)
+    keys_to_check = profile.conflict_keys(spec)
+    selector_field = "di"
+    if profile.id == "dlt645_2007":
+        selector_field = resolve_dlt645_func(spec.func).selector_field
 
     conflicts: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for entry in iter_variant_entries(variants_dir):
+    for entry in iter_variant_entries(scan_dir):
         m = entry["match"]
         for want_di, want_dir, want_add in keys_to_check:
-            if not _match_collides(m, want_di, want_dir, want_add):
+            if not profile.match_collides(
+                m, want_di, want_dir, want_add, selector_field=selector_field,
+            ):
                 continue
             key = f"{entry['file']}:{entry['id']}"
             if key not in seen:
                 seen.add(key)
                 conflicts.append(entry)
     return conflicts
-
-
-def _match_collides(
-    match: dict[str, Any],
-    want_di: str,
-    want_dir: int | None,
-    want_add: int | None,
-) -> bool:
-    di = str(match.get("di", "")).upper().replace(" ", "")
-    if di != want_di:
-        return False
-    entry_add = match.get("control.add")
-    if want_add is not None and entry_add is not None and int(entry_add) != want_add:
-        return False
-    entry_dir = match.get("control.dir")
-    if want_dir is not None:
-        if entry_dir is None:
-            return False
-        if int(entry_dir) != want_dir:
-            return False
-    return True

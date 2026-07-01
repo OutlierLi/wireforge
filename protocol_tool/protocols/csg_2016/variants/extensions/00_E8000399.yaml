@@ -1,0 +1,17 @@
+# CSG 2016 扩展报文 — 空 payload 查询示例
+# AFN=00 DI=E8000399
+# 由 protocol_extend_run 生成
+
+_comment: WireForge extension — created 2026-07-01T08:32:25+08:00
+_raw_input: 查厂商
+variants:
+- kind: variant
+  id: csg_2016.ext.afn00_e8000399_msg
+  description: 空 payload 查询示例
+  router: afn00_di_router
+  match:
+    di: E8000399
+    control.add: 0
+  body:
+    type: struct
+    fields: []

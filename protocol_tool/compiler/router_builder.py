@@ -50,6 +50,7 @@ class RouterBuilder:
 
         # Get router definitions from protocol.yaml
         router_defs = self.unit.protocol_data.get("routers", {})
+        router_ids.update(self._collect_routed_payload_routers())
 
         for router_id in router_ids:
             # Find router definition
@@ -96,6 +97,33 @@ class RouterBuilder:
             )
 
         return routers
+
+    def _collect_routed_payload_routers(self) -> set[str]:
+        router_ids: set[str] = set()
+
+        def walk_fields(fields: list[Any]) -> None:
+            for field in fields or []:
+                if not isinstance(field, dict):
+                    continue
+                if field.get("type") == "routed_payload":
+                    router = field.get("router")
+                    if router:
+                        router_ids.add(str(router))
+                if field.get("type") == "struct":
+                    walk_fields(field.get("fields") or [])
+
+        for msg_yaml in self.unit.message_data:
+            messages = msg_yaml.get("messages", [msg_yaml])
+            if not isinstance(messages, list):
+                messages = [msg_yaml]
+            for msg in messages:
+                if msg.get("kind") != "message":
+                    continue
+                body = msg.get("body") or {}
+                if body.get("type") == "struct":
+                    walk_fields(body.get("fields") or [])
+
+        return router_ids
 
     @staticmethod
     def _find_router_def(

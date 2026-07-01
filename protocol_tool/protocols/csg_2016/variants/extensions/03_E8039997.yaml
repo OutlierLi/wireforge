@@ -1,0 +1,31 @@
+# CSG 2016 扩展报文 — 嵌套结构体示例
+# AFN=03 DI=E8039997
+# 由 protocol_extend_run 生成
+
+_comment: WireForge extension — created 2026-07-01T08:32:25+08:00
+_raw_input: 扩展
+variants:
+- kind: variant
+  id: csg_2016.ext.afn03_e8039997_up
+  description: 嵌套结构体示例
+  router: afn03_di_router
+  match:
+    di: E8039997
+    control.dir: 1
+    control.add: 0
+  body:
+    type: struct
+    fields:
+    - name: protocol_release_date
+      type: struct
+      fields:
+      - name: year
+        type: uint8
+        desc: 年
+      - name: month
+        type: uint8
+        desc: 月
+      - name: day
+        type: uint8
+        desc: 日
+      desc: 协议发布日期

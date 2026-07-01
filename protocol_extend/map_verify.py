@@ -16,29 +16,11 @@ def refresh_protocol_map(compiled_dir: Path) -> dict[str, Any]:
 
 
 def route_params_for(spec: ExtensionSpec, *, dir_value: int | None) -> dict[str, Any]:
-    params: dict[str, Any] = {
-        "proto": "csg",
-        "afn": f"{spec.afn:02X}" if spec.afn is not None else "",
-        "di": spec.di.upper(),
-    }
-    if dir_value is not None:
-        params["dir"] = "downlink" if dir_value == 0 else "uplink"
-    if spec.add is not None:
-        params["has_address"] = spec.add
-    return params
+    return spec.profile.route_params_for(spec, dir_value=dir_value)
 
 
 def expected_route_param_sets(spec: ExtensionSpec) -> list[dict[str, Any]]:
-    if spec.pair:
-        if spec.afn == 0:
-            base = route_params_for(spec, dir_value=None)
-            return [base, base]
-        return [
-            route_params_for(spec, dir_value=0),
-            route_params_for(spec, dir_value=1),
-        ]
-    dir_val = spec.dir if spec.afn_uses_dir() else None
-    return [route_params_for(spec, dir_value=dir_val)]
+    return spec.profile.expected_route_param_sets(spec)
 
 
 def find_map_entry_for_variant(
@@ -70,7 +52,6 @@ def verify_extension_routes(
     variant_ids: list[str],
     protocol_map: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    """Return matched map entries and error messages for missing routes."""
     found: list[dict[str, Any]] = []
     errors: list[str] = []
 
@@ -82,9 +63,7 @@ def verify_extension_routes(
     for variant_id, route_params in zip(variant_ids, expected_sets):
         entry = find_map_entry_for_variant(protocol_map, variant_id, route_params)
         if entry is None:
-            errors.append(
-                f"route not found for {variant_id}: {route_params}"
-            )
+            errors.append(f"route not found for {variant_id}: {route_params}")
             continue
         found.append(entry)
 
@@ -94,9 +73,5 @@ def verify_extension_routes(
 def verify_route_handle(spec: ExtensionSpec, *, dir_value: int | None) -> dict[str, Any]:
     from console.handlers.route import handle as route_handle
 
-    args: dict[str, Any] = {"proto": "csg", "afn": f"{spec.afn:02X}", "di": spec.di}
-    if dir_value is not None:
-        args["dir"] = "downlink" if dir_value == 0 else "uplink"
-    if spec.add is not None:
-        args["has_address"] = spec.add
+    args = spec.profile.route_handle_args(spec, dir_value=dir_value)
     return route_handle(args)

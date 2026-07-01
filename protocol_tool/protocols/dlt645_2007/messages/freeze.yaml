@@ -17,9 +17,14 @@ messages:
           byte_order: little
           description: "冻结类型标识 DI0-DI3"
 
-        - name: freeze_time
-          type: datetime_ymdhm
-          description: "冻结时间 (YYMMDDhhmm)"
+        - name: freeze_payload
+          type: routed_payload
+          router: freeze_request_di
+          boundary:
+            kind: remaining
+          on_unknown:
+            kind: raw
+          description: "按冻结类型路由的载荷（含冻结时间等）"
 
   - kind: message
     id: freeze_response

@@ -9,6 +9,7 @@ from typing import Any
 @dataclass
 class CStructMetadata:
     afn: int | None = None
+    func: int | None = None
     di: str = ""
     dir: int | None = None
     add: bool | None = None

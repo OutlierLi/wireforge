@@ -25,6 +25,24 @@ routers:
     target_kind: variant
     fallback: raw
 
+  write_data_request_di:
+    kind: variant_router
+    selector_field: di
+    target_kind: variant
+    fallback: raw
+
+  freeze_request_di:
+    kind: variant_router
+    selector_field: freeze_type
+    target_kind: variant
+    fallback: raw
+
+  clear_event_request_di:
+    kind: variant_router
+    selector_field: event_type
+    target_kind: variant
+    fallback: raw
+
 build:
   default_frame: dlt645_2007.frame
 

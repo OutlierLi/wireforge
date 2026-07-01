@@ -10,7 +10,9 @@ from protocol_extend.schema import ExtensionSpec, missing_fields
 
 @dataclass
 class ExtensionDraft:
+    protocol: str = "csg_2016"
     afn: int | None = None
+    func: int | None = None
     di: str = ""
     description: str = ""
     dir: int | None = None
@@ -37,7 +39,9 @@ class ExtensionDraft:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ExtensionDraft:
         return cls(
+            protocol=str(data.get("protocol") or "csg_2016"),
             afn=int(data["afn"]) if data.get("afn") is not None else None,
+            func=int(data["func"]) if data.get("func") is not None else None,
             di=str(data.get("di") or ""),
             description=str(data.get("description") or ""),
             dir=int(data["dir"]) if data.get("dir") is not None else None,
@@ -61,7 +65,9 @@ class ExtensionDraft:
 
     def to_spec(self) -> ExtensionSpec:
         return ExtensionSpec(
+            protocol=getattr(self, "protocol", None) or "csg_2016",
             afn=self.afn,
+            func=getattr(self, "func", None),
             di=self.di,
             description=self.description,
             dir=self.dir,
@@ -75,7 +81,9 @@ class ExtensionDraft:
     @classmethod
     def from_spec(cls, spec: ExtensionSpec, **extra: Any) -> ExtensionDraft:
         return cls(
+            protocol=spec.protocol,
             afn=spec.afn,
+            func=spec.func,
             di=spec.di,
             description=spec.description,
             dir=spec.dir,
@@ -91,8 +99,11 @@ class ExtensionDraft:
         )
 
     def update_from_spec(self, spec: ExtensionSpec) -> None:
+        self.protocol = spec.protocol
         if spec.afn is not None:
             self.afn = spec.afn
+        if spec.func is not None:
+            self.func = spec.func
         if spec.di:
             self.di = spec.di
         if spec.description:

@@ -154,18 +154,23 @@ class RoutedPayloadCodec(FieldCodec):
                 leaf = self._ir.leaves.get(lid)
 
         if leaf is None:
+            if router_id and self._ir:
+                rnode = self._ir.routers.get(router_id)
+                if rnode and rnode.fallback_policy == "raw":
+                    payload = self._coerce_raw_payload(field, value, context)
+                    if payload is not None:
+                        from protocol_tool.codecs.transforms import apply_transforms_encode
+                        payload = apply_transforms_encode(payload, field.transforms)
+                        context.raw_sections[field.name] = payload
+                        writer.write(payload)
+                        return
             if router_id:
                 raise RouteError(
                     f"Build error: no route found for router {router_id!r} "
                     f"with field {field.name!r}. Check route_table."
                 )
-            if isinstance(value, bytes):
-                payload = value
-            elif isinstance(value, dict) and "raw" in value:
-                payload = bytes.fromhex(str(value["raw"]))
-            elif value is not None:
-                payload = bytes.fromhex(str(value))
-            else:
+            payload = self._coerce_raw_payload(field, value, context)
+            if payload is None:
                 raise RouteError(
                     f"Build error: no message_id, no router, and no raw value "
                     f"for routed_payload field {field.name!r}"
@@ -185,6 +190,18 @@ class RoutedPayloadCodec(FieldCodec):
         context.raw_sections[field.name] = payload
 
         writer.write(payload)
+
+    @staticmethod
+    def _coerce_raw_payload(field: FieldNode, value: Any, context: BuildContext) -> bytes | None:
+        candidates = [value, context.values.get(field.name)]
+        for item in candidates:
+            if isinstance(item, bytes):
+                return item
+            if isinstance(item, dict) and "raw" in item:
+                return bytes.fromhex(str(item["raw"]))
+            if item is not None and item != "":
+                return bytes.fromhex(str(item))
+        return None
 
     @staticmethod
     def _payload_length(

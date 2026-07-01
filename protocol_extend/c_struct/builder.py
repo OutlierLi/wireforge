@@ -34,6 +34,8 @@ def load_c_struct_source(
 def _apply_struct_metadata(spec: ExtensionSpec, metadata: object) -> None:
     if metadata.afn is not None and spec.afn is None:
         spec.afn = metadata.afn
+    if getattr(metadata, "func", None) is not None and spec.func is None:
+        spec.func = metadata.func
     if metadata.di and not spec.di:
         spec.di = metadata.di
     if metadata.dir is not None and spec.dir is None:
@@ -61,8 +63,7 @@ def build_spec_from_c_struct(raw_input: str, user_input: dict[str, Any] | None) 
     if data.get("variants"):
         raise ValueError("variants batch must be processed by state_machine, not build_spec_from_c_struct")
 
-    if spec.add is None:
-        spec.add = False
+    spec.profile.apply_defaults(spec)
 
     if data.get("empty_payload"):
         source = _empty_struct_source()

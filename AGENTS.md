@@ -227,12 +227,15 @@ For greenfield builds without a source frame, use the standard [Build Flow](#bui
 
 ## Protocol Extend Flow
 
-CSG 2016 **所有报文 payload** 均通过 **C 结构体 → YAML** 构造：
+**CSG 2016 / DLT645-2007** 新增 DI payload 均通过 **C 结构体 → YAML**（`protocol_extend_run`）。MCP 会按 `protocol` / `afn|func` / `di` / 文本 **自动识别任务类型**。
 
 | 范围 | C struct 位置 | 生成 YAML |
 |------|---------------|-----------|
-| 内置报文（afn_payloads 原 DI 字段） | [`protocol_tool/protocols/csg_2016/c_struct/payloads/`](protocol_tool/protocols/csg_2016/c_struct/payloads/) + [`manifest.yaml`](protocol_tool/protocols/csg_2016/c_struct/manifest.yaml) | [`variants/payloads/`](protocol_tool/protocols/csg_2016/variants/payloads/)（`generate_csg_variants_from_c_struct.py`） |
-| Agent 新增扩展 | MCP 传入 `c_struct_path` 或 inline | [`variants/extensions/`](protocol_tool/protocols/csg_2016/variants/extensions/)（`protocol_extend_run`） |
+| CSG 内置报文 | [`c_struct/payloads/`](protocol_tool/protocols/csg_2016/c_struct/payloads/) + [`manifest.yaml`](protocol_tool/protocols/csg_2016/c_struct/manifest.yaml) | [`variants/payloads/`](protocol_tool/protocols/csg_2016/variants/payloads/) |
+| CSG Agent 扩展 | MCP `c_struct_path` / inline | [`csg_2016/variants/extensions/`](protocol_tool/protocols/csg_2016/variants/extensions/) |
+| DLT645 Agent 扩展 | MCP `c_struct_path` / inline | [`dlt645_2007/variants/extensions/`](protocol_tool/protocols/dlt645_2007/variants/extensions/) |
+
+示例：[`database/examples/dlt645_extend_example.md`](database/examples/dlt645_extend_example.md)
 
 [`afn_payloads.yaml`](protocol_tool/protocols/csg_2016/variants/afn_payloads.yaml) 仅保留 **AFN 路由分组** 与 **空 payload 占位**；具体字段不在此文件手改。
 
@@ -241,15 +244,18 @@ CSG 2016 **所有报文 payload** 均通过 **C 结构体 → YAML** 构造：
 1. Agent **直接阅读**协议文档（DOCX / 导出 markdown / 规约原文）
 2. 按 DI **payload**（不含 afn/seq/di/address_area）编写或修改 `c_struct/payloads/*.h`
 3. 内置报文：更新 `c_struct/manifest.yaml` 后运行 `python3 scripts/generate_csg_variants_from_c_struct.py`（或 `bootstrap_protocol_cache.py`）
-4. 新增 DI：调用 `protocol_extend_run`，传 `afn`、`di` 及 `c_struct` 或 `c_struct_path`
-5. 审阅 `log/protocol_extend_runs/<run_id>/` 或 diff `variants/payloads/` / `variants/extensions/`
+4. 新增 DI：调用 `protocol_extend_run`
+   - CSG：传 `afn`、`di` 及 `c_struct` / `c_struct_path`
+   - DLT645：传 `func`（默认 `0x11` 读数据）、`di`、`c_struct*`；可写 `protocol: dlt645`
+5. 审阅 `log/protocol_extend_runs/<run_id>/` 或 diff `variants/extensions/`
 
 ### C 结构体 DSL 要点
 
 文件头元数据（可选，可替代 user_input 同名字段）：
 
 ```c
-/* @wireforge afn=03 di=E8039999 dir=downlink desc="查询从节点信息" pair=true */
+/* CSG: @wireforge afn=03 di=E8039999 dir=downlink desc="查询从节点信息" pair=true */
+/* DLT645: @wireforge func=11 di=00099999 dir=uplink desc="自定义电能量" */
 typedef struct __attribute__((packed)) {
     uint16_t start_slave_index; /* @desc 起始从节点序号 */
     uint8_t device_type;        /* @desc 设备类型 @enum 0x00:单相表 0x01:三相表 */
@@ -284,6 +290,23 @@ typedef struct __attribute__((packed)) {
 
 ### 调用示例
 
+645：
+
+```json
+{
+  "raw_input": "扩展 DLT645 读数据应答",
+  "user_input": {
+    "protocol": "dlt645",
+    "func": "0x11",
+    "di": "00099999",
+    "description": "自定义扩展电能量",
+    "c_struct_path": "tests/fixtures/c_struct/dlt645_custom_energy.h"
+  }
+}
+```
+
+CSG：
+
 ```json
 {
   "raw_input": "扩展 CSG 报文 AFN03 查询从节点信息",
@@ -301,8 +324,9 @@ typedef struct __attribute__((packed)) {
 
 ### 限制
 
-- 必须提供 `c_struct` 或 `c_struct_path`（及 `afn`、`di`）；空 payload 可用 `empty_payload: true`；成对报文另需 `resp_c_struct*` 或 `resp_empty_payload`
-- 默认 `add: false`（无地址域）；AFN 08+ 可写 YAML（`template_only`），需在 `protocol.yaml` 添加 router 后 bootstrap
+- 必须提供 `c_struct` 或 `c_struct_path` 及 `di`；CSG 需 `afn`，645 需 `func`（默认 `0x11`）或自动识别
+- 空 payload 可用 `empty_payload: true`；成对报文另需 `resp_c_struct*` 或 `resp_empty_payload`
+- CSG 默认 `add: false`；AFN 08+ / 645 未注册 FUNC 可写 YAML（`template_only`），需在 `protocol.yaml` 添加 router 后 bootstrap
 - C struct 仅描述 DI payload，不含 `user_data` 帧头
 
 Re-run bootstrap when SVG/cache cleanup needed:

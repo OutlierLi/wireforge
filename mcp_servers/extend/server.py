@@ -22,8 +22,9 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "protocol_extend_run",
         "description": (
-            "从 Agent 编写的 C 结构体扩展 CSG 2016 报文变体：解析 C struct → 生成 YAML → 写盘。"
-            "关键阶段写入 log/protocol_extend_runs/<run_id>/extend.log 与 stages/。"
+            "从 Agent 编写的 C 结构体扩展 CSG 2016 / DLT645-2007 报文变体："
+            "解析 C struct → 生成 YAML → 写盘。任务类型可传 protocol，"
+            "或从 raw_input / di / func|afn 自动识别。"
         ),
         "inputSchema": {
             "type": "object",
@@ -33,8 +34,8 @@ TOOLS: list[dict[str, Any]] = [
                 "user_input": {
                     "type": "object",
                     "description": (
-                        "afn, di（必填）, c_struct|c_struct_path（必填）, "
-                        "dir, description, add, pair, resp_c_struct*, variants[]"
+                        "protocol(csg|dlt645), di（必填）, c_struct|c_struct_path（必填）; "
+                        "CSG: afn, add; 645: func(默认0x11), dir; pair, resp_c_struct*, variants[]"
                     ),
                 },
                 "debug": {
@@ -127,13 +128,29 @@ def _usage_text() -> str:
 
 Tool: `protocol_extend_run`
 
-**C 结构体流水线**：
+**C 结构体流水线**（CSG / DLT645 自动识别）：
 
 1. Agent 阅读协议，编写 DI payload C 结构体（见 `tests/fixtures/c_struct/`）
-2. 传 `user_input.afn`, `user_input.di`, `c_struct` 或 `c_struct_path`
+2. 传 `user_input.di`, `c_struct` 或 `c_struct_path`
+   - CSG: `afn`, `add`, `dir`
+   - DLT645: `func`（默认 0x11）, `dir`（默认 uplink 应答载荷）
+   - 或 `protocol: dlt645` / `protocol: csg`
 3. 程序：C struct → YAML → `variants/extensions/*.yaml` → compile/map
 4. 日志：`log/protocol_extend_runs/<run_id>/`
-   - `c_struct_parse` / `yaml_preview` / `fidelity` / `draft_result`
+
+645 示例：
+```json
+{
+  "raw_input": "扩展 DLT645 读数据应答",
+  "user_input": {
+    "protocol": "dlt645",
+    "func": "0x11",
+    "di": "00099999",
+    "description": "自定义电能量",
+    "c_struct_path": "tests/fixtures/c_struct/dlt645_custom_energy.h"
+  }
+}
+```
 
 成对报文：`pair: true` + `resp_c_struct_path`。
 批量：`variants: [{afn, di, c_struct_path, ...}, ...]`。

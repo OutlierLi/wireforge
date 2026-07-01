@@ -44,10 +44,13 @@ messages:
           description: "操作者代码 C0C1C2C3"
 
         - name: payload
-          type: bytes
+          type: routed_payload
+          router: write_data_request_di
           boundary:
             kind: remaining
-          description: "写入数据载荷"
+          on_unknown:
+            kind: raw
+          description: "按 DI 路由的写入数据载荷"
 
   - kind: message
     id: write_data_response

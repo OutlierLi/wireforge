@@ -38,6 +38,9 @@ def handle(args: dict[str, Any]) -> dict:
         target_info["di"] = di
     if dir_val:
         target_info["dir"] = dir_val
+    for key in ("freeze_type", "event_type"):
+        if args.get(key):
+            target_info[key] = args[key]
     if args.get("has_address") is not None:
         target_info["has_address"] = args["has_address"]
 
@@ -47,7 +50,7 @@ def handle(args: dict[str, Any]) -> dict:
         return fail(str(e))
 
     # 分类字段：定位参数、派生字段、用户输入
-    target_keys = {"func", "afn", "di", "dir", "direction"}
+    target_keys = {"func", "afn", "di", "dir", "direction", "freeze_type", "event_type"}
     locator = {k: v for k, v in target.target_info.items()
                if k in target_keys}
 

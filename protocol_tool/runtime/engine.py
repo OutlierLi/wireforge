@@ -488,6 +488,13 @@ class BuildEngine:
                                 match = False; break
                         elif want != di_info:
                             match = False; break
+                    elif short in info and short not in ("dir", "add", "afn", "func", "di"):
+                        val = info[short]
+                        if isinstance(want, str) and isinstance(val, str):
+                            if want.upper() != val.upper():
+                                match = False; break
+                        elif want != val:
+                            match = False; break
                     if short == "func" and "func" in info and want != info["func"]:
                         match = False; break
 

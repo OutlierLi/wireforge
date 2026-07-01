@@ -34,7 +34,9 @@ TEST_DI_NESTED = "E8039997"
 @pytest.fixture
 def ext_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(yaml_writer, "EXTENSIONS_DIR", tmp_path)
-    return tmp_path
+    monkeypatch.setattr("protocol_extend.profiles.EXTENSIONS_DIR_OVERRIDE", tmp_path)
+    yield tmp_path
+    monkeypatch.setattr("protocol_extend.profiles.EXTENSIONS_DIR_OVERRIDE", None)
 
 
 @pytest.fixture

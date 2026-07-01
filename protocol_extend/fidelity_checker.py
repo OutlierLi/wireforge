@@ -349,7 +349,10 @@ def check_layout_fidelity(spec: ExtensionSpec) -> dict[str, Any]:
         checks.append({"id": check_id, "ok": ok, "weight": weight, **extra})
 
     add_check("di_present", bool(spec.di), 15, expected=spec.di)
-    add_check("afn_present", spec.afn is not None, 10, expected=spec.afn)
+    if spec.protocol == "dlt645_2007":
+        add_check("func_present", spec.func is not None, 10, expected=spec.func)
+    else:
+        add_check("afn_present", spec.afn is not None, 10, expected=spec.afn)
     add_check("description_present", bool(spec.description), 10)
 
     field_issues = _yaml_field_issues(spec.fields or [])

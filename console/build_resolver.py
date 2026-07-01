@@ -126,6 +126,9 @@ def resolve(target_info: dict[str, Any]) -> BuildTarget:
         info["afn"] = int(str(target_info["afn"]).replace("0x", ""), 16)
     if "di" in target_info:
         info["di"] = str(target_info["di"])
+    for key in ("freeze_type", "event_type"):
+        if key in target_info:
+            info[key] = str(target_info[key]).upper()
     has_addr = target_info.get("has_address")
     if has_addr is None:
         has_addr = target_info.get("addr")  # shorthand: --addr true/false
