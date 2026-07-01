@@ -295,21 +295,33 @@ def _send_and_wait(transport, frame: bytes, timeout: float, retries: int,
 
 
 def _parse_ack(data: bytes, diag: dict[str, Any] | None = None) -> bool:
-    """Parse ACK/NAK from response. Populates diag with decode info on failure."""
+    """Parse CSG AFN00 ACK/NAK from a response frame."""
     try:
         r = exec_cmd("decode", {"proto": "csg", "hex": data.hex(" ")})
         if r.get("status") == "success":
-            result = r.get("data", {}).get("values", {}).get("result")
-            if result == 0:
+            decoded = r.get("data", {})
+            path = str(decoded.get("path") or "")
+            values = decoded.get("values", {}) if isinstance(decoded.get("values"), dict) else {}
+            payload = _ack_payload(values)
+            di = _normalize_di(_find_decoded_value(values, "di"))
+
+            if "afn00_ack" in path or di == "E8010001" or (
+                isinstance(payload, dict) and "wait_time" in payload and "error_code" not in payload
+            ):
+                if diag is not None:
+                    diag["ack_received"] = True
+                    diag["ack_wait_time"] = payload.get("wait_time") if isinstance(payload, dict) else None
                 return True
-            # NAK — record the error code
-            error_code = r.get("data", {}).get("values", {}).get("error_code")
+
+            error_code = payload.get("error_code") if isinstance(payload, dict) else None
+            if error_code is None:
+                error_code = _find_decoded_value(values, "error_code")
             if diag is not None:
                 diag["nak_received"] = True
                 diag["nak_error_code"] = error_code
                 diag["nak_detail"] = f"device NAK (error_code={error_code})"
             return False
-        # Decode failed — non-ACK response
+
         if diag is not None:
             diag["decode_failed"] = True
             diag["decode_error"] = r.get("error", "?")
@@ -318,3 +330,32 @@ def _parse_ack(data: bytes, diag: dict[str, Any] | None = None) -> bool:
         if diag is not None:
             diag["parse_exception"] = f"{type(exc).__name__}: {exc}"
     return False
+
+
+def _ack_payload(values: dict[str, Any]) -> dict[str, Any]:
+    for container_name in ("data_content", "user_data"):
+        container = values.get(container_name)
+        if isinstance(container, dict):
+            payload = container.get("di_payload")
+            if isinstance(payload, dict):
+                return payload
+    return {}
+
+
+def _find_decoded_value(values: dict[str, Any], leaf_name: str) -> Any:
+    for container_name in ("data_content", "user_data"):
+        container = values.get(container_name)
+        if isinstance(container, dict):
+            if leaf_name in container:
+                return container[leaf_name]
+            suffix = f".{leaf_name}"
+            for key, value in container.items():
+                if str(key).endswith(suffix):
+                    return value
+    return values.get(leaf_name)
+
+
+def _normalize_di(value: Any) -> str:
+    if value is None:
+        return ""
+    return "".join(str(value).replace("0x", "").replace("0X", "").split()).upper()

@@ -176,6 +176,31 @@ class TestUpgFrameBuild:
         })
         _ok(r)
 
+    def test_parse_ack_frame_as_ack(self):
+        from console.handlers.upg import _parse_ack
+
+        r = exec_cmd("build", {
+            "proto": "csg", "afn": "0x00", "di": "E8010001",
+            "dir": "uplink", "wait_time": 0,
+        })
+        _ok(r)
+        diag = {}
+        assert _parse_ack(bytes.fromhex(r["data"]["frame"]), diag=diag) is True
+        assert diag["ack_received"] is True
+
+    def test_parse_nak_frame_as_nak(self):
+        from console.handlers.upg import _parse_ack
+
+        r = exec_cmd("build", {
+            "proto": "csg", "afn": "0x00", "di": "E8010002",
+            "dir": "uplink", "error_code": 1,
+        })
+        _ok(r)
+        diag = {}
+        assert _parse_ack(bytes.fromhex(r["data"]["frame"]), diag=diag) is False
+        assert diag["nak_received"] is True
+        assert diag["nak_error_code"] == 1
+
 
 # ═══════════════════════════════════════════════════════════════
 # 4. 命令注册
