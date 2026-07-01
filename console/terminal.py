@@ -7,13 +7,13 @@ when prompt_toolkit is not installed.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, TextIO
 
 from console.api import complete_cmd, exec_text
+from console.display import render_response
 
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -110,71 +110,9 @@ def _execute_line(line: str, stdout: TextIO, stderr: TextIO) -> None:
         return
     try:
         response = exec_text(text if text.startswith("/") else f"/{text}")
-        _render_response(response, stdout)
+        render_response(text, response, stdout)
     except Exception as exc:
         stderr.write(f"error: {exc}\n")
-
-
-def _render_response(response: dict[str, Any], stdout: TextIO) -> None:
-    status = response.get("status", "error")
-    if status == "success":
-        data = response.get("data") or {}
-        stdout.write("success\n")
-        _render_value(data, stdout, 1)
-        return
-
-    if status == "need_input":
-        stdout.write("need input\n")
-        for item in response.get("input_schema", []):
-            key = item.get("key") or item.get("name") or ""
-            type_name = item.get("type", "str")
-            examples = item.get("examples") or []
-            suffix = f"  e.g. {', '.join(str(x) for x in examples[:3])}" if examples else ""
-            stdout.write(f"  --{key}: {type_name}{suffix}\n")
-        hint = response.get("hint")
-        if hint:
-            stdout.write(f"  {hint}\n")
-        return
-
-    if status == "need_disambiguation":
-        stdout.write(f"need disambiguation {response.get('key', '')}\n")
-        for item in response.get("candidates", []):
-            stdout.write(f"  {item.get('label') or item.get('value')}\n")
-        hint = response.get("hint")
-        if hint:
-            stdout.write(f"  {hint}\n")
-        return
-
-    error = response.get("error") or status
-    stdout.write(f"{status}: {error}\n")
-    detail = response.get("detail")
-    if detail:
-        _render_value(detail, stdout, 1)
-
-
-def _render_value(value: Any, stdout: TextIO, depth: int = 0, key: str = "") -> None:
-    indent = "  " * depth
-    prefix = f"{indent}{key}: " if key else indent
-    if isinstance(value, dict):
-        if key:
-            stdout.write(f"{indent}{key}:\n")
-        for child_key, child_value in value.items():
-            _render_value(child_value, stdout, depth + (1 if key else 0), str(child_key))
-        return
-    if isinstance(value, list):
-        if key:
-            stdout.write(f"{indent}{key}:\n")
-        for item in value:
-            if isinstance(item, (dict, list)):
-                stdout.write(f"{indent}  -\n")
-                _render_value(item, stdout, depth + 2)
-            else:
-                stdout.write(f"{indent}  - {item}\n")
-        return
-    if isinstance(value, (str, int, float, bool)) or value is None:
-        stdout.write(f"{prefix}{value}\n")
-        return
-    stdout.write(f"{prefix}{json.dumps(value, ensure_ascii=False)}\n")
 
 
 def _completion_candidates(text: str) -> list[tuple[str, int, str]]:

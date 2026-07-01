@@ -236,7 +236,7 @@ def get_connection_settings(name: str) -> dict[str, Any] | None:
 
 
 def _normalize_args(args: dict[str, Any]) -> dict[str, Any]:
-    """Canonical serial connection target is ``to`` (aliases: conn, name, id)."""
+    """Canonical serial connection target is ``to`` (aliases: conn, id; ``name`` for management CLI)."""
     normalized = dict(args)
     if not normalized.get("to"):
         for alias in ("conn", "name", "id"):

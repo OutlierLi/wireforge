@@ -87,14 +87,14 @@ def _resolve_connection(args: dict[str, Any]) -> tuple[str, Any]:
         if not transport:
             raise FileTransferError(
                 f"serial not connected (to={name}). "
-                f"use /serial connect --to {name} first"
+                f"use /serial connect --name {name} --port <port> first"
             )
         return name, transport
 
     connected = list_connected_names()
     if not connected:
         raise FileTransferError(
-            "no serial connected. use /serial connect --to <id> --port <port> first"
+            "no serial connected. use /serial connect --name <id> --port <port> first"
         )
     if len(connected) > 1:
         joined = ", ".join(connected)

@@ -49,7 +49,7 @@ def handle(args: dict[str, Any]) -> dict:
     if not transport:
         return fail(
             f"serial not connected (to={target}). "
-            f"use /serial connect --to {target} first"
+            f"use /serial connect --name {target} --port <port> first"
         )
 
     # ── 解析 --send ──

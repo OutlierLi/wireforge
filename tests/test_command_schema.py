@@ -80,8 +80,9 @@ class TestSerialSchema:
         _ok(r)
         port = next(p for p in r["data"]["params"] if p["name"] == "--port")
         assert port["required"] is True
-        name = next(p for p in r["data"]["params"] if p["name"] == "--to")
+        name = next(p for p in r["data"]["params"] if p["name"] == "--name")
         assert name.get("recommended") is True
+        assert "--to" not in {p["name"] for p in r["data"]["params"]}
         assert "--hex" not in {p["name"] for p in r["data"]["params"]}
 
     def test_help_send_shows_build_and_hex(self):

@@ -1,4 +1,4 @@
-"""`/serial` 命令 — connect/open/close/send/set/disconnect/ports；连接目标用 ``--to``。"""
+"""`/serial` 命令 — connect/open/close/set/disconnect 用 ``--name``；send 等选用连接用 ``--to``。"""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ from typing import Any
 from wireforge_serial.api import (
     _auto_detect_name,
     _connection_id,
-    _normalize_args,
     get_connection_settings,
     serial_close,
     serial_open,
@@ -41,21 +40,21 @@ def handle(args: dict[str, Any]) -> dict:
 
 def _connect(args: dict) -> dict:
     """首次连接，必须指定串口参数。"""
-    args = _with_connection_to(args)
+    args = _with_connection_name(args)
     if "port" not in args or not args["port"]:
         return missing_param("port", "str",
                              examples=["/dev/ttyUSB0", "COM3", "mock://loop"],
                              note="首次连接需指定完整参数")
     r = serial_open(args)
     if r.success:
-        _last_settings[_to(args)] = _settings_from_args(args, r.data)
+        _last_settings[_connection_name(args)] = _settings_from_args(args, r.data)
     return r.to_dict()
 
 
 def _open(args: dict) -> dict:
     """重新打开指定连接的上次参数。"""
-    args = _with_connection_to(args)
-    target = _to(args)
+    args = _with_connection_name(args)
+    target = _connection_name(args)
     settings = _last_settings.get(target) or get_connection_settings(target)
     if not settings:
         settings = {"port": "mock://loop", "baudrate": 9600}
@@ -68,12 +67,12 @@ def _open(args: dict) -> dict:
 
 
 def _close(args: dict) -> dict:
-    r = serial_close(_with_connection_to(args))
+    r = serial_close(_with_connection_name(args))
     return r.to_dict()
 
 
 def _send(args: dict) -> dict:
-    args = _with_connection_to(args, auto_detect=True)
+    args = _with_connection_target(args, auto_detect=True)
     if not args.get("to") and not _connection_id(args):
         return fail("multiple serial connections active — specify --to",
                     detail={"hint": "use /serial ports to list connections"})
@@ -115,8 +114,8 @@ def _send(args: dict) -> dict:
 
 def _set(args: dict) -> dict:
     """修改串口参数（需重连生效）。"""
-    args = _with_connection_to(args)
-    target = _to(args)
+    args = _with_connection_name(args)
+    target = _connection_name(args)
     current = _last_settings.get(target) or get_connection_settings(target)
     if not current:
         current = {"port": "mock://loop", "baudrate": 9600, "bytesize": 8, "parity": "N"}
@@ -127,6 +126,7 @@ def _set(args: dict) -> dict:
             new_params[key] = args[key]
     if not new_params:
         return ok({
+            "name": target,
             "to": target,
             "current": current,
             "hint": "use --baudrate 115200 --parity E to change",
@@ -136,6 +136,7 @@ def _set(args: dict) -> dict:
     _last_settings[target] = current
     log_config_change(target, new_params, current)
     return ok({
+        "name": target,
         "to": target,
         "updated": new_params,
         "current": current,
@@ -144,7 +145,7 @@ def _set(args: dict) -> dict:
 
 
 def _disconnect(args: dict) -> dict:
-    r = serial_close(_with_connection_to(args))
+    r = serial_close(_with_connection_name(args))
     return r.to_dict()
 
 
@@ -153,23 +154,49 @@ def _ports(args: dict) -> dict:
     return r.to_dict()
 
 
-def _with_connection_to(args: dict, auto_detect: bool = False) -> dict:
-    """规范化连接目标 ``to``（兼容 conn/name/id 别名）。"""
-    normalized = _normalize_args(dict(args))
-    if not normalized.get("to"):
+def _with_connection_name(args: dict, auto_detect: bool = False) -> dict:
+    """管理类子命令：注册/选择连接名 ``--name``（兼容 conn/to/id）。"""
+    normalized = dict(args)
+    target = _pick_connection_key(normalized, ("name", "conn", "to", "id"))
+    if not target:
         if auto_detect:
-            detected = _auto_detect_name()
-            if detected:
-                normalized["to"] = detected
-        else:
-            normalized["to"] = "default"
-    if normalized.get("to"):
-        normalized["id"] = str(normalized["to"])
+            target = _auto_detect_name()
+        if not target:
+            target = "default"
+    normalized["to"] = target
+    normalized["id"] = target
+    normalized["name"] = target
     return normalized
 
 
+def _with_connection_target(args: dict, auto_detect: bool = False) -> dict:
+    """收发类子命令：选择已有连接 ``--to``（兼容 conn/id）。"""
+    normalized = dict(args)
+    target = _pick_connection_key(normalized, ("to", "conn", "id"))
+    if not target and auto_detect:
+        target = _auto_detect_name()
+    if target:
+        normalized["to"] = target
+        normalized["id"] = target
+    return normalized
+
+
+def _pick_connection_key(args: dict, keys: tuple[str, ...]) -> str:
+    for key in keys:
+        val = args.get(key)
+        if val not in (None, ""):
+            return str(val)
+    return ""
+
+
+def _connection_name(args: dict) -> str:
+    normalized = _with_connection_name(dict(args))
+    return _connection_id(normalized) or "default"
+
+
 def _to(args: dict) -> str:
-    normalized = _normalize_args(dict(args))
+    """send 等操作解析连接目标。"""
+    normalized = _with_connection_target(dict(args))
     return _connection_id(normalized) or "default"
 
 

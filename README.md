@@ -60,7 +60,7 @@ wireforge-terminal
 ```text
 /help
 /serial ports
-/serial connect --to cco --port COM3 --baudrate 9600
+/serial connect --name cco --port COM3 --baudrate 9600
 /serial send --to cco --hex "68 00 16"
 /exit
 ```

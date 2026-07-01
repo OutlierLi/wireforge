@@ -28,6 +28,7 @@ def handle(args: dict[str, Any]) -> dict:
     from protocol_tool.ir.nodes import ProtocolIR
     from protocol_tool.codecs import create_builtin_registry
     from protocol_tool.runtime.engine import DecodeEngine
+    from console.display import wire_fields_from_trace
 
     ir = ProtocolIR.from_json_file(str(ROOT / "compiled" / f"{proto}.ir.json"))
     de = DecodeEngine(ir, create_builtin_registry())
@@ -35,12 +36,14 @@ def handle(args: dict[str, Any]) -> dict:
     try:
         frame = bytes.fromhex(hx)
         result = de.decode(frame)
+        wire_fields = wire_fields_from_trace(result.trace)
         return {
             "success": True,
             "data": {
                 "protocol": proto,
                 "path": result.path_str,
                 "frame": result.raw_hex,
+                "fields": wire_fields,
                 "values": {k: v for k, v in result.values.items()
                            if isinstance(v, (str, int, dict)) and not k.startswith(("read_", "csg_"))},
             },

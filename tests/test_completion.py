@@ -81,11 +81,11 @@ class TestArgumentCompletion:
 
     def test_after_required_shows_recommended(self):
         vals = _values("/serial connect --port=mock://loop ")
-        assert "--to" in vals
+        assert "--name" in vals
         assert "--port" not in vals
 
     def test_after_recommended_shows_optional(self):
-        vals = _values("/serial connect --port=mock://loop --to=default ")
+        vals = _values("/serial connect --port=mock://loop --name=default ")
         assert "--baudrate" in vals
         assert "--port" not in vals
         assert "--to" not in vals
@@ -141,7 +141,7 @@ class TestArgumentValueCompletion:
         assert "mock://loop" in vals
 
     def test_baudrate_default(self):
-        vals = _values("/serial connect --port=mock://loop --to=default --baudrate ")
+        vals = _values("/serial connect --port=mock://loop --name=default --baudrate ")
         assert "9600" in vals
         assert vals[0] == "9600"
 

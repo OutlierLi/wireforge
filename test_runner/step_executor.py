@@ -21,6 +21,15 @@ class StepFailed(RuntimeError):
         super().__init__(result.get("error") or result.get("status") or "step failed")
 
 
+_SERIAL_MGMT_ACTIONS = frozenset({
+    "serial.connect",
+    "serial.open",
+    "serial.close",
+    "serial.set",
+    "serial.disconnect",
+})
+
+
 class StepExecutor:
     def execute(self, step: dict[str, Any], ctx: RunContext) -> StepRecord:
         step_id = str(step["id"])
@@ -121,7 +130,7 @@ class StepExecutor:
         return result
 
     def _to_command(self, action: str, args: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-        args = self._normalize_common_args(args)
+        args = self._normalize_common_args(args, action=action)
         if action.startswith("serial."):
             sub = action.split(".", 1)[1]
             if sub == "disconnect":
@@ -172,12 +181,20 @@ class StepExecutor:
             for k, v in wait.items():
                 if k not in {"timeout_ms", "expect"}:
                     args[f"wait.{k}"] = v
-        return self._normalize_common_args(args)
+        return self._normalize_common_args(args, action="request")
 
-    def _normalize_common_args(self, args: dict[str, Any]) -> dict[str, Any]:
+    def _normalize_common_args(self, args: dict[str, Any], action: str = "") -> dict[str, Any]:
         out = dict(args)
-        if "conn" in out and "to" not in out:
-            out["to"] = out.pop("conn")
+        if "conn" in out:
+            if action in _SERIAL_MGMT_ACTIONS:
+                if "name" not in out:
+                    out["name"] = out.pop("conn")
+                else:
+                    out.pop("conn", None)
+            elif "to" not in out:
+                out["to"] = out.pop("conn")
+            else:
+                out.pop("conn", None)
         if "timeout_ms" in out and "timeout" not in out:
             out["timeout"] = out.pop("timeout_ms")
         if "frame_hex" in out and "hex" not in out:

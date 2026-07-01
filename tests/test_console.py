@@ -366,7 +366,7 @@ class TestSerial:
         import time
         from wireforge_serial.api import get_connection
 
-        exec_cmd("serial", {"sub": "connect", "to": "rxonly", "port": "mock://loop"})
+        exec_cmd("serial", {"sub": "connect", "name": "rxonly", "port": "mock://loop"})
         capsys.readouterr()
         transport = get_connection("rxonly")
         assert transport is not None
@@ -378,13 +378,13 @@ class TestSerial:
             if "[rxonly] RX: AA BB" in captured:
                 break
             time.sleep(0.02)
-        exec_cmd("serial", {"sub": "close", "to": "rxonly"})
+        exec_cmd("serial", {"sub": "close", "name": "rxonly"})
         assert "[rxonly] RX: AA BB" in captured
 
     def test_wait_frame_keeps_rx_display_callback(self):
         import wireforge_serial.api as serial_api
 
-        exec_cmd("serial", {"sub": "connect", "to": "wf", "port": "mock://loop"})
+        exec_cmd("serial", {"sub": "connect", "name": "wf", "port": "mock://loop"})
         transport = serial_api.get_connection("wf")
         assert transport.on_rx_chunk is not None
         r = exec_cmd("wait-frame", {
@@ -394,7 +394,7 @@ class TestSerial:
         })
         _fail(r)
         assert transport.on_rx_chunk is not None
-        exec_cmd("serial", {"sub": "close", "to": "wf"})
+        exec_cmd("serial", {"sub": "close", "name": "wf"})
 
     def test_send_missing_hex(self):
         r = exec_cmd("serial", {"sub": "send", "timeout": 1})
@@ -412,7 +412,7 @@ class TestSerial:
         assert "available" in r["data"]
 
     def test_named_connection_ports_and_send(self):
-        exec_cmd("serial", {"sub": "connect", "to": "cco", "port": "mock://loop"})
+        exec_cmd("serial", {"sub": "connect", "name": "cco", "port": "mock://loop"})
         r = exec_cmd("serial", {"sub": "ports"})
         _ok(r)
         assert "cco" in r["data"]["connected"]
@@ -425,9 +425,9 @@ class TestSerial:
         assert r["data"]["sent_bytes"] > 0
 
     def test_multiple_named_connections_close_one(self):
-        exec_cmd("serial", {"sub": "connect", "to": "cco", "port": "mock://loop"})
-        exec_cmd("serial", {"sub": "connect", "to": "sta1", "port": "mock://loop"})
-        r = exec_cmd("serial", {"sub": "close", "to": "cco"})
+        exec_cmd("serial", {"sub": "connect", "name": "cco", "port": "mock://loop"})
+        exec_cmd("serial", {"sub": "connect", "name": "sta1", "port": "mock://loop"})
+        r = exec_cmd("serial", {"sub": "close", "name": "cco"})
         _ok(r)
         r = exec_cmd("serial", {"sub": "ports"})
         _ok(r)
@@ -435,16 +435,16 @@ class TestSerial:
         assert "sta1" in r["data"]["connected"]
 
     def test_named_connection_send_with_explicit_name(self):
-        exec_cmd("serial", {"sub": "connect", "to": "cco", "port": "mock://loop"})
+        exec_cmd("serial", {"sub": "connect", "name": "cco", "port": "mock://loop"})
         try:
             r = exec_cmd("serial", {"sub": "send", "to": "cco", "hex": "68 0C 00 40"})
             _ok(r)
             assert r["data"]["to"] == "cco"
         finally:
-            exec_cmd("serial", {"sub": "close", "to": "cco"})
+            exec_cmd("serial", {"sub": "close", "name": "cco"})
 
     def test_invalid_connection_name(self):
-        r = exec_cmd("serial", {"sub": "connect", "to": "bad name", "port": "mock://loop"})
+        r = exec_cmd("serial", {"sub": "connect", "name": "bad name", "port": "mock://loop"})
         _fail(r)
         assert "invalid connection target" in r.get("error", "")
 
@@ -530,7 +530,7 @@ class TestSerial:
         """关闭所有串口连接以清理状态。"""
         import wireforge_serial.api as serial_api
         for name in list(serial_api._connections.keys()):
-            exec_cmd("serial", {"sub": "close", "to": name})
+            exec_cmd("serial", {"sub": "close", "name": name})
 
 class TestHelp:
     def test_help_list_all(self):
@@ -553,7 +553,7 @@ class TestHelp:
         _ok(r)
         assert r["data"]["command"] == "/serial open"
         assert "Re-open" in r["data"]["desc"]
-        assert any(p["name"] == "--to" for p in r["data"]["params"])
+        assert any(p["name"] == "--name" for p in r["data"]["params"])
 
     def test_help_serial_send(self):
         r = exec_cmd("help", {"target": "/serial send"})
@@ -848,7 +848,7 @@ class TestVarVariableRefs:
         from wireforge_serial.api import get_connection
 
         exec_cmd("var", {"sub": "clear"})
-        exec_cmd("serial", {"sub": "connect", "to": "rxvar", "port": "mock://loop"})
+        exec_cmd("serial", {"sub": "connect", "name": "rxvar", "port": "mock://loop"})
         transport = get_connection("rxvar")
         assert transport is not None
         transport.write(bytes.fromhex("AABBCCDD"))
@@ -861,7 +861,7 @@ class TestVarVariableRefs:
         _ok(r, "last_rx should exist")
         assert r["data"]["value"]["to"] == "rxvar"
         assert "AA BB CC DD" in r["data"]["value"]["rx"]
-        exec_cmd("serial", {"sub": "close", "to": "rxvar"})
+        exec_cmd("serial", {"sub": "close", "name": "rxvar"})
 
     def test_auto_last_send_only_on_serial_send(self):
         """connect 不应覆盖 last_send，仅 send 子命令写入"""

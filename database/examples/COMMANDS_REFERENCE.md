@@ -357,12 +357,12 @@ JSON/API 调用直接传字符串即可，例如 `{"hex": "68 0C ..."}`。
 
 **功能**：首次连接，必须指定 port
 
-**用法**：`/serial connect <port> 〔to〕 [baudrate] [bytesize] [display] [parity]`
+**用法**：`/serial connect <port> 〔name〕 [baudrate] [bytesize] [display] [parity]`
 
 | 参数 | 必填/可选 | 类型 | 说明 |
 |------|-----------|------|------|
 | `port` | 必填 | str | 串口号；默认 `mock://loop`；mock=内存回环, virtual=跨进程总线, 其他=物理串口；示例 mock://loop、virtual://demo、/dev/ttyUSB0、COM3 |
-| `to` | 推荐 | str | 连接目标；默认 `default`；多连接时后续 send/close 需指定同一 to；示例 default、cco、sta1 |
+| `name` | 推荐 | str | 连接名称（注册到串口池）；默认 `default`；后续 send/wait-frame 等用 `--to` 选择；示例 default、cco、sta1 |
 | `baudrate` | 可选 | int | 波特率；默认 `9600`；示例 9600、115200 |
 | `bytesize` | 可选 | int | 数据位；默认 `8`；示例 8 |
 | `display` | 可选 | choice | RX 终端显示格式；默认 `hex`；示例 hex、ascii |
@@ -372,31 +372,31 @@ JSON/API 调用直接传字符串即可，例如 `{"hex": "68 0C ..."}`。
 
 **功能**：用上次参数重新打开连接
 
-**用法**：`/serial open 〔to〕`
+**用法**：`/serial open 〔name〕`
 
 | 参数 | 必填/可选 | 类型 | 说明 |
 |------|-----------|------|------|
-| `to` | 推荐 | str | 连接目标；默认 `default`；示例 default、cco |
+| `name` | 推荐 | str | 连接名称；默认 `default`；示例 default、cco |
 
 #### `/serial close`
 
 **功能**：关闭指定连接
 
-**用法**：`/serial close 〔to〕`
+**用法**：`/serial close 〔name〕`
 
 | 参数 | 必填/可选 | 类型 | 说明 |
 |------|-----------|------|------|
-| `to` | 推荐 | str | 连接目标；示例 default、cco |
+| `name` | 推荐 | str | 连接名称；示例 default、cco |
 
 #### `/serial disconnect`
 
 **功能**：close 的别名
 
-**用法**：`/serial disconnect 〔to〕`
+**用法**：`/serial disconnect 〔name〕`
 
 | 参数 | 必填/可选 | 类型 | 说明 |
 |------|-----------|------|------|
-| `to` | 推荐 | str | 连接目标；示例 default、cco |
+| `name` | 推荐 | str | 连接名称；示例 default、cco |
 
 #### `/serial send`
 
@@ -407,17 +407,17 @@ JSON/API 调用直接传字符串即可，例如 `{"hex": "68 0C ..."}`。
 | 参数 | 必填/可选 | 类型 | 说明 |
 |------|-----------|------|------|
 | `hex` | 必填 | str | 发送数据(十六进制)；示例 68 0C 00 40 03 01 01 03 00 E8 30 16 |
-| `to` | 推荐 | str | 连接目标；仅一个已连接串口时可省略；多连接时必须指定；示例 default、cco |
+| `to` | 推荐 | str | 选择已注册的连接名称；仅一个已连接串口时可省略；多连接时必须指定；示例 default、cco |
 
 #### `/serial set`
 
 **功能**：修改串口参数（下次 open 生效）
 
-**用法**：`/serial set 〔to〕 [baudrate] [bytesize] [display] [parity]`
+**用法**：`/serial set 〔name〕 [baudrate] [bytesize] [display] [parity]`
 
 | 参数 | 必填/可选 | 类型 | 说明 |
 |------|-----------|------|------|
-| `to` | 推荐 | str | 连接目标；示例 default、cco |
+| `name` | 推荐 | str | 连接名称；示例 default、cco |
 | `baudrate` | 可选 | int | 波特率；示例 9600、115200 |
 | `bytesize` | 可选 | int | 数据位；示例 8 |
 | `display` | 可选 | choice | RX 终端显示格式；示例 hex、ascii |

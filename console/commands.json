@@ -788,29 +788,29 @@
             ],
             "default": "hex"
           },
-          "to": {
+          "name": {
             "type": "str",
             "required": false,
             "recommended": true,
-            "desc": "连接目标",
+            "desc": "连接名称（注册到串口池）",
             "examples": [
               "default",
               "cco",
               "sta1"
             ],
             "default": "default",
-            "note": "多连接时后续 send/close 需指定同一 to"
+            "note": "后续 send/wait-frame 等用 --to 选择此名称"
           }
         }
       },
       "open": {
         "desc": "Re-open last connection without re-specifying params",
         "params": {
-          "to": {
+          "name": {
             "type": "str",
             "required": false,
             "recommended": true,
-            "desc": "连接目标",
+            "desc": "连接名称",
             "examples": [
               "default",
               "cco"
@@ -822,11 +822,11 @@
       "close": {
         "desc": "Close a serial connection",
         "params": {
-          "to": {
+          "name": {
             "type": "str",
             "required": false,
             "recommended": true,
-            "desc": "连接目标",
+            "desc": "连接名称",
             "examples": [
               "default",
               "cco"
@@ -837,11 +837,11 @@
       "disconnect": {
         "desc": "Alias for close",
         "params": {
-          "to": {
+          "name": {
             "type": "str",
             "required": false,
             "recommended": true,
-            "desc": "连接目标",
+            "desc": "连接名称",
             "examples": [
               "default",
               "cco"
@@ -935,7 +935,7 @@
             "type": "str",
             "required": false,
             "recommended": true,
-            "desc": "连接目标",
+            "desc": "选择已注册的连接名称",
             "examples": [
               "default",
               "cco"
@@ -983,11 +983,11 @@
               "ascii"
             ]
           },
-          "to": {
+          "name": {
             "type": "str",
             "required": false,
             "recommended": true,
-            "desc": "连接目标",
+            "desc": "连接名称",
             "examples": [
               "default",
               "cco"

@@ -657,7 +657,7 @@ def _ensure_send_ready(record: RunRecord) -> bool:
         _wait(record, "to", "发送需要明确连接目标或串口号。", examples=["cco", "COM9", "mock://loop"])
         return False
     if conn_to and not get_connection(str(conn_to)):
-        _wait(record, "to", f"串口连接不存在: {conn_to}", examples=["/serial connect --to cco --port COM9"])
+        _wait(record, "to", f"串口连接不存在: {conn_to}", examples=["/serial connect --name cco --port COM9"])
         return False
     return True
 
