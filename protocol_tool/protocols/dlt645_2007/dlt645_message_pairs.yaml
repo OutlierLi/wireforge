@@ -1,0 +1,155 @@
+version: 1
+exclude:
+  - reason: broadcast
+    note: func08 广播校时无应答，仍测 request build/decode
+  - reason: unmapped
+    note: func14 写数据下行尚未入 protocol_map，暂不纳入
+
+pairs:
+  - id: broadcast_time
+    request:
+      func: "08"
+      dir: downlink
+      frame_defaults:
+        address: "999999999999"
+    responses: []
+
+  - id: security_auth
+    request:
+      func: "03"
+      dir: downlink
+    responses:
+      - role: data
+        func: "03"
+        dir: uplink
+
+  - id: read_follow
+    request:
+      func: "12"
+      dir: downlink
+    responses:
+      - role: data
+        func: "12"
+        dir: uplink
+
+  - id: read_address
+    request:
+      func: "13"
+      dir: downlink
+      frame_defaults:
+        address: "AAAAAAAAAAAA"
+    responses:
+      - role: data
+        func: "13"
+        dir: uplink
+
+  - id: write_address
+    request:
+      func: "15"
+      dir: downlink
+      frame_defaults:
+        address: "000000000000"
+    responses:
+      - role: ack
+        func: "15"
+        dir: uplink
+
+  - id: freeze_instant
+    request:
+      func: "16"
+      dir: downlink
+      freeze_type: "00000000"
+      frame_defaults:
+        address: "000000000000"
+    responses:
+      - role: ack
+        func: "16"
+        dir: uplink
+
+  - id: freeze_daily
+    request:
+      func: "16"
+      dir: downlink
+      freeze_type: "00010000"
+      frame_defaults:
+        address: "000000000000"
+    responses:
+      - role: ack
+        func: "16"
+        dir: uplink
+
+  - id: freeze_monthly
+    request:
+      func: "16"
+      dir: downlink
+      freeze_type: "00010001"
+      frame_defaults:
+        address: "000000000000"
+    responses:
+      - role: ack
+        func: "16"
+        dir: uplink
+
+  - id: change_baudrate
+    request:
+      func: "17"
+      dir: downlink
+    responses:
+      - role: ack
+        func: "17"
+        dir: uplink
+
+  - id: change_password
+    request:
+      func: "18"
+      dir: downlink
+    responses:
+      - role: data
+        func: "18"
+        dir: uplink
+
+  - id: clear_demand
+    request:
+      func: "19"
+      dir: downlink
+    responses:
+      - role: ack
+        func: "19"
+        dir: uplink
+
+  - id: clear_meter
+    request:
+      func: "1A"
+      dir: downlink
+    responses:
+      - role: ack
+        func: "1A"
+        dir: uplink
+
+  - id: clear_event
+    request:
+      func: "1B"
+      dir: downlink
+      event_type: "00991B01"
+    responses:
+      - role: ack
+        func: "1B"
+        dir: uplink
+
+  - id: relay_control
+    request:
+      func: "1C"
+      dir: downlink
+    responses:
+      - role: ack
+        func: "1C"
+        dir: uplink
+
+  - id: output_control
+    request:
+      func: "1D"
+      dir: downlink
+    responses:
+      - role: ack
+        func: "1D"
+        dir: uplink

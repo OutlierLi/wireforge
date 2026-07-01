@@ -175,7 +175,8 @@ DLT645_FIELD_DEFAULTS = {
     "auth_result":   "0000",
     "control_word":  0x01,
     "status":        "0000",            # hex string for status fields
-    "event_type":    "00000000",
+    "event_type":    "00991B01",
+    "event_data":    "AABB",
     "follow_data":   bytes([0x11,0x22,0x33,0x44]),
     "auth_data":     bytes([0x11,0x22,0x33,0x44]),
     "payload":       bytes([0xAA,0xBB]),

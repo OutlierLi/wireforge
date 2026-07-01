@@ -6,7 +6,8 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from tests.csg_pair_catalog import PairMessage, to_route_info, _afn_to_int
+from tests.csg_pair_catalog import PairMessage, to_route_info as csg_to_route_info, _afn_to_int
+from tests.dlt645_pair_catalog import Dlt645PairMessage, to_route_info as dlt645_to_route_info
 
 
 def auto_fill_leaf_fields(leaf, defaults, base_fv=None, ir=None):
@@ -137,24 +138,30 @@ class MessageTestResult:
     di: str
     dir: str
     status: str  # PASS | FAIL | SKIP
+    func: str = ""
     path_str: str = ""
     frame_hex: str = ""
     error: str = ""
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out = {
             "pair_id": self.pair_id,
             "slot": self.slot,
             "side": self.side,
             "role": self.role,
-            "afn": self.afn,
-            "di": self.di,
             "dir": self.dir,
             "status": self.status,
             "path_str": self.path_str,
             "frame_hex": self.frame_hex,
             "error": self.error,
         }
+        if self.func:
+            out["func"] = self.func
+        if self.di:
+            out["di"] = self.di
+        if self.afn:
+            out["afn"] = self.afn
+        return out
 
 
 def run_pair_message(
@@ -167,7 +174,7 @@ def run_pair_message(
     addr: str = "000000000001",
 ) -> MessageTestResult:
     """对单条配对消息执行 resolve_path → build → decode。"""
-    info = to_route_info(msg)
+    info = csg_to_route_info(msg)
     base = MessageTestResult(
         pair_id=msg.pair_id,
         slot=msg.slot,
@@ -190,6 +197,85 @@ def run_pair_message(
         return base
 
     fv = build_csg_field_values(msg, leaf, defaults, ir, addr=addr)
+    try:
+        result = build_engine.build(fv, info=info)
+        decode_engine.decode(result.frame)
+    except Exception as exc:
+        base.error = str(exc)
+        return base
+
+    base.status = "PASS"
+    base.path_str = result.path_str
+    base.frame_hex = result.frame_hex
+    return base
+
+
+def _preamble_default(ir) -> int:
+    for ff in ir.frame.fields:
+        if ff.name == "preamble":
+            return ff.params.get("default", ff.params.get("min", 0))
+    return 0
+
+
+def build_dlt645_field_values(
+    msg: Dlt645PairMessage,
+    leaf,
+    defaults: dict[str, Any],
+    ir,
+    *,
+    addr: str = "000000000001",
+) -> dict[str, Any]:
+    """为 DLT645 单条消息构造 build 字段值。"""
+    merged = dict(defaults)
+    merged.update(msg.field_defaults)
+
+    func = int(msg.func, 16)
+    dir_val = 0 if msg.dir == "downlink" else 1
+    fv: dict[str, Any] = {
+        "preamble": _preamble_default(ir),
+        "address": addr,
+        "control": {"func": func, "dir": dir_val, "ack": 0, "follow": 0},
+    }
+    fv.update(msg.frame_defaults)
+    for key, val in merged.items():
+        fv[key] = val
+    return auto_fill_leaf_fields(leaf, merged, fv, ir)
+
+
+def run_dlt645_pair_message(
+    msg: Dlt645PairMessage,
+    ir,
+    build_engine,
+    decode_engine,
+    defaults: dict[str, Any],
+    *,
+    addr: str = "000000000001",
+) -> MessageTestResult:
+    """对单条 DLT645 配对消息执行 resolve_path → build → decode。"""
+    info = dlt645_to_route_info(msg)
+    base = MessageTestResult(
+        pair_id=msg.pair_id,
+        slot=msg.slot,
+        side=msg.side,
+        role=msg.role,
+        func=msg.func,
+        di=msg.di or "",
+        afn="",
+        dir=msg.dir,
+        status="FAIL",
+    )
+    try:
+        path = build_engine.resolve_path(info)
+    except ValueError as exc:
+        base.error = f"path: {exc}"
+        return base
+
+    leaf = ir.leaves.get(path["leaf_id"])
+    if leaf is None:
+        base.error = f"leaf not found: {path['leaf_id']}"
+        return base
+
+    fv = build_dlt645_field_values(msg, leaf, defaults, ir, addr=addr)
     try:
         result = build_engine.build(fv, info=info)
         decode_engine.decode(result.frame)

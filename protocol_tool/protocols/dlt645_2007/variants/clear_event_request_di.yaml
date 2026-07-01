@@ -1,0 +1,16 @@
+# 事件清零 (FUNC=0x1B) — 按 event_type 路由的扩展载荷
+
+variants:
+  - kind: variant
+    id: dlt645_2007.clear_event_ext_00991b01
+    description: "事件清零扩展载荷"
+    router: clear_event_request_di
+    match:
+      event_type: "00991B01"
+    body:
+      type: struct
+      fields:
+        - name: event_data
+          type: hex
+          length: 2
+          description: "事件扩展数据"
