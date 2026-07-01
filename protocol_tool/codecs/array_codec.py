@@ -37,8 +37,9 @@ class ArrayCodec(FieldCodec):
         item_params = field.params.get("item_params", {})
         item_name = field.params.get("item_name", "item")
         item_length = item_params.get("length")
+        if item_type == "ascii" and item_length is None:
+            item_length = 1
         item_length_from = item_params.get("length_from")
-
         results: list[Any] = []
         for i in range(count) if count is not None else _forever():
             if count is None and reader.exhausted():
@@ -70,12 +71,19 @@ class ArrayCodec(FieldCodec):
     ) -> None:
         from protocol_tool.ir.nodes import FieldNode as FN
 
-        items = list(value) if isinstance(value, (list, tuple)) else [value]
         item_type = field.params.get("item_type", "hex")
         item_params = field.params.get("item_params", {})
         item_name = field.params.get("item_name", "item")
         item_length = item_params.get("length")
+        if item_type == "ascii" and item_length is None:
+            item_length = 1
         item_length_from = item_params.get("length_from")
+
+        if isinstance(value, str) and not isinstance(value, (list, tuple)):
+            count = self._resolve_count(field, context) or field.length
+            items = list(value[:count].ljust(count, "\x00")) if count else [value]
+        else:
+            items = list(value) if isinstance(value, (list, tuple)) else [value]
 
         for i, item_value in enumerate(items):
             item_field = FN(
@@ -99,6 +107,8 @@ class ArrayCodec(FieldCodec):
         count = field.params.get("count")
         if count is not None:
             return int(count)
+        if field.length is not None:
+            return int(field.length)
         return None
 
 
