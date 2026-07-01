@@ -84,12 +84,15 @@ class TestSerialSchema:
         assert name.get("recommended") is True
         assert "--hex" not in {p["name"] for p in r["data"]["params"]}
 
-    def test_help_send_shows_required_hex(self):
+    def test_help_send_shows_build_and_hex(self):
         r = exec_cmd("help", {"target": "/serial send"})
         _ok(r)
+        names = {p["name"] for p in r["data"]["params"]}
+        assert "--build" in names
+        assert "--hex" in names
         hex_p = next(p for p in r["data"]["params"] if p["name"] == "--hex")
-        assert hex_p["required"] is True
-        assert "--port" not in {p["name"] for p in r["data"]["params"]}
+        assert hex_p["required"] is False
+        assert "--port" not in names
 
     def test_validate_connect_missing_port(self):
         r = exec_cmd("serial", {"sub": "connect", "to": "x"})
@@ -119,7 +122,9 @@ class TestSerialSchema:
         send = effective_params(cmd, "send")
         assert connect["port"]["required"] is True
         assert "port" not in send
-        assert send["hex"]["required"] is True
+        assert "hex" in send
+        assert "build" in send
+        assert send["hex"]["required"] is False
 
     def test_validate_args_direct(self):
         cmd = registry.get("serial")

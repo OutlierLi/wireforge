@@ -70,8 +70,9 @@ class TestCommandRegistry:
     def test_command_metadata_includes_params(self):
         cmd = get_cmd("build")
         assert cmd is not None
-        assert "params" in cmd
-        assert "proto" in cmd["params"]
+        assert "sub_commands" in cmd
+        build_sub = cmd["sub_commands"].get("build", {})
+        assert "proto" in build_sub.get("params", {})
 
 
 class TestCommandRuntimeContract:
@@ -558,7 +559,9 @@ class TestHelp:
         r = exec_cmd("help", {"target": "/serial send"})
         _ok(r)
         assert r["data"]["command"] == "/serial send"
-        assert any(p["name"] == "--hex" and p["required"] for p in r["data"]["params"])
+        names = {p["name"] for p in r["data"]["params"]}
+        assert "--hex" in names
+        assert "--build" in names
 
     def test_help_auto_rule(self):
         r = exec_cmd("help", {"target": "/auto_rule"})

@@ -546,16 +546,28 @@ class BuildEngine:
 
                 if has_sub_router:
                     # Recurse into sub-routers
+                    raw_fallback_terminal = False
                     for field in leaf.fields:
                         if field.type_ref == "routed_payload":
                             sub_router = field.params.get("router", "")
-                            if sub_router in self.ir.routers:
-                                if _walk(sub_router, depth + 1):
-                                    path_steps.append({
-                                        "router_id": router_id, "key_str": key_str,
-                                        "leaf_id": target_id, "leaf_name": leaf.name,
-                                    })
-                                    return True
+                            sub_rnode = self.ir.routers.get(sub_router)
+                            if sub_rnode is None:
+                                continue
+                            if _walk(sub_router, depth + 1):
+                                path_steps.append({
+                                    "router_id": router_id, "key_str": key_str,
+                                    "leaf_id": target_id, "leaf_name": leaf.name,
+                                })
+                                return True
+                            # 无 DI/变体定义、仅 raw fallback 时，消息级 leaf 即为终端
+                            if not sub_rnode.route_table and sub_rnode.fallback_policy == "raw":
+                                raw_fallback_terminal = True
+                    if raw_fallback_terminal:
+                        path_steps.append({
+                            "router_id": router_id, "key_str": key_str,
+                            "leaf_id": target_id, "leaf_name": leaf.name,
+                        })
+                        return True
                     # Undo saved values if recursion failed
                     for p in saved:
                         route_vals.pop(p, None)

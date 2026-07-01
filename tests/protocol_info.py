@@ -164,6 +164,7 @@ DLT645_FIELD_DEFAULTS = {
     "freeze_hour":   "20",
     "demand_time":   "0621203010",       # YYMMDDhhmm (5 bytes = 10 digits)
     "di":            "00010000",
+    "freeze_type":   "00010000",
     "address_data":  "000000000001",
     "new_address":   "000000000002",
     "baud_rate":     0x04,

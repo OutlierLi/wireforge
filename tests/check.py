@@ -35,6 +35,21 @@ def log(msg: str):
 from tests.protocol_build_utils import auto_fill_leaf_fields
 
 
+def _dlt645_route_info(msg: dict, dir_name: str, dir_val: int, defaults: dict) -> dict:
+    """Build resolve_path info with route disambiguation keys from defaults."""
+    info: dict = {"func": msg["func"], "direction": dir_name}
+    field_names = (
+        msg.get("request_fields", []) if dir_val == 0 else msg.get("response_fields", [])
+    )
+    for key in ("di", "freeze_type", "event_type"):
+        if key in field_names and key in defaults:
+            info[key] = defaults[key]
+    # 双向报文上行 read_data 等需默认 DI
+    if msg.get("direction") == "both" and dir_val == 1 and "di" in msg.get("response_fields", []):
+        info.setdefault("di", defaults.get("di", "00010000"))
+    return info
+
+
 def run_protocol_tests(proto, ir, build_engine, decode_engine, counters, failures):
     """通用测试：遍历 protocol_info，resolve_path → build → decode"""
     from tests.protocol_info import (
@@ -61,10 +76,7 @@ def run_protocol_tests(proto, ir, build_engine, decode_engine, counters, failure
                 if direction not in ("both", dir_name):
                     continue
 
-                info = {"func": func, "direction": dir_name}
-                # 对双向报文的上行方向，加上默认 DI (如 read_data_response 需要 di)
-                if direction == "both" and dir_val == 1 and "di" in (msg.get("response_fields", [])):
-                    info["di"] = defaults.get("di", "00010000")
+                info = _dlt645_route_info(msg, dir_name, dir_val, defaults)
                 try:
                     path = build_engine.resolve_path(info)
                 except ValueError as e:

@@ -60,7 +60,7 @@ def test_run_dry_run_writes_report_and_resolves_vars(tmp_path):
     assert (report_dir / "summary.json").exists()
     assert (report_dir / "timeline.log").exists()
     resolved = yaml.safe_load((report_dir / "resolved_plan.yaml").read_text(encoding="utf-8"))
-    assert resolved["setup"][0]["args"]["name"] == "sta"
+    assert resolved["setup"][0]["args"]["to"] == "sta"
     assert resolved["setup"][0]["args"]["port"] == "mock://override"
 
 
