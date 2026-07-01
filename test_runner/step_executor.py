@@ -176,8 +176,8 @@ class StepExecutor:
 
     def _normalize_common_args(self, args: dict[str, Any]) -> dict[str, Any]:
         out = dict(args)
-        if "conn" in out and "name" not in out:
-            out["name"] = out.pop("conn")
+        if "conn" in out and "to" not in out:
+            out["to"] = out.pop("conn")
         if "timeout_ms" in out and "timeout" not in out:
             out["timeout"] = out.pop("timeout_ms")
         if "frame_hex" in out and "hex" not in out:

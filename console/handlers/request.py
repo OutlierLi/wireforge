@@ -1,11 +1,11 @@
 """/request 命令处理器 — 发送报文并等待匹配响应（自动化测试原语）。
 
 用法:
-  /request --name cco --send "68 0C 00 40 03 01 01 03 00 E8 30 16" \\
+  /request --to cco --send "68 0C 00 40 03 01 01 03 00 E8 30 16" \\
     --wait.afn 00 --wait.di E8010001 --timeout 3000
 
   # 也支持发送结构化数据:
-  /request --name cco --proto csg --afn 03 --di E8000301 --dir downlink \\
+  /request --to cco --proto csg --afn 03 --di E8000301 --dir downlink \\
     --wait.afn 00 --timeout 3000
 
 成功时返回:
@@ -25,6 +25,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from console.arg_utils import parse_timeout_ms
 from console.handlers.frame_splitter import split_frames
 from console.handlers.wait_frame import (
     _parse_expect, _try_decode, _flatten_decode_values, _match_expect,
@@ -35,15 +36,21 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def handle(args: dict[str, Any]) -> dict:
-    name = str(args.get("name") or args.get("id") or "default")
-    timeout_ms = int(args.get("timeout", "5000"))
+    from wireforge_serial.api import _connection_id, _normalize_args
+
+    args = _normalize_args(args)
+    target = _connection_id(args) or "default"
+    timeout_ms = parse_timeout_ms(args.get("timeout"), default=5000)
     protocol = str(args.get("proto") or args.get("protocol", ""))
 
     # 检查串口
     from wireforge_serial.api import get_connection
-    transport = get_connection(name)
+    transport = get_connection(target)
     if not transport:
-        return fail(f"serial not connected (name={name}). use /serial connect --name {name} first")
+        return fail(
+            f"serial not connected (to={target}). "
+            f"use /serial connect --to {target} first"
+        )
 
     # ── 解析 --send ──
     send_hex = _resolve_send(args)
@@ -62,16 +69,12 @@ def handle(args: dict[str, Any]) -> dict:
         return fail("no --wait conditions. Use --wait.afn, --wait.di, --wait.dir etc.")
 
     # ── 发送 ──
-    from wireforge_serial.logger import log_tx, log_rx, display_tx, display_rx
+    from wireforge_serial.api import bind_rx_display, write_with_tx_display
 
-    transport.on_tx = lambda d: (_log_and_display(name, d, "TX"))
-    transport.on_rx_chunk = lambda d: (_log_and_display(name, d, "RX"))
-
+    bind_rx_display(transport, target)
     try:
-        transport.write(send_frame)
+        write_with_tx_display(transport, target, send_frame)
     except Exception as e:
-        transport.on_tx = None
-        transport.on_rx_chunk = None
         return fail(f"send failed: {e}")
 
     # ── 解码请求帧 ──
@@ -123,17 +126,11 @@ def handle(args: dict[str, Any]) -> dict:
                         "frame_index": received_count,
                     },
                 }
-                transport.on_tx = None
-                transport.on_rx_chunk = None
                 return ok(result_data)
 
             mismatch_summary.append(match_result)
 
         time.sleep(0.02)
-
-    # Timeout
-    transport.on_tx = None
-    transport.on_rx_chunk = None
 
     return fail("timeout: no response matched wait conditions", detail={
         "request_sent": True,
@@ -186,14 +183,3 @@ def _extract_wait_args(args: dict[str, Any]) -> dict[str, Any]:
         elif key == "expect" and val is not None:
             wait_args.setdefault("expect", val)
     return wait_args
-
-
-def _log_and_display(device: str, data: bytes, direction: str) -> None:
-    """实时打印 + 日志记录。"""
-    from wireforge_serial.logger import log_tx, log_rx, display_tx, display_rx
-    if direction == "TX":
-        log_tx(device, data)
-        display_tx(device, data)
-    else:
-        log_rx(device, data)
-        display_rx(device, data)

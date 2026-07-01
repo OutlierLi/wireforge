@@ -11,6 +11,12 @@ from __future__ import annotations
 from typing import Any
 
 from console.command import registry
+from console.command_schema import (
+    effective_params,
+    list_sub_commands,
+    params_to_help_list,
+    sub_command_desc,
+)
 from console.response import ok, fail
 
 
@@ -21,7 +27,6 @@ def handle(args: dict[str, Any]) -> dict:
     if not target:
         return _list_all()
 
-    # 解析 /command 或 "/command sub"
     parts = target.lstrip("/").split()
     cmd_name = parts[0]
     sub_name = parts[1] if len(parts) > 1 else ""
@@ -40,66 +45,36 @@ def _list_all() -> dict:
     for cmd in registry.all_commands():
         item = {"name": f"/{cmd.name}", "desc": cmd.desc}
         if cmd.sub_commands:
-            item["sub_commands"] = [
-                {"name": f"/{cmd.name} {s}", "desc": d}
-                for s, d in cmd.sub_commands.items()
-            ]
+            item["sub_commands"] = list_sub_commands(cmd)
         items.append(item)
-    return ok({"commands": items, "hint": "use /help /command for details"})
+    return ok({"commands": items, "hint": "use /help /command or /help \"/command sub\" for details"})
 
 
 def _show_cmd(cmd) -> dict:
-    params = []
-    for key, meta in sorted(cmd.params.items()):
-        if key == "*":
-            continue
-        p = {
-            "name": f"--{key}",
-            "type": meta.get("type", "str"),
-            "required": meta.get("required", False),
-            "examples": meta.get("examples", []),
-        }
-        if meta.get("note"):
-            p["note"] = meta["note"]
-        if meta.get("desc"):
-            p["desc"] = meta["desc"]
-        params.append(p)
-
     result = {
         "command": f"/{cmd.name}",
         "desc": cmd.desc,
-        "params": params,
+        "params": params_to_help_list(cmd.params),
     }
     if cmd.sub_commands:
-        result["sub_commands"] = [
-            {"name": f"/{cmd.name} {s}", "desc": d}
-            for s, d in cmd.sub_commands.items()
-        ]
+        result["sub_commands"] = list_sub_commands(cmd)
+        result["hint"] = f'use /help "/{cmd.name} <sub>" for sub-command parameters'
     return ok(result)
 
 
 def _show_sub(cmd, sub_name: str) -> dict:
-    sub_desc = cmd.sub_commands.get(sub_name, "")
-    if not sub_desc:
+    if sub_name not in cmd.sub_commands:
         return fail(f"unknown sub-command: {sub_name} for /{cmd.name}")
 
-    # 子命令继承父命令的参数
-    params = []
-    for key, meta in sorted(cmd.params.items()):
-        if key in ("*", "sub"):
-            continue
-        p = {
-            "name": f"--{key}",
-            "type": meta.get("type", "str"),
-            "required": meta.get("required", False),
-            "examples": meta.get("examples", []),
-        }
-        if meta.get("desc"):
-            p["desc"] = meta["desc"]
-        params.append(p)
+    desc = sub_command_desc(cmd, sub_name)
+    params = params_to_help_list(effective_params(cmd, sub_name))
+    recommended = [p["name"] for p in params if p.get("recommended")]
 
-    return ok({
+    result: dict[str, Any] = {
         "command": f"/{cmd.name} {sub_name}",
-        "desc": sub_desc,
+        "desc": desc,
         "params": params,
-    })
+    }
+    if recommended:
+        result["recommended"] = recommended
+    return ok(result)

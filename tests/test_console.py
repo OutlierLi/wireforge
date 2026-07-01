@@ -82,6 +82,40 @@ class TestCommandRuntimeContract:
         assert args["afn"] == "0x03"
         assert args["resolve"] is True
 
+    def test_parse_command_text_hex_quoted_eq(self):
+        frame = "68 0C 00 40 03 01 01 03 00 E8 30 16"
+        cmd, args = parse_command_text(
+            f'/decode --proto=csg --hex="{frame}"'
+        )
+        assert cmd == "decode"
+        assert args["hex"] == frame
+
+    def test_parse_command_text_hex_quoted_space(self):
+        frame = "68 0C 00 40 03 01 01 03 00 E8 30 16"
+        cmd, args = parse_command_text(f'/decode --proto=csg --hex "{frame}"')
+        assert cmd == "decode"
+        assert args["hex"] == frame
+
+    def test_parse_command_text_hex_unquoted_tokens(self):
+        cmd, args = parse_command_text(
+            "/decode --proto=csg --hex 68 0C 00 40 03 01 01 03 00 E8 30 16"
+        )
+        assert cmd == "decode"
+        assert args["hex"] == "68 0C 00 40 03 01 01 03 00 E8 30 16"
+
+    def test_parse_command_text_hex_compact(self):
+        cmd, args = parse_command_text(
+            "/decode --proto=csg --hex=680C00400301010300E83016"
+        )
+        assert args["hex"] == "680C00400301010300E83016"
+
+    def test_exec_text_decode_spaced_hex(self):
+        r = exec_text(
+            '/decode --proto=csg --hex="68 0C 00 40 03 01 01 03 00 E8 30 16"'
+        )
+        _ok(r, "decode spaced hex via exec_text")
+        assert r["data"].get("path")
+
     def test_exec_text_uses_same_runtime(self):
         r = exec_text("/build --protocol=dlt645 --func=0x11 --di=00010000 --dir=downlink")
         _ok(r)
@@ -143,6 +177,13 @@ class TestBuildSuccess:
             "wait_time": "0",
         })
         _ok(r, "CSG 上行ACK")
+
+    def test_build_duplicate_sub_command_token(self):
+        r = exec_text(
+            "/build build --proto csg --afn 0x00 --di E8010001 --dir downlink --wait_time=0"
+        )
+        _ok(r, "重复 build 子命令名不应进入 _")
+        _has_frame(r)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -296,13 +337,14 @@ class TestSerial:
         exec_cmd("serial", {"sub": "connect", "port": "mock://loop"})
         r = exec_cmd("serial", {"sub": "send", "hex": "68 0C 00 40 03 01 01 03 00 E8 30 16"})
         _ok(r)
-        assert r["data"]["received_bytes"] > 0, "loopback should echo"
+        assert r["data"]["sent_bytes"] == 12
+        assert "received" not in r["data"]
 
     def test_receive_prints_without_send(self, capsys):
         import time
         from wireforge_serial.api import get_connection
 
-        exec_cmd("serial", {"sub": "connect", "name": "rxonly", "port": "mock://loop"})
+        exec_cmd("serial", {"sub": "connect", "to": "rxonly", "port": "mock://loop"})
         capsys.readouterr()
         transport = get_connection("rxonly")
         assert transport is not None
@@ -314,8 +356,23 @@ class TestSerial:
             if "[rxonly] RX: AA BB" in captured:
                 break
             time.sleep(0.02)
-        exec_cmd("serial", {"sub": "close", "name": "rxonly"})
+        exec_cmd("serial", {"sub": "close", "to": "rxonly"})
         assert "[rxonly] RX: AA BB" in captured
+
+    def test_wait_frame_keeps_rx_display_callback(self):
+        import wireforge_serial.api as serial_api
+
+        exec_cmd("serial", {"sub": "connect", "to": "wf", "port": "mock://loop"})
+        transport = serial_api.get_connection("wf")
+        assert transport.on_rx_chunk is not None
+        r = exec_cmd("wait-frame", {
+            "to": "wf",
+            "timeout": 100,
+            "expect.afn": "99",
+        })
+        _fail(r)
+        assert transport.on_rx_chunk is not None
+        exec_cmd("serial", {"sub": "close", "to": "wf"})
 
     def test_send_missing_hex(self):
         r = exec_cmd("serial", {"sub": "send", "timeout": 1})
@@ -333,22 +390,22 @@ class TestSerial:
         assert "available" in r["data"]
 
     def test_named_connection_ports_and_send(self):
-        exec_cmd("serial", {"sub": "connect", "name": "cco", "port": "mock://loop"})
+        exec_cmd("serial", {"sub": "connect", "to": "cco", "port": "mock://loop"})
         r = exec_cmd("serial", {"sub": "ports"})
         _ok(r)
         assert "cco" in r["data"]["connected"]
-        assert any(c["name"] == "cco" for c in r["data"]["connections"])
+        assert any(c["to"] == "cco" for c in r["data"]["connections"])
 
-        r = exec_cmd("serial", {"sub": "send", "name": "cco", "hex": "68 0C 00 40"})
+        r = exec_cmd("serial", {"sub": "send", "to": "cco", "hex": "68 0C 00 40"})
         _ok(r)
         assert r["data"]["id"] == "cco"
-        assert r["data"]["name"] == "cco"
-        assert r["data"]["received_bytes"] > 0
+        assert r["data"]["to"] == "cco"
+        assert r["data"]["sent_bytes"] > 0
 
     def test_multiple_named_connections_close_one(self):
-        exec_cmd("serial", {"sub": "connect", "name": "cco", "port": "mock://loop"})
-        exec_cmd("serial", {"sub": "connect", "name": "sta1", "port": "mock://loop"})
-        r = exec_cmd("serial", {"sub": "close", "name": "cco"})
+        exec_cmd("serial", {"sub": "connect", "to": "cco", "port": "mock://loop"})
+        exec_cmd("serial", {"sub": "connect", "to": "sta1", "port": "mock://loop"})
+        r = exec_cmd("serial", {"sub": "close", "to": "cco"})
         _ok(r)
         r = exec_cmd("serial", {"sub": "ports"})
         _ok(r)
@@ -356,18 +413,18 @@ class TestSerial:
         assert "sta1" in r["data"]["connected"]
 
     def test_named_connection_send_with_explicit_name(self):
-        exec_cmd("serial", {"sub": "connect", "name": "cco", "port": "mock://loop"})
+        exec_cmd("serial", {"sub": "connect", "to": "cco", "port": "mock://loop"})
         try:
-            r = exec_cmd("serial", {"sub": "send", "name": "cco", "hex": "68 0C 00 40"})
+            r = exec_cmd("serial", {"sub": "send", "to": "cco", "hex": "68 0C 00 40"})
             _ok(r)
-            assert r["data"]["name"] == "cco"
+            assert r["data"]["to"] == "cco"
         finally:
-            exec_cmd("serial", {"sub": "close", "name": "cco"})
+            exec_cmd("serial", {"sub": "close", "to": "cco"})
 
     def test_invalid_connection_name(self):
-        r = exec_cmd("serial", {"sub": "connect", "name": "bad name", "port": "mock://loop"})
+        r = exec_cmd("serial", {"sub": "connect", "to": "bad name", "port": "mock://loop"})
         _fail(r)
-        assert "invalid connection name" in r.get("error", "")
+        assert "invalid connection target" in r.get("error", "")
 
     def test_close_when_connected(self):
         exec_cmd("serial", {"sub": "connect", "port": "mock://loop"})
@@ -401,20 +458,19 @@ class TestSerial:
         r = exec_cmd("serial", {"sub": "connect", "port": "mock://loop", "display": "ascii"})
         _ok(r, "connect with display=ascii")
 
-    def test_send_ascii_display_format(self):
+    def test_send_returns_sent_only(self):
         exec_cmd("serial", {"sub": "connect", "port": "mock://loop", "display": "ascii"})
-        r = exec_cmd("serial", {"sub": "send", "hex": "48 65 6C 6C 6F", "name": "default"})
-        _ok(r, "send ascii display")
-        assert r["data"]["display"] == "ascii"
-        assert r["data"]["received"] == "Hello", f"expected 'Hello', got '{r['data']['received']}'"
+        r = exec_cmd("serial", {"sub": "send", "hex": "48 65 6C 6C 6F", "to": "default"})
+        _ok(r, "send returns sent hex only")
+        assert r["data"]["sent"] == "48 65 6C 6C 6F"
+        assert "received" not in r["data"]
 
     def test_send_default_hex_format(self):
         exec_cmd("serial", {"sub": "close"})
         exec_cmd("serial", {"sub": "connect", "port": "mock://loop"})
-        r = exec_cmd("serial", {"sub": "send", "hex": "48 65 6C 6C 6F", "name": "default"})
+        r = exec_cmd("serial", {"sub": "send", "hex": "48 65 6C 6C 6F", "to": "default"})
         _ok(r)
-        assert r["data"]["display"] == "hex"
-        assert r["data"]["received"] == "48 65 6C 6C 6F"
+        assert r["data"]["sent"] == "48 65 6C 6C 6F"
 
     def test_set_display_persists(self):
         exec_cmd("serial", {"sub": "close"})
@@ -422,10 +478,10 @@ class TestSerial:
         exec_cmd("serial", {"sub": "close"})
         r = exec_cmd("serial", {"sub": "open"})
         _ok(r)
-        r2 = exec_cmd("serial", {"sub": "send", "hex": "41 42 43", "name": "default"})
+        r2 = exec_cmd("serial", {"sub": "ports"})
         _ok(r2)
-        assert r2["data"]["display"] == "ascii"
-        assert "ABC" in r2["data"]["received"]
+        default_conn = [c for c in r2["data"].get("connections", []) if c.get("to") == "default"]
+        assert default_conn and default_conn[0].get("display") == "ascii"
 
     def test_set_display_via_set_command(self):
         exec_cmd("serial", {"sub": "close"})
@@ -434,26 +490,17 @@ class TestSerial:
         _ok(r)
         assert "ascii" in str(r["data"]["updated"])
         exec_cmd("serial", {"sub": "open"})
-        r2 = exec_cmd("serial", {"sub": "send", "hex": "41 42 43", "name": "default"})
+        r2 = exec_cmd("serial", {"sub": "ports"})
         _ok(r2)
-        assert r2["data"]["display"] == "ascii"
-        assert r2["data"]["received"] == "ABC"
-
-    def test_send_ascii_control_chars(self):
-        exec_cmd("serial", {"sub": "close"})
-        exec_cmd("serial", {"sub": "connect", "port": "mock://loop", "display": "ascii"})
-        r = exec_cmd("serial", {"sub": "send", "hex": "0D 0A 09 01", "name": "default"})
-        _ok(r)
-        assert "\\r" in r["data"]["received"]
-        assert "\\n" in r["data"]["received"]
-        assert "\\t" in r["data"]["received"]
+        default_conn = [c for c in r2["data"].get("connections", []) if c.get("to") == "default"]
+        assert default_conn and default_conn[0].get("display") == "ascii"
 
     def test_ports_shows_display(self):
         exec_cmd("serial", {"sub": "connect", "port": "mock://loop", "display": "ascii"})
         r = exec_cmd("serial", {"sub": "ports"})
         _ok(r)
         conns = r["data"].get("connections", [])
-        default_conn = [c for c in conns if c.get("name") == "default"]
+        default_conn = [c for c in conns if c.get("to") == "default"]
         if default_conn:
             assert default_conn[0].get("display", "hex") == "ascii"
 
@@ -461,7 +508,7 @@ class TestSerial:
         """关闭所有串口连接以清理状态。"""
         import wireforge_serial.api as serial_api
         for name in list(serial_api._connections.keys()):
-            exec_cmd("serial", {"sub": "close", "name": name})
+            exec_cmd("serial", {"sub": "close", "to": name})
 
 class TestHelp:
     def test_help_list_all(self):
@@ -477,20 +524,20 @@ class TestHelp:
         r = exec_cmd("help", {"target": "/serial"})
         _ok(r)
         assert r["data"]["command"] == "/serial"
-        assert len(r["data"]["params"]) > 0
-        assert any(p["name"] == "--port" for p in r["data"]["params"])
-        assert any(p["name"] == "--name" for p in r["data"]["params"])
+        assert any(s["name"] == "/serial connect" for s in r["data"]["sub_commands"])
 
     def test_help_serial_sub(self):
         r = exec_cmd("help", {"target": "/serial open"})
         _ok(r)
         assert r["data"]["command"] == "/serial open"
         assert "Re-open" in r["data"]["desc"]
+        assert any(p["name"] == "--to" for p in r["data"]["params"])
 
     def test_help_serial_send(self):
         r = exec_cmd("help", {"target": "/serial send"})
         _ok(r)
         assert r["data"]["command"] == "/serial send"
+        assert any(p["name"] == "--hex" and p["required"] for p in r["data"]["params"])
 
     def test_help_auto_rule(self):
         r = exec_cmd("help", {"target": "/auto_rule"})
@@ -770,6 +817,45 @@ class TestVarVariableRefs:
         _ok(r2, "last_build should exist")
         r3 = exec_cmd("var", {"sub": "get", "_": ["last_frame"]})
         _ok(r3, "last_frame should exist")
+
+    def test_auto_last_rx_after_background_rx(self):
+        """后台 RX monitor 收到数据后自动设置 last_rx"""
+        import time
+        from wireforge_serial.api import get_connection
+
+        exec_cmd("var", {"sub": "clear"})
+        exec_cmd("serial", {"sub": "connect", "to": "rxvar", "port": "mock://loop"})
+        transport = get_connection("rxvar")
+        assert transport is not None
+        transport.write(bytes.fromhex("AABBCCDD"))
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline:
+            r = exec_cmd("var", {"sub": "get", "_": ["last_rx"]})
+            if r.get("status") == "success" and r["data"].get("value", {}).get("rx_bytes"):
+                break
+            time.sleep(0.02)
+        _ok(r, "last_rx should exist")
+        assert r["data"]["value"]["to"] == "rxvar"
+        assert "AA BB CC DD" in r["data"]["value"]["rx"]
+        exec_cmd("serial", {"sub": "close", "to": "rxvar"})
+
+    def test_auto_last_send_only_on_serial_send(self):
+        """connect 不应覆盖 last_send，仅 send 子命令写入"""
+        exec_cmd("var", {"sub": "clear"})
+        exec_cmd("serial", {"sub": "connect", "port": "mock://loop"})
+        r = exec_cmd("var", {"sub": "get", "_": ["last_send"]})
+        _fail(r, "last_send should not exist after connect only")
+        exec_cmd("serial", {"sub": "send", "hex": "AA BB"})
+        r2 = exec_cmd("var", {"sub": "get", "_": ["last_send"]})
+        _ok(r2, "last_send after send")
+        assert r2["data"]["value"]["sent_bytes"] == 2
+
+    def test_parse_timeout_ms_suffix(self):
+        from console.arg_utils import parse_timeout_ms
+
+        assert parse_timeout_ms("1s") == 1000
+        assert parse_timeout_ms("500ms") == 500
+        assert parse_timeout_ms("3000") == 3000
 
     def test_unknown_ref_preserved(self):
         """不存在的变量引用保持原样"""
@@ -1070,6 +1156,68 @@ class TestDelay:
         r = exec_cmd("help", {"target": "/delay"})
         _ok(r)
         assert r["data"]["command"] == "/delay"
+
+
+# ═══════════════════════════════════════════════════════════════
+# 15b. /time — 串口显示时间戳开关
+# ═══════════════════════════════════════════════════════════════
+
+class TestTime:
+    def setup_method(self):
+        from wireforge_serial.logger import set_show_timestamp
+        set_show_timestamp(False)
+
+    def teardown_method(self):
+        from wireforge_serial.logger import set_show_timestamp
+        set_show_timestamp(False)
+
+    def test_time_default_off(self):
+        r = exec_cmd("time", {})
+        _ok(r)
+        assert r["data"]["enabled"] is False
+        assert r["data"]["timestamp"] == "off"
+
+    def test_time_on_off(self):
+        r_on = exec_cmd("time", {"sub": "on"})
+        _ok(r_on)
+        assert r_on["data"]["enabled"] is True
+        assert r_on["data"]["timestamp"] == "on"
+
+        r_status = exec_cmd("time", {})
+        _ok(r_status)
+        assert r_status["data"]["enabled"] is True
+
+        r_off = exec_cmd("time", {"sub": "off"})
+        _ok(r_off)
+        assert r_off["data"]["enabled"] is False
+
+    def test_time_positional_on(self):
+        r = exec_text("/time on")
+        _ok(r)
+        assert r["data"]["enabled"] is True
+
+    def test_time_display_prefix(self, capsys):
+        from wireforge_serial.logger import display_tx, set_show_timestamp
+
+        set_show_timestamp(False)
+        display_tx("default", b"\x68\x16")
+        out_off = capsys.readouterr().out
+        assert out_off.startswith("[default] TX:")
+
+        set_show_timestamp(True)
+        display_tx("default", b"\x68\x16")
+        out_on = capsys.readouterr().out
+        assert "] [default] TX:" in out_on
+        assert out_on[0] == "["
+
+    def test_command_registered(self):
+        names = [c["name"] for c in list_cmds()]
+        assert "time" in names
+
+    def test_help_time(self):
+        r = exec_cmd("help", {"target": "/time"})
+        _ok(r)
+        assert r["data"]["command"] == "/time"
 
 
 # ═══════════════════════════════════════════════════════════════

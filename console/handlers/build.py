@@ -91,8 +91,9 @@ def handle(args: dict[str, Any]) -> dict:
     target_keys = {"proto", "func", "afn", "di", "dir", "address", "intent",
                    "preamble", "seq", "addr", "direction", "has_address",
                    "resolve", "schema", "describe", "from_frame", "from-frame", "set"}
+    reserved = target_keys | {"sub", "_"}
     target_info = {k: v for k, v in args.items() if k in target_keys and v is not None}
-    business_values = {k: v for k, v in args.items() if k not in target_keys}
+    business_values = {k: v for k, v in args.items() if k not in reserved}
 
     # 合并 --set 覆盖
     business_values.update(set_overrides)

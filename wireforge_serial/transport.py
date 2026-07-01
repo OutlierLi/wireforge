@@ -173,14 +173,11 @@ class SerialTransport:
         self.settings = settings
         self._port: _PortLike | None = None
         self._last_error: str = ""
-<<<<<<< Updated upstream
         self._rx_buf = bytearray()
+        self._rx_pushback = bytearray()
         self._rx_cond = threading.Condition()
         self._reader_stop = threading.Event()
         self._reader_thread: threading.Thread | None = None
-=======
-        self._rx_pushback = bytearray()
->>>>>>> Stashed changes
         # 实时回调: 每个读取到的 chunk 都会触发
         self.on_rx_chunk: Callable[[bytes], None] | None = None
         self.on_tx: Callable[[bytes], None] | None = None

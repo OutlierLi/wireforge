@@ -1,361 +1,576 @@
-"""/upg 命令处理器 — CSG AFN=07 文件传输/固件升级（带帧缓存）。
+"""/upg 命令处理器 — CSG AFN=07 文件传输/固件升级。
 
-流程: 读取固件 → 构建帧缓存(.upg_cache) → 发送文件信息 → 逐段传输(查缓存) → ACK/NAK → 完成。
-
-缓存文件与固件同名，后缀 .upg_cache，存储所有预构造的帧 hex。
-已存在且固件未变时跳过构建阶段。
+流程: 读取固件 → 构建 v2 段缓存(.upg_cache) → 清除/续传 → 启动传输 → 逐段 live build 发送
+→ ACK/NAK（噪声过滤）→ 可选进度收尾。
 
 参数:
-  --file        固件文件路径 (必须)
-  --segment-size 分段大小 (128/256/512/1024, 默认 1024)
-  --timeout     每段超时秒数 (默认 5)
-  --retries     每段重试次数 (默认 3)
-  --dest        目标地址 (默认 000000000000)
-  --name        串口连接名 (默认 default)
-  --no-cache    跳过缓存，强制重新构造
-  --build-only  仅构造缓存，不执行传输
+  --file              固件路径（支持多层引号；相对路径会搜索 database/bin）
+  --segment-size      128/256/512/1024，默认 1024
+  --file-type         文件性质，默认 1
+  --file-id           文件 ID，默认 1
+  --dest              目的地址，默认 999999999999
+  --timeout-min       传输超时分钟，默认 30
+  --ack-timeout       普通段 ACK 超时（兼容 --timeout），默认 5s
+  --final-ack-timeout 最后一段 ACK 超时，默认 30s
+  --retries           每段重试次数，默认 3
+  --interval          帧间间隔，默认 0
+  --ack-wait          ignore/respect，默认 ignore
+  --resume / --no-resume  断点续传，默认开启
+  --clear             auto/always/never，默认 auto
+  --finish            none/progress/report，默认 none
+  --finish-timeout    progress 轮询总超时，默认 60s
+  --seq               起始 SEQ，默认 1
+  --to                串口连接名（可选；仅一个已连接串口时自动选用）
+  --proto             协议，默认 csg（当前仅支持 csg / csg2016）
+  --no-cache          跳过缓存
+  --build-only        仅构建缓存并验证可 build
 """
 
 from __future__ import annotations
 
-import hashlib, json, time
+import hashlib
+import json
+import sys
+import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from console.api import exec_cmd
-from console.response import ok, fail, missing_param
+from console.handlers.file_transfer import (
+    CACHE_CRC_ALGO,
+    CACHE_VERSION,
+    AckResult,
+    FileTransferError,
+    ack_from_decoded,
+    cache_is_valid,
+    clear_file_info_payload,
+    parse_duration,
+    payload_from_decoded,
+    parsed_di,
+    same_file_info,
+    segment_file,
+    segment_payload,
+    start_file_info_payload,
+    normalize_file_path,
+)
+from console.handlers.frame_splitter import split_frames
+from console.response import fail, missing_param, ok
 from protocol_tool.utils.logger import log_serial
+from wireforge_serial.api import get_connection, list_connected_names
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
+_PROTO_ALIASES = {
+    "csg": "csg",
+    "csg2016": "csg",
+    "csg_2016": "csg",
+}
+
+
+def _normalize_proto(raw: str | None) -> str:
+    proto = str(raw or "csg").strip().lower()
+    normalized = _PROTO_ALIASES.get(proto)
+    if normalized is None:
+        raise FileTransferError(
+            f"unsupported proto: {proto}; currently only csg (aliases: csg2016, csg_2016)"
+        )
+    return normalized
+
+
+def _resolve_connection(args: dict[str, Any]) -> tuple[str, Any]:
+    """Resolve serial connection by --to, or auto-select when exactly one is connected."""
+    explicit = args.get("to")
+    if explicit:
+        name = str(explicit)
+        transport = get_connection(name)
+        if not transport:
+            raise FileTransferError(
+                f"serial not connected (to={name}). "
+                f"use /serial connect --to {name} first"
+            )
+        return name, transport
+
+    connected = list_connected_names()
+    if not connected:
+        raise FileTransferError(
+            "no serial connected. use /serial connect --to <id> --port <port> first"
+        )
+    if len(connected) > 1:
+        joined = ", ".join(connected)
+        raise FileTransferError(
+            f"multiple serial connections active ({joined}); specify --to=<name>"
+        )
+
+    name = connected[0]
+    transport = get_connection(name)
+    if not transport:
+        raise FileTransferError(f"serial not connected (to={name})")
+    return name, transport
+
 
 def handle(args: dict[str, Any]) -> dict:
-    file_path = args.get("file", "")
-    if not file_path:
-        return missing_param("file", "str", examples=["/path/to/firmware.bin", "database/bin/app.bin"])
-
-    fp = Path(file_path)
-    if not fp.exists():
-        return fail(f"file not found: {file_path}")
+    raw_file = args.get("file") or args.get("bin")
+    if not raw_file:
+        return missing_param("file", "str", examples=["database/bin/firmware.bin", '"/path/with spaces/fw.bin"'])
 
     try:
-        file_data = fp.read_bytes()
-    except Exception as e:
-        return fail(f"failed to read file: {e}")
+        fp = normalize_file_path(str(raw_file), root=ROOT)
+    except FileTransferError as exc:
+        return fail(str(exc))
 
-    file_size = len(file_data)
-    file_hash = hashlib.md5(file_data).hexdigest()[:8]
-    segment_size = int(args.get("segment-size", "1024"))
-    if segment_size not in (128, 256, 512, 1024):
-        return fail(f"segment-size must be 128/256/512/1024, got {segment_size}")
+    if not fp.exists():
+        return fail(f"file not found: {fp}")
 
-    timeout = float(args.get("timeout", "5"))
-    retries = int(args.get("retries", "3"))
-    use_cache = not args.get("no-cache")
-    build_only = args.get("build-only")
+    try:
+        params = _parse_transfer_params(args)
+        package = segment_file(fp, params["segment_size"])
+    except FileTransferError as exc:
+        return fail(str(exc))
+    except ValueError as exc:
+        return fail(str(exc))
 
+    file_hash = hashlib.md5(package.data).hexdigest()[:8]
     cache_path = fp.with_suffix(fp.suffix + ".upg_cache")
+    use_cache = not args.get("no-cache")
 
-    # Phase 0: 构建帧缓存
+    cache_params = {
+        "proto": params["proto"],
+        "file_type": params["file_type"],
+        "file_id": params["file_id"],
+        "dest": params["dest"],
+        "timeout_minutes": params["timeout_minutes"],
+    }
+
+    cache: dict[str, Any] | None = None
     if use_cache and cache_path.exists():
-        cache = json.loads(cache_path.read_text(encoding="utf-8"))
-        if cache.get("file_hash") != file_hash or cache.get("segment_size") != segment_size:
+        try:
+            loaded = json.loads(cache_path.read_text(encoding="utf-8"))
+            if cache_is_valid(
+                loaded,
+                file_hash=file_hash,
+                segment_size=params["segment_size"],
+                params=cache_params,
+            ):
+                cache = loaded
+        except (json.JSONDecodeError, OSError):
             use_cache = False
 
-    if not use_cache or not cache_path.exists():
+    if cache is None:
         try:
-            cache = _build_cache(fp.name, file_data, segment_size, file_hash, file_size)
+            cache = _build_cache_v2(package, file_hash, cache_params)
         except RuntimeError as exc:
             return fail(f"failed to build upgrade cache: {exc}")
         cache_path.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
-    else:
-        cache = json.loads(cache_path.read_text(encoding="utf-8"))
+        use_cache = False
 
-    total_segments = cache["total_segments"]
-
-    results = {
-        "file": str(fp.name), "file_size": file_size,
-        "total_segments": total_segments, "segment_size": segment_size,
-        "file_crc": cache["file_crc"], "cached": use_cache,
+    results: dict[str, Any] = {
+        "file": str(fp.name),
+        "file_path": str(fp),
+        "file_size": package.size,
+        "total_segments": package.total_segments,
+        "segment_size": params["segment_size"],
+        "file_crc": f"0x{package.crc16:04X}",
+        "cached": use_cache,
+        "cache_path": str(cache_path),
+        "proto": params["proto"],
     }
 
-    if build_only:
-        results["frames_built"] = len(cache["frames"])
-        results["cache_path"] = str(cache_path)
+    if params["build_only"]:
+        results["frames_validated"] = package.total_segments + 1
         return ok(results)
 
-    # 检查串口
-    from wireforge_serial.api import get_connection
-    conn_name = str(args.get("name") or args.get("id") or "default")
-    results["name"] = conn_name
-    transport = get_connection(conn_name)
-    if not transport:
-        return fail(f"serial not connected (name={conn_name}). use /serial connect --name {conn_name} first")
+    try:
+        conn_name, transport = _resolve_connection(args)
+    except FileTransferError as exc:
+        return fail(str(exc))
+
+    from wireforge_serial.api import bind_rx_display, write_with_tx_display
+
+    bind_rx_display(transport, conn_name)
+
+    results["to"] = conn_name
 
     log_serial("upg_start", port="", data={
-        "name": conn_name,
-        "file": str(fp.name), "size": file_size,
-        "segments": total_segments, "segment_size": segment_size,
+        "to": conn_name,
+        "proto": params["proto"],
+        "file": str(fp.name),
+        "size": package.size,
+        "segments": package.total_segments,
+        "segment_size": params["segment_size"],
         "cached": use_cache,
     })
 
-    # Phase 1: 发送文件信息帧 (从缓存取)
-    info_hex = cache["frames"].get("file_info")
-    if not info_hex:
-        return fail("cache missing file_info frame")
+    seq = params["seq"] & 0xFF
 
-    info_frame = bytes.fromhex(info_hex)
-    info_diag: dict[str, Any] = {}
-    resp = _send_and_wait(transport, info_frame, timeout, retries, diag=info_diag)
-    if not resp:
-        detail = {**results, "phase": "file_info", "diagnostics": info_diag}
-        return fail(
-            f"no response to file info: {info_diag.get('last_error', 'timeout')}",
-            detail=detail,
+    def next_seq() -> int:
+        nonlocal seq
+        value = seq
+        seq = (seq + 1) & 0xFF
+        return value
+
+    proto = params["proto"]
+
+    def build_frame(di: str, fields: dict[str, Any] | None = None) -> bytes:
+        payload = {
+            "proto": proto,
+            "afn": "0x07",
+            "di": di,
+            "dir": "downlink",
+            "seq": next_seq(),
+        }
+        if fields:
+            payload.update(fields)
+        r = exec_cmd("build", payload)
+        if r.get("status") != "success" or not r.get("data", {}).get("frame"):
+            raise RuntimeError(r.get("error") or f"build failed for DI={di}")
+        return bytes.fromhex(r["data"]["frame"])
+
+    def decode_frame(frame: bytes) -> dict[str, Any] | None:
+        r = exec_cmd("decode", {"proto": proto, "hex": frame.hex(" ")})
+        if r.get("status") == "success":
+            return r.get("data", {})
+        return None
+
+    def send_receive(
+        label: str,
+        frame: bytes,
+        timeout: float,
+        *,
+        retry_count: int | None = None,
+        accept: Callable[[dict[str, Any]], bool] | None = None,
+        expected: str = "response",
+        diag: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        attempts = (params["retries"] if retry_count is None else retry_count) + 1
+        last_error: str | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                write_with_tx_display(transport, conn_name, frame)
+                if diag is not None:
+                    diag["last_send_hex"] = frame.hex(" ")
+                deadline = time.monotonic() + max(timeout, 0.0)
+                while time.monotonic() < deadline:
+                    remaining = max(0.0, deadline - time.monotonic())
+                    rx = transport.read_response(remaining)
+                    if not rx:
+                        break
+                    frames, _ = split_frames(rx)
+                    if not frames:
+                        last_error = f"{label} ignored non-CSG bytes while waiting for {expected}"
+                        continue
+                    for index, raw_frame in enumerate(frames):
+                        decoded = decode_frame(raw_frame)
+                        if decoded is None:
+                            last_error = f"{label} ignored decode error while waiting for {expected}"
+                            continue
+                        if accept is None or accept(decoded):
+                            return decoded
+                        last_error = (
+                            f"{label} ignored DI={parsed_di(decoded) or '<unknown>'} "
+                            f"while waiting for {expected}"
+                        )
+                if last_error is None or "ignored" in (last_error or ""):
+                    last_error = f"{label} waiting for {expected} timeout"
+                if attempt < attempts:
+                    continue
+                if diag is not None:
+                    diag["last_error"] = last_error
+                raise RuntimeError(last_error)
+            except RuntimeError:
+                raise
+            except Exception as exc:
+                last_error = f"{label} transport error: {type(exc).__name__}: {exc}"
+                if attempt >= attempts:
+                    if diag is not None:
+                        diag["last_error"] = last_error
+                    raise RuntimeError(last_error) from exc
+            finally:
+                if params["interval"] > 0:
+                    time.sleep(params["interval"])
+        if diag is not None:
+            diag["last_error"] = last_error or "unknown"
+        raise RuntimeError(last_error or f"{label} failed")
+
+    def is_ack_or_nak(decoded: dict[str, Any]) -> bool:
+        try:
+            ack_from_decoded(decoded)
+            return True
+        except FileTransferError:
+            return False
+
+    def expect_ack(label: str, frame: bytes, *, timeout: float | None = None, diag: dict[str, Any] | None = None) -> AckResult:
+        decoded = send_receive(
+            label,
+            frame,
+            params["ack_timeout"] if timeout is None else timeout,
+            accept=is_ack_or_nak,
+            expected="ACK/NAK",
+            diag=diag,
+        )
+        ack = ack_from_decoded(decoded)
+        if not ack.ok:
+            raise RuntimeError(f"{label} denied: {ack.error_message}")
+        if ack.wait_time > 0:
+            if params["ack_wait"] == "respect":
+                time.sleep(ack.wait_time)
+        return ack
+
+    def receive_di(
+        label: str,
+        frame: bytes,
+        timeout: float,
+        di: str,
+        *,
+        retry_count: int | None = None,
+    ) -> dict[str, Any]:
+        expected_di = di.upper()
+        return send_receive(
+            label,
+            frame,
+            timeout,
+            retry_count=retry_count,
+            accept=lambda decoded: parsed_di(decoded) == expected_di,
+            expected=f"DI={expected_di}",
         )
 
-    ack_diag: dict[str, Any] = {}
-    if not _parse_ack(resp, diag=ack_diag):
-        detail = {
-            **results, "phase": "file_info",
-            "diagnostics": {**info_diag, "last_recv_hex": resp.hex(" "), **ack_diag},
-        }
-        reason = ack_diag.get("nak_detail") or ack_diag.get("decode_detail") or "device NAK or no ACK for file info"
-        return fail(reason, detail=detail)
-    results["file_info_ack"] = True
-
-    # Phase 2: 逐段传输 (从缓存查帧)
-    sent = 0
-    failed_segments: list[dict[str, Any]] = []
     start_time = time.monotonic()
-    last_seg_diag: dict[str, Any] = {}
+    start_segment = 0
 
-    for i in range(1, total_segments + 1):
-        seg_hex = cache["frames"].get(str(i))
-        if not seg_hex:
-            failed_segments.append({"segment": i, "reason": "cache miss"})
-            continue
-
-        seg_frame = bytes.fromhex(seg_hex)
-        seg_timeout = timeout * 3 if i == total_segments else timeout
-        seg_diag: dict[str, Any] = {}
-        resp = _send_and_wait(transport, seg_frame, seg_timeout, retries, diag=seg_diag)
-        last_seg_diag = seg_diag
-
-        if resp and _parse_ack(resp, diag=seg_diag):
-            sent += 1
-        else:
-            failure_entry: dict[str, Any] = {"segment": i}
-            if not resp:
-                failure_entry["reason"] = seg_diag.get("last_error", "no response")
-            else:
-                failure_entry["reason"] = seg_diag.get("nak_detail") or seg_diag.get("decode_detail") or "NAK"
-                failure_entry["last_recv_hex"] = resp.hex(" ")
-            failure_entry["last_send_hex"] = seg_diag.get("last_send_hex", seg_hex)
-            failed_segments.append(failure_entry)
-            last_seg_diag = seg_diag
-
-            if len(failed_segments) > retries:
-                results["sent_segments"] = sent
-                results["failed_segments"] = failed_segments
-                results["last_diagnostics"] = last_seg_diag
-                return fail(
-                    f"too many segment failures ({len(failed_segments)}/{retries + 1})",
-                    detail=results,
+    try:
+        if params["clear_mode"] == "always":
+            clear_frame = build_frame("E8020701", clear_file_info_payload(params["dest"]))
+            expect_ack("CLEAR", clear_frame)
+        elif params["resume_enabled"]:
+            try:
+                query_frame = build_frame("E8000703")
+                decoded = receive_di(
+                    "QUERY_FILE_INFO",
+                    query_frame,
+                    params["ack_timeout"],
+                    "E8000703",
+                    retry_count=0,
                 )
+                file_info = payload_from_decoded(decoded)
+            except RuntimeError as exc:
+                file_info = None
+                results["resume_note"] = str(exc)
+            else:
+                if file_info and same_file_info(
+                    file_info,
+                    file_type=params["file_type"],
+                    file_id=params["file_id"],
+                    dest_address=params["dest"],
+                    package=package,
+                ):
+                    start_segment = min(int(file_info.get("received_segments", 0)), package.total_segments)
+                    if start_segment > 0:
+                        results["resumed_from"] = start_segment
+                elif file_info and params["clear_mode"] == "auto":
+                    clear_frame = build_frame("E8020701", clear_file_info_payload(params["dest"]))
+                    expect_ack("CLEAR", clear_frame)
+
+        if start_segment == 0:
+            start_frame = build_frame(
+                "E8020701",
+                start_file_info_payload(
+                    file_type=params["file_type"],
+                    file_id=params["file_id"],
+                    dest_address=params["dest"],
+                    package=package,
+                    timeout_minutes=params["timeout_minutes"],
+                ),
+            )
+            expect_ack("START", start_frame)
+            results["file_info_ack"] = True
+
+        segments_to_send = package.segments[start_segment:]
+        last_segment_number = segments_to_send[-1].number if segments_to_send else None
+        sent = 0
+
+        for segment in segments_to_send:
+            seg_frame = build_frame("E8020702", segment_payload(segment))
+            seg_timeout = (
+                params["final_ack_timeout"]
+                if segment.number == last_segment_number
+                else params["ack_timeout"]
+            )
+            expect_ack(f"SEGMENT[{segment.number}]", seg_frame, timeout=seg_timeout)
+            sent += 1
+            transferred = start_segment + sent
+            remaining = max(package.total_segments - transferred, 0)
+            percent = 100.0 if package.total_segments == 0 else transferred * 100.0 / package.total_segments
+            _write_progress_bar(transferred, package.total_segments, remaining, percent)
+
+        finish_result: dict[str, Any] | None = None
+        if params["finish_mode"] == "progress":
+            finish_result = _wait_progress_finish(build_frame, receive_di, params["finish_timeout"])
+        elif params["finish_mode"] == "report":
+            finish_result = {"mode": "report", "skipped": True}
+        elif params["finish_mode"] != "none":
+            return fail(f"unsupported finish mode: {params['finish_mode']}")
+
+    except RuntimeError as exc:
+        results["duration_seconds"] = round(time.monotonic() - start_time, 1)
+        _finish_progress_bar()
+        return fail(str(exc), detail=results)
 
     elapsed = time.monotonic() - start_time
     results["sent_segments"] = sent
-    results["failed_segments"] = failed_segments
     results["duration_seconds"] = round(elapsed, 1)
-    results["success"] = len(failed_segments) == 0
+    results["success"] = True
+    results["finish"] = finish_result
+    _finish_progress_bar()
 
     log_serial("upg_complete", port="", data=results)
-
-    if results["success"]:
-        return ok(results)
-    # Include last diagnostics for debugging
-    results["last_diagnostics"] = last_seg_diag
-    return fail(f"{len(failed_segments)} segments failed", detail=results)
+    return ok(results)
 
 
-# ── 缓存构建 ─────────────────────────────────────────────────────────
+def _parse_transfer_params(args: dict[str, Any]) -> dict[str, Any]:
+    segment_size = int(args.get("segment-size", args.get("segment_size", 1024)))
+    ack_timeout_raw = args.get("ack-timeout", args.get("timeout", "5"))
+    final_ack_raw = args.get("final-ack-timeout", args.get("last-timeout", "30"))
+    finish_timeout_raw = args.get("finish-timeout", args.get("report-timeout", "60"))
+    interval_raw = args.get("interval", "0")
 
-def _build_cache(name: str, data: bytes, seg_size: int, file_hash: str, file_size: int) -> dict:
-    """构建所有帧的缓存。返回 {frames: {file_info: hex, "1": hex, ...}, ...}"""
-    segments = _segment_file(data, seg_size)
-    total = len(segments)
-    file_crc = _crc16_modbus(data)
-    file_crc_str = f"0x{file_crc:04X}"
+    resume_enabled = True
+    if args.get("no-resume") or args.get("resume") is False:
+        resume_enabled = False
+    elif args.get("resume") is True or str(args.get("resume", "true")).lower() in {"true", "1", "yes"}:
+        resume_enabled = True
 
-    cache: dict[str, str] = {}
-    errors: list[str] = []
-    built = 0
-    total_frames = total + 1  # file_info + N segments
-    last_progress = -1
+    ack_wait = str(args.get("ack-wait", args.get("ack_wait", "ignore"))).lower()
+    if ack_wait not in {"ignore", "respect"}:
+        raise FileTransferError("--ack-wait must be ignore or respect")
 
-    # 文件信息帧
-    r = exec_cmd("build", {
-        "proto": "csg", "afn": "0x07", "di": "E8020701",
-        "dir": "downlink",
-        "file_type": 0x02,
-        "file_id": 0x00,
-        "dest_addr": "999999999999",
-        "total_segments": total,
-        "file_size": file_size,
-        "file_crc": file_crc,
-        "timeout_minutes": 30,
-    })
-    if r.get("status") == "success" and r.get("data", {}).get("frame"):
-        cache["file_info"] = r["data"]["frame"]
-        built += 1
-    else:
-        errors.append(f"file_info: {r.get('error') or r}")
+    clear_mode = str(args.get("clear", "auto")).lower()
+    if clear_mode not in {"auto", "always", "never"}:
+        raise FileTransferError("--clear must be auto, always or never")
 
-    # 分段帧
-    for i, seg in enumerate(segments):
-        segment_crc = _crc16_modbus(seg)
-        r = exec_cmd("build", {
-            "proto": "csg", "afn": "0x07", "di": "E8020702",
-            "dir": "downlink",
-            "segment_index": i,
-            "segment_length": len(seg),
-            "segment_data": seg,
-            "segment_crc": segment_crc,
-        })
-        if r.get("status") == "success" and r.get("data", {}).get("frame"):
-            cache[str(i + 1)] = r["data"]["frame"]
-            built += 1
-        else:
-            errors.append(f"segment {i + 1}: {r.get('error') or r}")
-
-        # 进度条
-        progress = (built * 100) // total_frames
-        if progress != last_progress:
-            bar = "#" * (progress // 5) + "-" * (20 - progress // 5)
-            print(f"\r  building cache: [{bar}] {built}/{total_frames} ({progress}%)", end="", flush=True)
-            last_progress = progress
-
-    print()  # newline after progress bar
-
-    if errors or built != total_frames:
-        missing = ["file_info"] if "file_info" not in cache else []
-        missing.extend(str(i) for i in range(1, total + 1) if str(i) not in cache)
-        message = f"built {built}/{total_frames} frames"
-        if missing:
-            message += f"; missing: {', '.join(missing)}"
-        if errors:
-            message += f"; errors: {'; '.join(errors)}"
-        raise RuntimeError(message)
+    finish_mode = str(args.get("finish", "none")).lower()
+    if finish_mode not in {"none", "progress", "report"}:
+        raise FileTransferError("--finish must be none, progress or report")
 
     return {
-        "file_name": name, "file_hash": file_hash, "file_size": file_size,
-        "segment_size": seg_size, "total_segments": total,
-        "file_crc": file_crc_str, "frames": cache,
+        "proto": _normalize_proto(str(args.get("proto", args.get("protocol", "csg")))),
+        "segment_size": segment_size,
+        "file_type": int(args.get("file-type", args.get("file_type", 1))),
+        "file_id": int(args.get("file-id", args.get("file_id", 1))),
+        "dest": str(args.get("dest", args.get("dst", args.get("dst-address", "999999999999")))),
+        "timeout_minutes": int(args.get("timeout-min", args.get("timeout_minutes", 30))),
+        "ack_timeout": parse_duration(ack_timeout_raw),
+        "final_ack_timeout": parse_duration(final_ack_raw),
+        "finish_timeout": parse_duration(finish_timeout_raw),
+        "interval": parse_duration(interval_raw),
+        "retries": int(args.get("retries", 3)),
+        "ack_wait": ack_wait,
+        "resume_enabled": resume_enabled,
+        "clear_mode": clear_mode,
+        "finish_mode": finish_mode,
+        "seq": int(args.get("seq", 1)),
+        "build_only": bool(args.get("build-only")),
     }
 
 
-# ── helpers ───────────────────────────────────────────────────────────
+def _build_cache_v2(
+    package: SegmentedFile,
+    file_hash: str,
+    params: dict[str, Any],
+) -> dict[str, Any]:
+    proto = params["proto"]
+    seq = 1
+    errors: list[str] = []
 
-def _segment_file(data: bytes, seg_size: int) -> list[bytes]:
-    return [data[i:i+seg_size] for i in range(0, len(data), seg_size)]
+    def validate_build(di: str, fields: dict[str, Any] | None = None) -> None:
+        nonlocal seq
+        payload = {
+            "proto": proto,
+            "afn": "0x07",
+            "di": di,
+            "dir": "downlink",
+            "seq": seq,
+        }
+        if fields:
+            payload.update(fields)
+        seq = (seq + 1) & 0xFF
+        r = exec_cmd("build", payload)
+        if r.get("status") != "success" or not r.get("data", {}).get("frame"):
+            errors.append(f"{di}: {r.get('error') or r}")
 
+    validate_build(
+        "E8020701",
+        start_file_info_payload(
+            file_type=params["file_type"],
+            file_id=params["file_id"],
+            dest_address=params["dest"],
+            package=package,
+            timeout_minutes=params["timeout_minutes"],
+        ),
+    )
+    for segment in package.segments:
+        validate_build("E8020702", segment_payload(segment))
 
-def _crc16_modbus(data: bytes) -> int:
-    crc = 0xFFFF
-    for b in data:
-        crc ^= b
-        for _ in range(8):
-            if crc & 1:
-                crc = (crc >> 1) ^ 0xA001
-            else:
-                crc >>= 1
-    return crc & 0xFFFF
+    if errors:
+        raise RuntimeError("; ".join(errors))
 
-
-def _send_and_wait(transport, frame: bytes, timeout: float, retries: int,
-                   diag: dict[str, Any] | None = None) -> bytes | None:
-    """Send frame and wait for response. Populates diag with last send/recv on failure."""
-    last_error = None
-    for attempt in range(retries):
-        try:
-            transport.write(frame)
-            resp = transport.read_response(timeout)
-            if resp:
-                return resp
-            last_error = f"no response within {timeout}s (attempt {attempt + 1}/{retries})"
-        except Exception as exc:
-            last_error = f"{type(exc).__name__}: {exc}"
-        time.sleep(0.1)
-
-    if diag is not None:
-        diag["last_send_hex"] = frame.hex(" ")
-        diag["last_error"] = last_error or "unknown"
-    return None
-
-
-def _parse_ack(data: bytes, diag: dict[str, Any] | None = None) -> bool:
-    """Parse CSG AFN00 ACK/NAK from a response frame."""
-    try:
-        r = exec_cmd("decode", {"proto": "csg", "hex": data.hex(" ")})
-        if r.get("status") == "success":
-            decoded = r.get("data", {})
-            path = str(decoded.get("path") or "")
-            values = decoded.get("values", {}) if isinstance(decoded.get("values"), dict) else {}
-            payload = _ack_payload(values)
-            di = _normalize_di(_find_decoded_value(values, "di"))
-
-            if "afn00_ack" in path or di == "E8010001" or (
-                isinstance(payload, dict) and "wait_time" in payload and "error_code" not in payload
-            ):
-                if diag is not None:
-                    diag["ack_received"] = True
-                    diag["ack_wait_time"] = payload.get("wait_time") if isinstance(payload, dict) else None
-                return True
-
-            error_code = payload.get("error_code") if isinstance(payload, dict) else None
-            if error_code is None:
-                error_code = _find_decoded_value(values, "error_code")
-            if diag is not None:
-                diag["nak_received"] = True
-                diag["nak_error_code"] = error_code
-                diag["nak_detail"] = f"device NAK (error_code={error_code})"
-            return False
-
-        if diag is not None:
-            diag["decode_failed"] = True
-            diag["decode_error"] = r.get("error", "?")
-            diag["decode_detail"] = f"decode failed: {r.get('error', '?')}"
-    except Exception as exc:
-        if diag is not None:
-            diag["parse_exception"] = f"{type(exc).__name__}: {exc}"
-    return False
+    return {
+        "version": CACHE_VERSION,
+        "crc_algo": CACHE_CRC_ALGO,
+        "file_name": package.path.name,
+        "file_hash": file_hash,
+        "file_size": package.size,
+        "segment_size": package.segment_size,
+        "total_segments": package.total_segments,
+        "file_crc": f"0x{package.crc16:04X}",
+        "params": params,
+        "segments": [
+            {
+                "number": segment.number,
+                "data_hex": segment.data.hex(),
+                "crc16": segment.crc16,
+            }
+            for segment in package.segments
+        ],
+    }
 
 
-def _ack_payload(values: dict[str, Any]) -> dict[str, Any]:
-    for container_name in ("data_content", "user_data"):
-        container = values.get(container_name)
-        if isinstance(container, dict):
-            payload = container.get("di_payload")
-            if isinstance(payload, dict):
-                return payload
-    return {}
+def _wait_progress_finish(
+    build_frame: Callable[[str, dict[str, Any] | None], bytes],
+    receive_di: Callable[..., dict[str, Any]],
+    timeout: float,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        decoded = receive_di(
+            "QUERY_PROGRESS",
+            build_frame("E8000704", None),
+            min(5.0, max(0.1, deadline - time.monotonic())),
+            "E8000704",
+            retry_count=0,
+        )
+        payload = payload_from_decoded(decoded)
+        progress = int(payload.get("progress", 255))
+        failed = int(payload.get("failed_node_count", 0))
+        if progress == 0:
+            return {"mode": "progress", "progress": progress, "failed_node_count": failed}
+        if progress == 2:
+            raise RuntimeError(f"file processing incomplete, failed_node_count={failed}")
+        time.sleep(1.0)
+    raise RuntimeError("finish progress timeout")
 
 
-def _find_decoded_value(values: dict[str, Any], leaf_name: str) -> Any:
-    for container_name in ("data_content", "user_data"):
-        container = values.get(container_name)
-        if isinstance(container, dict):
-            if leaf_name in container:
-                return container[leaf_name]
-            suffix = f".{leaf_name}"
-            for key, value in container.items():
-                if str(key).endswith(suffix):
-                    return value
-    return values.get(leaf_name)
+def _write_progress_bar(transferred: int, total: int, remaining: int, percent: float) -> None:
+    if not sys.stdout.isatty():
+        return
+    filled = int(percent // 5)
+    bar = "#" * filled + "-" * (20 - filled)
+    print(
+        f"\rUPG: progress [{bar}] {transferred}/{total} ({percent:.1f}%) remaining={remaining}",
+        end="",
+        flush=True,
+    )
 
 
-def _normalize_di(value: Any) -> str:
-    if value is None:
-        return ""
-    return "".join(str(value).replace("0x", "").replace("0X", "").split()).upper()
+def _finish_progress_bar() -> None:
+    if sys.stdout.isatty():
+        print()

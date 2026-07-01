@@ -78,6 +78,7 @@ class TestAddSuccess:
             "sub": "add", "id": "test_rule_4",
             "name": "带冷却",
             "match": "68.*16",
+            "then": "/send --hex \"11 22\"",
             "cooldown": "500",
         })
         _ok(r)
@@ -89,10 +90,57 @@ class TestAddSuccess:
 # ═══════════════════════════════════════════════════════════════
 
 class TestAddFail:
+    def test_add_empty_fails(self):
+        r = exec_cmd("auto_rule", {"sub": "add"})
+        _fail(r, "空 add 应失败")
+        assert r["status"] == "need_input"
+        keys = [f["key"] for f in r.get("input_schema", [])]
+        assert "id" in keys
+        assert "match" in keys
+        assert "then" in keys
+
+    def test_add_missing_id_fails(self):
+        r = exec_cmd("auto_rule", {
+            "sub": "add",
+            "match": "68.*16",
+            "then": "/send --hex \"1122\"",
+        })
+        _fail(r)
+        assert r["status"] == "need_input"
+        keys = [f["key"] for f in r.get("input_schema", [])]
+        assert keys == ["id"]
+
+    def test_add_missing_then_fails(self):
+        r = exec_cmd("auto_rule", {"sub": "add", "match": "68.*16"})
+        _fail(r)
+        assert r["status"] == "need_input"
+
+    def test_add_missing_match_fails(self):
+        r = exec_cmd("auto_rule", {"sub": "add", "then": "/send --hex \"11 22\""})
+        _fail(r)
+        assert r["status"] == "need_input"
+
     def test_add_duplicate_id(self):
-        exec_cmd("auto_rule", {"sub": "add", "id": "dup_rule", "match": "68.*16"})
-        r = exec_cmd("auto_rule", {"sub": "add", "id": "dup_rule", "match": "68.*16"})
+        exec_cmd("auto_rule", {
+            "sub": "add", "id": "dup_rule", "match": "68.*16",
+            "then": "/send --hex \"1122\"",
+        })
+        r = exec_cmd("auto_rule", {
+            "sub": "add", "id": "dup_rule", "match": "68.*16",
+            "then": "/send --hex \"1122\"",
+        })
         _fail(r, "重复ID应失败")
+
+    def test_add_then_shell_unquoted(self):
+        """--then /print --text=success 无需引号或 JSON。"""
+        from console.api import exec_text
+        from console.handlers import auto_rule as ar
+
+        r = exec_text("/auto_rule add --id shell_then --match 68.*16 --then /print --text=success")
+        _ok(r)
+        actions = ar._rules["shell_then"]["actions"]
+        assert actions == [{"command": "/print", "args": {"text": "success"}}]
+        exec_cmd("auto_rule", {"sub": "delete", "id": "shell_then"})
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -142,7 +190,8 @@ class TestEnableDisable:
 class TestMatch:
     def test_test_match_hit(self):
         exec_cmd("auto_rule", {"sub": "add", "id": "match_test",
-                               "match": "68.*40.*03.*E8", "enable": "true"})
+                               "match": "68.*40.*03.*E8", "enable": "true",
+                               "then": "/send --hex \"1122\""})
         r = exec_cmd("auto_rule", {
             "sub": "test", "id": "match_test",
             "hex": "68 0C 00 40 03 01 01 03 00 E8 30 16",
@@ -274,7 +323,10 @@ class TestLoad:
 
 class TestDelete:
     def test_delete_existing(self):
-        exec_cmd("auto_rule", {"sub": "add", "id": "to_delete", "match": "00.*FF"})
+        exec_cmd("auto_rule", {
+            "sub": "add", "id": "to_delete", "match": "00.*FF",
+            "then": "/send --hex \"1122\"",
+        })
         r = exec_cmd("auto_rule", {"sub": "delete", "id": "to_delete"})
         _ok(r)
         assert r["data"]["deleted"] == "to_delete"
@@ -294,7 +346,10 @@ class TestDelete:
 
 class TestHistory:
     def test_history_after_test(self):
-        exec_cmd("auto_rule", {"sub": "add", "id": "hist_test", "match": "68.*16"})
+        exec_cmd("auto_rule", {
+            "sub": "add", "id": "hist_test", "match": "68.*16",
+            "then": "/send --hex \"1122\"",
+        })
         exec_cmd("auto_rule", {"sub": "test", "id": "hist_test",
                                "hex": "68 0C 00 40 03 01 01 03 00 E8 30 16"})
         r = exec_cmd("auto_rule", {"sub": "history"})
@@ -466,3 +521,103 @@ class TestRouteSugarMatch:
         })
         _ok(r)
         assert r["data"]["matched"] is False
+
+
+class TestDlt645ProtoMatch:
+    _READ_DATA_HEX = "FE FE FE FE 68 01 00 00 00 00 00 68 11 04 33 33 34 33 B3 16"
+
+    def test_dlt645_di_func_dir(self):
+        exec_cmd("auto_rule", {
+            "sub": "add", "id": "645_route",
+            "proto": "dlt645",
+            "di": "00010000",
+            "func": "0x11",
+            "dir": "downlink",
+            "then": "/log",
+        })
+        r = exec_cmd("auto_rule", {
+            "sub": "test", "id": "645_route",
+            "hex": self._READ_DATA_HEX,
+        })
+        _ok(r)
+        assert r["data"]["matched"] is True
+        show = exec_cmd("auto_rule", {"sub": "show", "id": "645_route"})
+        assert show["data"]["rule"]["proto"] == "dlt645"
+
+    def test_dlt645_wrong_proto_misses(self):
+        exec_cmd("auto_rule", {
+            "sub": "add", "id": "645_wrong_proto",
+            "proto": "csg",
+            "di": "00010000",
+            "then": "/log",
+        })
+        r = exec_cmd("auto_rule", {
+            "sub": "test", "id": "645_wrong_proto",
+            "hex": self._READ_DATA_HEX,
+        })
+        _ok(r)
+        assert r["data"]["matched"] is False
+
+    def test_explicit_proto_csg_still_works(self):
+        exec_cmd("auto_rule", {
+            "sub": "add", "id": "csg_explicit",
+            "proto": "csg",
+            "di": "E8030306",
+            "then": "/log",
+        })
+        r = exec_cmd("auto_rule", {
+            "sub": "test", "id": "csg_explicit",
+            "hex": TestRouteSugarMatch._QUERY_SLAVE_HEX,
+        })
+        _ok(r)
+        assert r["data"]["matched"] is True
+
+
+class TestRxTrigger:
+    def test_rx_triggers_print_action(self, capsys):
+        import time
+        from wireforge_serial.api import get_connection
+
+        exec_cmd("serial", {"sub": "close", "to": "default"})
+        exec_cmd("serial", {"sub": "connect", "to": "default", "port": "mock://loop"})
+        exec_cmd("auto_rule", {
+            "sub": "add",
+            "id": "rx_print",
+            "match": "68.*16",
+            "then": "/print",
+            "text": "success",
+        })
+        capsys.readouterr()
+        transport = get_connection("default")
+        assert transport is not None
+        transport.write(bytes.fromhex("684416"))
+        captured = ""
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline:
+            captured += capsys.readouterr().out
+            if "success" in captured:
+                break
+            time.sleep(0.02)
+        exec_cmd("serial", {"sub": "close", "to": "default"})
+        assert "success" in captured
+
+    def test_rx_respects_trigger_source(self, capsys):
+        import time
+        from wireforge_serial.api import get_connection
+
+        exec_cmd("serial", {"sub": "connect", "to": "other", "port": "mock://loop"})
+        exec_cmd("auto_rule", {
+            "sub": "add",
+            "id": "src_only_default",
+            "source": "serial:default",
+            "match": "68.*16",
+            "then": "/print",
+            "text": "hit",
+        })
+        capsys.readouterr()
+        transport = get_connection("other")
+        transport.write(bytes.fromhex("684416"))
+        time.sleep(0.15)
+        captured = capsys.readouterr().out
+        exec_cmd("serial", {"sub": "close", "to": "other"})
+        assert "hit" not in captured

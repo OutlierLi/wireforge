@@ -91,5 +91,7 @@ MCP：`test.validate` → `test.dry_run` → `test.run`。
 ## 注意
 
 - 仅 **`mock://auto`** 在 TestPlan 中自动触发规则；真机串口需设备侧应答或另行接入。
-- decode 协议默认 **csg**；条件含 decoded/route 字段时会自动 parse。
+- decode 协议默认 **csg**；规则级 `--proto csg|dlt645`（或 YAML `proto:`）指定 decode 所用协议。
+- DLT645 用 `--proto dlt645 --di 00010000 --func 0x11`；645 无 AFN，用 `func` 代替。
+- 条件含 decoded/route 字段时会按规则 `proto` 自动 parse。
 - 同 DI 多条规则时 **后添加的覆盖** 先添加的。

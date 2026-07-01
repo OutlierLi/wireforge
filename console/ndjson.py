@@ -43,6 +43,8 @@ def _handle(request: dict[str, Any]) -> dict[str, Any]:
         return complete_cmd(
             prefix=str(request.get("prefix", "")),
             command=str(request.get("command", "")),
+            sub=str(request.get("sub", "")),
+            text=str(request.get("text", "")),
         )
 
     return response_execution_error(f"unknown request type: {request_type}")

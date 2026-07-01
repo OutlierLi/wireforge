@@ -29,7 +29,7 @@ class Command:
     handler: str = ""   # "serial_open"
     enabled: bool = True
     params: dict[str, Any] = field(default_factory=dict)
-    sub_commands: dict[str, str] = field(default_factory=dict)
+    sub_commands: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         d = {

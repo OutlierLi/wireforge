@@ -6,6 +6,7 @@ when prompt_toolkit is not installed.
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from collections.abc import Iterable
@@ -24,12 +25,30 @@ def run_terminal(
     stdin: TextIO | None = None,
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
+    restore_state: Path | None = None,
 ) -> int:
     """Run the interactive plain terminal."""
 
     inp = stdin or sys.stdin
     out = stdout or sys.stdout
     err = stderr or sys.stderr
+
+    # 恢复会话状态（/split 继承）
+    if restore_state:
+        try:
+            from console.session import restore_session
+            summary = restore_session(restore_state)
+            out.write(f"[restored state from {restore_state}]\n")
+            vars_n = summary.get("variables_count", 0)
+            rules_n = summary.get("rules_count", 0)
+            if vars_n or rules_n:
+                out.write(f"  variables: {vars_n}, rules: {rules_n}\n")
+            errors = summary.get("errors", [])
+            for e in errors:
+                err.write(f"  restore warning: {e}\n")
+        except Exception as e:
+            err.write(f"restore failed: {e}\n")
+
     out.write("WireForge terminal, type /help or /exit\n")
     try:
         if _can_use_prompt_toolkit(inp):
@@ -48,9 +67,8 @@ def _run_prompt_toolkit_terminal(stdout: TextIO, stderr: TextIO) -> int:
     class WireForgeCompleter(Completer):
         def get_completions(self, document: Any, complete_event: Any) -> Iterable[Completion]:
             text = document.text_before_cursor
-            start_position = _completion_start_position(text)
-            for item in _completion_candidates(text):
-                yield Completion(item, start_position=start_position)
+            for value, start_position, label in _completion_candidates(text):
+                yield Completion(value, start_position=start_position, display=label)
 
     HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
     session = PromptSession(
@@ -159,34 +177,18 @@ def _render_value(value: Any, stdout: TextIO, depth: int = 0, key: str = "") -> 
     stdout.write(f"{prefix}{json.dumps(value, ensure_ascii=False)}\n")
 
 
-def _completion_candidates(text: str) -> list[str]:
-    command, prefix = _completion_context(text)
-    response = complete_cmd(prefix=prefix, command=command)
+def _completion_candidates(text: str) -> list[tuple[str, int, str]]:
+    response = complete_cmd(text=text)
     data = response.get("data") or {}
-    return [
-        str(item.get("value") or item.get("label"))
-        for item in data.get("completions", [])
-        if item.get("value") or item.get("label")
-    ]
-
-
-def _completion_context(text: str) -> tuple[str, str]:
-    stripped = text.lstrip()
-    if not stripped:
-        return "", ""
-    parts = stripped.split()
-    if len(parts) <= 1 and not stripped.endswith(" "):
-        return "", parts[0]
-    command = parts[0].lstrip("/")
-    if stripped.endswith(" "):
-        return command, ""
-    return command, parts[-1]
-
-
-def _completion_start_position(text_before_cursor: str) -> int:
-    if not text_before_cursor or text_before_cursor.endswith(" "):
-        return 0
-    return -len(text_before_cursor.split()[-1])
+    start = int(data.get("start_position", 0))
+    items: list[tuple[str, int, str]] = []
+    for item in data.get("completions", []):
+        value = str(item.get("value") or item.get("label") or "")
+        if not value:
+            continue
+        label = str(item.get("label") or value)
+        items.append((value, start, label))
+    return items
 
 
 def _can_use_prompt_toolkit(stdin: TextIO) -> bool:
@@ -203,8 +205,17 @@ def _should_exit(line: str) -> bool:
     return line.strip() in {"/exit", "/quit", "exit", "quit"}
 
 
-def main() -> int:
-    return run_terminal()
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="wireforge-terminal",
+        description="WireForge interactive protocol console",
+    )
+    parser.add_argument(
+        "--restore-state", type=Path, default=None,
+        help="Restore session state from YAML file (used by /split)",
+    )
+    args = parser.parse_args(argv)
+    return run_terminal(restore_state=args.restore_state)
 
 
 if __name__ == "__main__":

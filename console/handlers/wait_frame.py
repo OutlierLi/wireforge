@@ -1,7 +1,7 @@
 """/wait-frame 命令处理器 — 监听串口，decode 帧并匹配 expect 条件。
 
 用法:
-  /wait-frame --name cco --timeout 5000 \\
+  /wait-frame --to cco --timeout 5000 \\
     --protocol csg \\
     --expect.afn 04 --expect.fn Fn12 --expect.dir uplink \\
     --expect.user_data.result success,start
@@ -23,21 +23,28 @@ import time
 from pathlib import Path
 from typing import Any
 
+from console.arg_utils import parse_timeout_ms
 from console.handlers.frame_splitter import split_frames
 from console.response import ok, fail
 ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def handle(args: dict[str, Any]) -> dict:
-    name = str(args.get("name") or args.get("id") or "default")
-    timeout_ms = int(args.get("timeout", "5000"))
+    from wireforge_serial.api import _connection_id, _normalize_args
+
+    args = _normalize_args(args)
+    target = _connection_id(args) or "default"
+    timeout_ms = parse_timeout_ms(args.get("timeout"), default=5000)
     protocol = str(args.get("proto") or args.get("protocol", ""))
 
     # 检查串口连接
     from wireforge_serial.api import get_connection
-    transport = get_connection(name)
+    transport = get_connection(target)
     if not transport:
-        return fail(f"serial not connected (name={name}). use /serial connect --name {name} first")
+        return fail(
+            f"serial not connected (to={target}). "
+            f"use /serial connect --to {target} first"
+        )
 
     # 解析 expect 条件
     expect = _parse_expect(args)
@@ -52,66 +59,54 @@ def handle(args: dict[str, Any]) -> dict:
     mismatch_summary: list[str] = []
     poll_interval = 0.02  # 20ms poll
 
-    # 设置实时显示回调 — 和 serial_send 一样打印 [name] RX: ...
-    from wireforge_serial.logger import log_rx, display_rx
-    transport.on_rx_chunk = lambda d: _log_and_display_rx(name, d)
+    while time.monotonic() < deadline:
+        remaining = deadline - time.monotonic()
+        chunk = transport.read_response(min(0.2, remaining))
+        if chunk:
+            buffer.extend(chunk)
 
-    try:
-        while time.monotonic() < deadline:
-            remaining = deadline - time.monotonic()
-            chunk = transport.read_response(min(0.2, remaining))
-            if chunk:
-                buffer.extend(chunk)
+        data = bytes(buffer)
+        frames, remainder = split_frames(data)
+        buffer = bytearray(remainder)
 
-            # Split frames
-            data = bytes(buffer)
-            frames, remainder = split_frames(data)
-            buffer = bytearray(remainder)
+        for idx, frame_bytes in enumerate(frames):
+            received_count += 1
+            frame_hex = frame_bytes.hex(" ").upper()
 
-            for idx, frame_bytes in enumerate(frames):
-                received_count += 1
-                frame_hex = frame_bytes.hex(" ").upper()
+            decoded = _try_decode(frame_bytes, protocol)
+            if decoded is None:
+                mismatch_summary.append(f"frame[{received_count}]: decode failed")
+                continue
 
-                # Try decode with specified protocol, or auto-detect
-                decoded = _try_decode(frame_bytes, protocol)
-                if decoded is None:
-                    mismatch_summary.append(f"frame[{received_count}]: decode failed")
-                    continue
+            decoded_count += 1
+            last_decoded = decoded
 
-                decoded_count += 1
-                last_decoded = decoded
+            match_result = _match_expect(decoded, expect, received_count)
+            if match_result is True:
+                leftover = b"".join(frames[idx + 1:]) + bytes(remainder)
+                if leftover:
+                    transport.prepend_rx(leftover)
+                elapsed_ms = int((time.monotonic() - (deadline - timeout_ms / 1000.0)) * 1000)
+                return ok({
+                    "matched": True,
+                    "elapsed_ms": elapsed_ms,
+                    "frame_hex": frame_hex,
+                    "decoded": decoded,
+                    "frame_index": received_count,
+                })
 
-                # Match against expect conditions
-                match_result = _match_expect(decoded, expect, received_count)
-                if match_result is True:
-                    leftover = b"".join(frames[idx + 1:]) + bytes(remainder)
-                    if leftover:
-                        transport.prepend_rx(leftover)
-                    elapsed_ms = int((time.monotonic() - (deadline - timeout_ms / 1000.0)) * 1000)
-                    result_data = {
-                        "matched": True,
-                        "elapsed_ms": elapsed_ms,
-                        "frame_hex": frame_hex,
-                        "decoded": decoded,
-                        "frame_index": received_count,
-                    }
-                    return ok(result_data)
+            mismatch_summary.append(match_result)
 
-                mismatch_summary.append(match_result)
+        time.sleep(poll_interval)
 
-            time.sleep(poll_interval)
-
-        # Timeout
-        return fail("timeout: no frame matched expect conditions", detail={
-            "matched": False,
-            "timeout_ms": timeout_ms,
-            "received_frames": received_count,
-            "decoded_frames": decoded_count,
-            "last_decoded": last_decoded,
-            "mismatch_summary": mismatch_summary,
-        })
-    finally:
-        transport.on_rx_chunk = None
+    return fail("timeout: no frame matched expect conditions", detail={
+        "matched": False,
+        "timeout_ms": timeout_ms,
+        "received_frames": received_count,
+        "decoded_frames": decoded_count,
+        "last_decoded": last_decoded,
+        "mismatch_summary": mismatch_summary,
+    })
 
 
 # ── expect 解析 ────────────────────────────────────────────────────────
@@ -203,6 +198,9 @@ def _flatten_decode_values(values: dict[str, Any], path: str) -> dict[str, Any]:
     if isinstance(control, dict):
         result["dir"] = "uplink" if control.get("dir") == 1 else "downlink"
         result["add"] = control.get("add", 0)
+        func_val = control.get("func")
+        if func_val is not None:
+            result["func"] = int(func_val)
 
     # 收集所有 key-value，处理命名空间前缀
     all_pairs: dict[str, Any] = {}
@@ -230,6 +228,17 @@ def _flatten_decode_values(values: dict[str, Any], path: str) -> dict[str, Any]:
     seq_val = all_pairs.get("seq")
     if seq_val is not None:
         result["seq"] = int(seq_val)
+
+    # DLT645: data 块（di 等）
+    data = values.get("data")
+    if isinstance(data, dict):
+        for key, val in data.items():
+            if key == "di" and val is not None:
+                di_norm = str(val).replace(" ", "").upper()
+                result["di"] = di_norm
+                result["user_data.di"] = di_norm
+            elif not isinstance(val, (dict, list)):
+                result[f"user_data.{key}"] = str(val)
 
     # 提取 user_data 中的业务字段
     ud = values.get("user_data")
@@ -336,10 +345,3 @@ def _get_by_path(data: dict[str, Any], path: str) -> Any:
         else:
             return None
     return current
-
-
-def _log_and_display_rx(device: str, data: bytes) -> None:
-    """实时打印 + 日志记录接收数据。"""
-    from wireforge_serial.logger import log_rx, display_rx
-    log_rx(device, data)
-    display_rx(device, data)

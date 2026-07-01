@@ -1,87 +1,377 @@
 {
+  "auto_rule": {
+    "desc": "Auto-reply rule engine. Sub: add, list, show, enable, disable, delete, test, load, history",
+    "module": "console.handlers.auto_rule",
+    "handler": "handle",
+    "enabled": true,
+    "params": {},
+    "sub_commands": {
+      "add": {
+        "desc": "Add a new rule with match condition and actions",
+        "params": {
+          "id": {
+            "type": "str",
+            "required": true,
+            "order": 1,
+            "desc": "规则ID（唯一，后续 show/enable/delete/update/test 均用此标识）",
+            "examples": [
+              "csg_query_vendor_ack",
+              "auto_reply_login"
+            ]
+          },
+          "match": {
+            "type": "str",
+            "required": true,
+            "order": 2,
+            "desc": "匹配条件：regex/JSON 片段，或用 field/di/afn/dir 指定解码字段条件",
+            "examples": [
+              "010300E8",
+              "68.*16",
+              "{\"all\":[\"010300E8\",\"0040\"]}"
+            ],
+            "note": "与 --field/--di/--afn/--dir 二选一或组合；不可省略"
+          },
+          "then": {
+            "type": "str",
+            "required": true,
+            "order": 3,
+            "desc": "匹配后执行的命令（Shell 命令行，与 /send /print 相同写法）",
+            "examples": [
+              "/print --text=success",
+              "/send --hex \"68 0D 00 80 00 01 01 00 01 E8 00 6B 16\"",
+              "/log --message matched"
+            ],
+            "note": "无需 JSON；--then /print --text=ok 即可（shell 会自动合并 --text）；输入 / 可联想嵌套命令"
+          },
+          "name": {
+            "type": "str",
+            "required": false,
+            "desc": "规则显示名称（可选，list 时展示；不影响匹配逻辑）"
+          },
+          "source": {
+            "type": "str",
+            "required": false,
+            "desc": "触发源 serial:default"
+          },
+          "field": {
+            "type": "str",
+            "required": false,
+            "desc": "解码字段条件 field=path=value，可替代或补充 match"
+          },
+          "di": {
+            "type": "str",
+            "required": false,
+            "desc": "按 DI 精确匹配（decoded 条件）"
+          },
+          "afn": {
+            "type": "hex",
+            "required": false,
+            "desc": "按 AFN 精确匹配（decoded 条件）"
+          },
+          "dir": {
+            "type": "choice",
+            "required": false,
+            "desc": "按方向匹配（decoded 条件）",
+            "examples": [
+              "downlink",
+              "uplink"
+            ]
+          },
+          "func": {
+            "type": "hex",
+            "required": false,
+            "desc": "按功能码匹配（DLT645 decoded 条件）",
+            "examples": [
+              "0x11",
+              "11"
+            ]
+          },
+          "proto": {
+            "type": "choice",
+            "required": false,
+            "desc": "decode 匹配所用协议（默认 csg）",
+            "examples": [
+              "csg",
+              "dlt645"
+            ],
+            "note": "decoded/di/afn/func 条件依赖此协议解析帧；645 用 --proto dlt645 --di --func"
+          }
+        }
+      },
+      "list": {
+        "desc": "List all registered rules",
+        "params": {}
+      },
+      "show": {
+        "desc": "Show full details of a rule by id",
+        "params": {
+          "id": {
+            "type": "str",
+            "required": true,
+            "desc": "规则ID"
+          }
+        }
+      },
+      "enable": {
+        "desc": "Enable a disabled rule",
+        "params": {
+          "id": {
+            "type": "str",
+            "required": true,
+            "desc": "规则ID"
+          }
+        }
+      },
+      "disable": {
+        "desc": "Disable a rule without deleting",
+        "params": {
+          "id": {
+            "type": "str",
+            "required": true,
+            "desc": "规则ID"
+          }
+        }
+      },
+      "delete": {
+        "desc": "Permanently remove a rule",
+        "params": {
+          "id": {
+            "type": "str",
+            "required": true,
+            "desc": "规则ID"
+          }
+        }
+      },
+      "test": {
+        "desc": "Test a rule against a hex frame (dry-run)",
+        "params": {
+          "id": {
+            "type": "str",
+            "required": true,
+            "order": 1,
+            "desc": "规则ID"
+          },
+          "hex": {
+            "type": "str",
+            "required": true,
+            "order": 2,
+            "desc": "测试用十六进制报文"
+          }
+        }
+      },
+      "load": {
+        "desc": "Load rules from YAML file",
+        "params": {
+          "file": {
+            "type": "str",
+            "required": true,
+            "desc": "YAML规则文件路径"
+          }
+        }
+      },
+      "history": {
+        "desc": "Show rule match history, optionally filtered by id",
+        "params": {
+          "id": {
+            "type": "str",
+            "required": false,
+            "desc": "规则ID（可选过滤）"
+          }
+        }
+      }
+    }
+  },
   "build": {
     "desc": "Build protocol frame from target info. Sub-commands: --resolve (show input schema)",
     "module": "console.handlers.build",
     "handler": "handle",
     "enabled": true,
-    "params": {
-      "proto": {
-        "type": "choice",
-        "required": true,
-        "desc": "协议类型",
-        "examples": [
-          "dlt645",
-          "csg"
-        ]
+    "params": {},
+    "sub_commands": {
+      "build": {
+        "desc": "Build protocol frame from target info",
+        "params": {
+          "proto": {
+            "type": "choice",
+            "required": true,
+            "order": 1,
+            "desc": "协议类型",
+            "examples": [
+              "dlt645",
+              "csg"
+            ]
+          },
+          "func": {
+            "type": "hex",
+            "required": false,
+            "desc": "功能码 (DLT645)",
+            "examples": [
+              "0x11",
+              "0x13"
+            ]
+          },
+          "afn": {
+            "type": "hex",
+            "required": false,
+            "desc": "应用功能码 (CSG)",
+            "examples": [
+              "0x00",
+              "0x03"
+            ]
+          },
+          "di": {
+            "type": "str",
+            "required": false,
+            "desc": "数据标识DI",
+            "examples": [
+              "00010000",
+              "E8020701"
+            ]
+          },
+          "dir": {
+            "type": "choice",
+            "required": false,
+            "desc": "传输方向",
+            "examples": [
+              "downlink",
+              "uplink"
+            ],
+            "default": "downlink"
+          },
+          "set": {
+            "type": "str",
+            "required": false,
+            "desc": "设置/覆盖字段值",
+            "examples": [
+              "di=00020000",
+              "freeze_year=26"
+            ]
+          },
+          "*": {
+            "type": "dynamic",
+            "required": false,
+            "desc": "业务字段由 resolve 后动态决定"
+          }
+        }
       },
-      "func": {
-        "type": "hex",
-        "required": false,
-        "desc": "功能码 (DLT645)",
-        "examples": [
-          "0x11",
-          "0x13"
-        ]
-      },
-      "afn": {
-        "type": "hex",
-        "required": false,
-        "desc": "应用功能码 (CSG)",
-        "examples": [
-          "0x00",
-          "0x03"
-        ]
-      },
-      "di": {
-        "type": "str",
-        "required": false,
-        "desc": "数据标识DI",
-        "examples": [
-          "00010000",
-          "E8020701"
-        ]
-      },
-      "dir": {
-        "type": "choice",
-        "required": false,
-        "desc": "传输方向",
-        "examples": [
-          "downlink",
-          "uplink"
-        ],
-        "default": "downlink"
+      "from-frame": {
+        "desc": "Rebuild frame from existing hex, optionally modify fields",
+        "params": {
+          "from_frame": {
+            "type": "str",
+            "required": true,
+            "order": 1,
+            "desc": "从已有 hex 报文解码后修改字段再重建",
+            "examples": [
+              "FE FE 68 ... 16"
+            ]
+          },
+          "set": {
+            "type": "str",
+            "required": false,
+            "desc": "设置/覆盖字段值",
+            "examples": [
+              "di=00020000",
+              "freeze_year=26"
+            ]
+          },
+          "proto": {
+            "type": "choice",
+            "required": false,
+            "desc": "协议类型（省略则自动检测）",
+            "examples": [
+              "dlt645",
+              "csg"
+            ]
+          }
+        }
       },
       "resolve": {
-        "type": "bool",
-        "required": false,
-        "desc": "仅解析目标返回input_schema，不构造帧"
-      },
-      "from_frame": {
-        "type": "str",
-        "required": false,
-        "desc": "从已有hex报文解码后修改字段再重建",
-        "examples": [
-          "FE FE 68 ... 16"
-        ]
-      },
-      "set": {
-        "type": "str",
-        "required": false,
-        "desc": "设置/覆盖字段值，与 --from-frame 配合使用",
-        "examples": [
-          "di=00020000",
-          "freeze_year=26"
-        ]
-      },
-      "*": {
-        "type": "dynamic",
-        "required": false,
-        "desc": "业务字段由resolve后动态决定"
+        "desc": "Resolve target only, return input_schema without building frame",
+        "params": {
+          "proto": {
+            "type": "choice",
+            "required": true,
+            "order": 1,
+            "desc": "协议类型",
+            "examples": [
+              "dlt645",
+              "csg"
+            ]
+          },
+          "func": {
+            "type": "hex",
+            "required": false,
+            "desc": "功能码 (DLT645)",
+            "examples": [
+              "0x11",
+              "0x13"
+            ]
+          },
+          "afn": {
+            "type": "hex",
+            "required": false,
+            "desc": "应用功能码 (CSG)",
+            "examples": [
+              "0x00",
+              "0x03"
+            ]
+          },
+          "di": {
+            "type": "str",
+            "required": false,
+            "desc": "数据标识DI",
+            "examples": [
+              "00010000",
+              "E8020701"
+            ]
+          },
+          "dir": {
+            "type": "choice",
+            "required": false,
+            "desc": "传输方向",
+            "examples": [
+              "downlink",
+              "uplink"
+            ],
+            "default": "downlink"
+          }
+        }
       }
-    },
+    }
+  },
+  "decode": {
+    "desc": "Decode raw hex frame to structured fields and route path",
+    "module": "console.handlers.decode",
+    "handler": "handle",
+    "enabled": true,
+    "params": {},
     "sub_commands": {
-      "--resolve": "Resolve target only, return input_schema without building frame",
-      "--describe": "Alias for --resolve"
+      "decode": {
+        "desc": "Decode raw hex frame to structured fields and route path",
+        "params": {
+          "proto": {
+            "type": "choice",
+            "required": true,
+            "order": 1,
+            "desc": "协议类型",
+            "examples": [
+              "dlt645",
+              "csg"
+            ]
+          },
+          "hex": {
+            "type": "str",
+            "required": true,
+            "order": 2,
+            "desc": "十六进制报文字节流",
+            "examples": [
+              "FE FE 68 ... 16",
+              "68 0C 00 40 03 01 01 03 00 E8 30 16"
+            ]
+          }
+        }
+      }
     }
   },
   "delay": {
@@ -89,206 +379,103 @@
     "module": "console.handlers.delay",
     "handler": "handle",
     "enabled": true,
-    "params": {
-      "value": {
-        "type": "str",
-        "required": true,
-        "desc": "时长，默认 ms，支持 s 后缀",
-        "examples": [
-          "100",
-          "500ms",
-          "2s",
-          "1.5s"
-        ]
-      }
-    },
-    "sub_commands": {}
-  },
-  "decode": {
-    "desc": "Decode raw hex frame to structured fields and route path",
-    "module": "console.handlers.decode",
-    "handler": "handle",
-    "enabled": true,
-    "params": {
-      "proto": {
-        "type": "choice",
-        "required": true,
-        "desc": "协议类型",
-        "examples": [
-          "dlt645",
-          "csg"
-        ]
-      },
-      "hex": {
-        "type": "str",
-        "required": true,
-        "desc": "十六进制报文字节流",
-        "examples": [
-          "FE FE 68 ... 16",
-          "68 0C 00 40 03 01 01 03 00 E8 30 16"
-        ]
+    "params": {},
+    "sub_commands": {
+      "wait": {
+        "desc": "Delay/wait for a duration. /delay 100 (ms) or /delay 2s",
+        "params": {
+          "value": {
+            "type": "str",
+            "required": true,
+            "desc": "时长，默认 ms，支持 s 后缀",
+            "examples": [
+              "100",
+              "500ms",
+              "2s",
+              "1.5s"
+            ]
+          }
+        }
       }
     }
   },
-  "auto_rule": {
-    "desc": "Auto-reply rule engine. Sub: add, list, show, enable, disable, delete, test, load, history",
-    "module": "console.handlers.auto_rule",
+  "find": {
+    "desc": "Search protocol messages by keyword, DI, AFN, func, or direction. /find 初始化档案 or /find E8020102",
+    "module": "console.handlers.find",
     "handler": "handle",
     "enabled": true,
-    "params": {
-      "sub": {
-        "type": "choice",
-        "required": true,
-        "desc": "子命令",
-        "examples": [
-          "add",
-          "list",
-          "load",
-          "test",
-          "show",
-          "enable",
-          "disable",
-          "delete",
-          "history"
-        ]
-      },
-      "id": {
-        "type": "str",
-        "desc": "规则ID"
-      },
-      "name": {
-        "type": "str",
-        "desc": "规则名称"
-      },
-      "hex": {
-        "type": "str",
-        "desc": "测试用十六进制报文"
-      },
-      "file": {
-        "type": "str",
-        "desc": "YAML规则文件路径"
-      },
-      "match": {
-        "type": "str",
-        "desc": "正则匹配模式 (regex)"
-      },
-      "source": {
-        "type": "str",
-        "desc": "触发源 serial:default"
-      },
-      "then": {
-        "type": "str",
-        "desc": "匹配后执行的命令"
-      }
-    },
+    "params": {},
     "sub_commands": {
-      "add": "Add a new rule with match condition and actions",
-      "list": "List all registered rules",
-      "show": "Show full details of a rule by id",
-      "enable": "Enable a disabled rule",
-      "disable": "Disable a rule without deleting",
-      "delete": "Permanently remove a rule",
-      "test": "Test a rule against a hex frame (dry-run)",
-      "load": "Load rules from YAML file",
-      "history": "Show rule match history, optionally filtered by id"
-    }
-  },
-  "serial": {
-    "desc": "Serial port management. Sub: connect, open, close, send, set, disconnect, ports",
-    "module": "console.handlers.serial_cmd",
-    "handler": "handle",
-    "enabled": true,
-    "params": {
-      "sub": {
-        "type": "choice",
-        "required": false,
-        "desc": "子命令",
-        "examples": [
-          "connect",
-          "open",
-          "close",
-          "send",
-          "set",
-          "disconnect",
-          "ports"
-        ]
-      },
-      "name": {
-        "type": "str",
-        "desc": "连接名",
-        "examples": [
-          "default",
-          "cco",
-          "sta1"
-        ],
-        "note": "send 未指定 --name 时自动检测唯一连接；多连接时必须显式指定"
-      },
-      "port": {
-        "type": "str",
-        "desc": "串口号",
-        "examples": [
-          "mock://loop",
-          "virtual://demo",
-          "/dev/ttyUSB0",
-          "COM3"
-        ],
-        "note": "mock=内存回环, virtual=跨进程总线, 其他=物理串口"
-      },
-      "baudrate": {
-        "type": "int",
-        "desc": "波特率",
-        "examples": [
-          9600,
-          115200
-        ],
-        "note": "set 修改后需 /serial open 生效，不能热修改已打开的串口"
-      },
-      "parity": {
-        "type": "choice",
-        "desc": "校验位",
-        "examples": [
-          "N",
-          "E",
-          "O"
-        ],
-        "note": "set 修改后需 /serial open 生效"
-      },
-      "bytesize": {
-        "type": "int",
-        "desc": "数据位",
-        "examples": [
-          8
-        ],
-        "note": "set 修改后需 /serial open 生效"
-      },
-      "display": {
-        "type": "choice",
-        "required": false,
-        "desc": "RX 数据显示格式 (connect/set)",
-        "examples": [
-          "hex",
-          "ascii"
-        ],
-        "default": "hex",
-        "note": "hex=十六进制大写空格分隔, ascii=可打印字符+控制符转义"
-      },
-      "hex": {
-        "type": "str",
-        "desc": "发送数据(十六进制)"
-      },
-      "timeout": {
-        "type": "int",
-        "desc": "超时(秒)"
+      "search": {
+        "desc": "Search protocol messages by keyword, DI, AFN, func, or direction. /find 初始化档案 or /find E8020102",
+        "params": {
+          "proto": {
+            "type": "choice",
+            "required": false,
+            "desc": "协议类型（不指定则搜索全部）",
+            "examples": [
+              "dlt645",
+              "csg"
+            ]
+          },
+          "meaning": {
+            "type": "str",
+            "required": false,
+            "desc": "全文模糊搜索关键词",
+            "examples": [
+              "初始化",
+              "查询"
+            ]
+          },
+          "filter": {
+            "type": "str",
+            "required": false,
+            "repeatable": true,
+            "desc": "额外 AND 过滤条件，可多次使用",
+            "examples": [
+              "档案",
+              "uplink",
+              "心跳"
+            ]
+          },
+          "di": {
+            "type": "str",
+            "required": false,
+            "desc": "按 DI 精确匹配",
+            "examples": [
+              "E8020102",
+              "00010000"
+            ]
+          },
+          "afn": {
+            "type": "hex",
+            "required": false,
+            "desc": "按 AFN 精确匹配（CSG）",
+            "examples": [
+              "0x01",
+              "0x06"
+            ]
+          },
+          "func": {
+            "type": "hex",
+            "required": false,
+            "desc": "按功能码精确匹配（DLT645）",
+            "examples": [
+              "0x11",
+              "0x13"
+            ]
+          },
+          "dir": {
+            "type": "choice",
+            "required": false,
+            "desc": "按传输方向过滤",
+            "examples": [
+              "downlink",
+              "uplink"
+            ]
+          }
+        }
       }
-    },
-    "sub_commands": {
-      "connect": "First-time connection with port/baudrate/parity params",
-      "open": "Re-open last connection without re-specifying params",
-      "close": "Close current serial connection",
-      "send": "Send hex frame and wait for response",
-      "set": "Change serial params (takes effect on next open)",
-      "disconnect": "Alias for close",
-      "ports": "List available serial ports and connection status"
     }
   },
   "help": {
@@ -296,15 +483,126 @@
     "module": "console.handlers.help",
     "handler": "handle",
     "enabled": true,
-    "params": {
-      "target": {
-        "type": "str",
-        "required": false,
-        "desc": "Command name, e.g. /serial",
-        "examples": [
-          "/serial",
-          "/serial open"
-        ]
+    "params": {},
+    "sub_commands": {
+      "show": {
+        "desc": "Show command help. /help /serial or /help \"/serial open\"",
+        "params": {
+          "target": {
+            "type": "str",
+            "required": false,
+            "desc": "Command name, e.g. /serial",
+            "examples": [
+              "/serial",
+              "/serial open"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "print": {
+    "desc": "Print text with variable interpolation. ${name} / ${object.field}",
+    "module": "console.handlers.print",
+    "handler": "handle",
+    "enabled": true,
+    "params": {},
+    "sub_commands": {
+      "text": {
+        "desc": "Print text with variable interpolation. ${name} / ${object.field}",
+        "params": {
+          "text": {
+            "type": "str",
+            "required": true,
+            "desc": "文本内容，支持 ${name} 变量引用和 ${object.field} 路径访问",
+            "examples": [
+              "当前协议：${protocol}",
+              "${frame}",
+              "AFN=${afn}"
+            ]
+          },
+          "raw": {
+            "type": "bool",
+            "required": false,
+            "desc": "原样输出，不解析变量引用"
+          }
+        }
+      }
+    }
+  },
+  "request": {
+    "desc": "Send a frame and wait for matching response (automated test primitive)",
+    "module": "console.handlers.request",
+    "handler": "handle",
+    "enabled": true,
+    "params": {},
+    "sub_commands": {
+      "send": {
+        "desc": "Send a frame and wait for matching response (automated test primitive)",
+        "params": {
+          "send": {
+            "type": "str",
+            "required": true,
+            "order": 1,
+            "desc": "Hex frame to send",
+            "examples": [
+              "68 0C 00 40 03 01 01 03 00 E8 30 16"
+            ]
+          },
+          "timeout": {
+            "type": "int",
+            "required": false,
+            "desc": "Max wait time in ms",
+            "examples": [
+              3000,
+              5000
+            ],
+            "default": 5000
+          },
+          "proto": {
+            "type": "choice",
+            "required": false,
+            "desc": "Protocol for decode (auto-detect if omitted)",
+            "examples": [
+              "csg",
+              "dlt645"
+            ]
+          },
+          "wait.afn": {
+            "type": "str",
+            "required": false,
+            "desc": "Expected AFN in response"
+          },
+          "wait.di": {
+            "type": "str",
+            "required": false,
+            "desc": "Expected DI in response"
+          },
+          "wait.dir": {
+            "type": "choice",
+            "required": false,
+            "desc": "Expected direction in response",
+            "examples": [
+              "uplink",
+              "downlink"
+            ]
+          },
+          "*": {
+            "type": "dynamic",
+            "required": false,
+            "desc": "Additional wait paths: --wait.user_data.result=success"
+          },
+          "to": {
+            "type": "str",
+            "required": false,
+            "recommended": true,
+            "desc": "Serial connection target",
+            "examples": [
+              "default",
+              "cco"
+            ]
+          }
+        }
       }
     }
   },
@@ -313,152 +611,60 @@
     "module": "console.handlers.route",
     "handler": "handle",
     "enabled": true,
-    "params": {
-      "proto": {
-        "type": "choice",
-        "required": true,
-        "desc": "协议类型",
-        "examples": [
-          "dlt645",
-          "csg"
-        ]
-      },
-      "func": {
-        "type": "hex",
-        "required": false,
-        "desc": "功能码 (DLT645)",
-        "examples": [
-          "0x11",
-          "0x13"
-        ]
-      },
-      "afn": {
-        "type": "hex",
-        "required": false,
-        "desc": "应用功能码 (CSG)",
-        "examples": [
-          "0x00",
-          "0x06"
-        ]
-      },
-      "di": {
-        "type": "str",
-        "required": false,
-        "desc": "数据标识DI",
-        "examples": [
-          "00010000",
-          "E8010601"
-        ]
-      },
-      "dir": {
-        "type": "choice",
-        "required": false,
-        "desc": "传输方向",
-        "examples": [
-          "downlink",
-          "uplink"
-        ],
-        "default": "downlink"
-      }
-    },
-    "sub_commands": {}
-  },
-  "print": {
-    "desc": "Print text with variable interpolation. ${name} / ${object.field}",
-    "module": "console.handlers.print",
-    "handler": "handle",
-    "enabled": true,
-    "params": {
-      "text": {
-        "type": "str",
-        "required": true,
-        "desc": "文本内容，支持 ${name} 变量引用和 ${object.field} 路径访问",
-        "examples": [
-          "当前协议：${protocol}",
-          "${frame}",
-          "AFN=${afn}"
-        ]
-      },
-      "raw": {
-        "type": "bool",
-        "required": false,
-        "desc": "原样输出，不解析变量引用"
-      }
-    },
-    "sub_commands": {}
-  },
-  "var": {
-    "desc": "Variable management. Sub: set, get, show, delete, clear, export, import",
-    "module": "console.handlers.var",
-    "handler": "handle",
-    "enabled": true,
-    "params": {
-      "sub": {
-        "type": "choice",
-        "required": true,
-        "desc": "子命令",
-        "examples": [
-          "set",
-          "get",
-          "show",
-          "delete",
-          "clear",
-          "export",
-          "import"
-        ]
-      },
-      "name": {
-        "type": "str",
-        "desc": "变量名 (set/get/delete)"
-      },
-      "value": {
-        "type": "str",
-        "required": false,
-        "desc": "变量值 (set)"
-      },
-      "type": {
-        "type": "choice",
-        "required": false,
-        "desc": "变量类型 (set)",
-        "examples": [
-          "string",
-          "integer",
-          "decimal",
-          "boolean",
-          "hex",
-          "json"
-        ],
-        "default": "string"
-      },
-      "file": {
-        "type": "str",
-        "required": false,
-        "desc": "YAML文件路径 (export/import)"
-      },
-      "mode": {
-        "type": "choice",
-        "required": false,
-        "desc": "导入模式 (import)",
-        "examples": [
-          "merge",
-          "replace"
-        ],
-        "default": "merge"
-      },
-      "json": {
-        "type": "bool",
-        "required": false,
-        "desc": "以JSON格式输出 (show)"
-      }
-    },
+    "params": {},
     "sub_commands": {
-      "set": "Set a variable: /var set <name> --value=<value> [--type=<type>]",
-      "get": "Get a variable value: /var get <name>",
-      "show": "Show all variables (table or --json)",
-      "delete": "Delete a variable: /var delete <name>",
-      "clear": "Clear all variables",
-      "export": "Export variables to YAML: /var export --file=<path.yaml>",
-      "import": "Import variables from YAML: /var import --file=<path.yaml> [--mode=merge|replace]"
+      "resolve": {
+        "desc": "Resolve route path and input schema for target. Agent calls this before /build.",
+        "params": {
+          "proto": {
+            "type": "choice",
+            "required": true,
+            "order": 1,
+            "desc": "协议类型",
+            "examples": [
+              "dlt645",
+              "csg"
+            ]
+          },
+          "func": {
+            "type": "hex",
+            "required": false,
+            "desc": "功能码 (DLT645)",
+            "examples": [
+              "0x11",
+              "0x13"
+            ]
+          },
+          "afn": {
+            "type": "hex",
+            "required": false,
+            "desc": "应用功能码 (CSG)",
+            "examples": [
+              "0x00",
+              "0x06"
+            ]
+          },
+          "di": {
+            "type": "str",
+            "required": false,
+            "desc": "数据标识DI",
+            "examples": [
+              "00010000",
+              "E8010601"
+            ]
+          },
+          "dir": {
+            "type": "choice",
+            "required": false,
+            "desc": "传输方向",
+            "examples": [
+              "downlink",
+              "uplink"
+            ],
+            "default": "downlink"
+          }
+        }
+      }
     }
   },
   "run": {
@@ -466,223 +672,702 @@
     "module": "console.handlers.run",
     "handler": "handle",
     "enabled": true,
-    "params": {
-      "file": {
-        "type": "str",
-        "required": true,
-        "desc": "TestPlan YAML file",
-        "examples": [
-          "tests/sta_join.yaml"
-        ]
-      },
-      "dry-run": {
-        "type": "bool",
-        "required": false,
-        "desc": "Resolve and report steps without executing serial/protocol commands"
-      },
-      "json": {
-        "type": "bool",
-        "required": false,
-        "desc": "Reserved for structured clients; command response is always structured"
-      },
-      "var": {
-        "type": "str",
-        "required": false,
-        "desc": "Override plan variable; may be repeated",
-        "examples": [
-          "cco=COM9",
-          "sta=COM10"
-        ]
-      },
-      "timeout": {
-        "type": "int",
-        "required": false,
-        "desc": "Override total run timeout in ms",
-        "examples": [
-          120000
-        ]
-      },
-      "report": {
-        "type": "str",
-        "required": false,
-        "desc": "Report output directory",
-        "examples": [
-          "reports/sta_join_001"
-        ]
+    "params": {},
+    "sub_commands": {
+      "execute": {
+        "desc": "Execute a YAML TestPlan with ordered serial/protocol test steps",
+        "params": {
+          "file": {
+            "type": "str",
+            "required": true,
+            "desc": "TestPlan YAML file",
+            "examples": [
+              "tests/sta_join.yaml"
+            ]
+          },
+          "dry-run": {
+            "type": "bool",
+            "required": false,
+            "desc": "Resolve and report steps without executing serial/protocol commands"
+          },
+          "json": {
+            "type": "bool",
+            "required": false,
+            "desc": "Reserved for structured clients; command response is always structured"
+          },
+          "var": {
+            "type": "str",
+            "required": false,
+            "repeatable": true,
+            "desc": "Override plan variable; may be repeated",
+            "examples": [
+              "cco=COM9",
+              "sta=COM10"
+            ]
+          },
+          "timeout": {
+            "type": "int",
+            "required": false,
+            "desc": "Override total run timeout in ms",
+            "examples": [
+              120000
+            ]
+          },
+          "report": {
+            "type": "str",
+            "required": false,
+            "desc": "Report output directory",
+            "examples": [
+              "reports/sta_join_001"
+            ]
+          }
+        }
       }
-    },
-    "sub_commands": {}
+    }
+  },
+  "serial": {
+    "desc": "Serial port management. Sub: connect, open, close, send, set, disconnect, ports",
+    "module": "console.handlers.serial_cmd",
+    "handler": "handle",
+    "enabled": true,
+    "params": {},
+    "sub_commands": {
+      "connect": {
+        "desc": "First-time connection with port/baudrate/parity params",
+        "params": {
+          "port": {
+            "type": "str",
+            "required": true,
+            "desc": "串口号",
+            "examples": [
+              "mock://loop",
+              "virtual://demo",
+              "/dev/ttyUSB0",
+              "COM3"
+            ],
+            "default": "mock://loop",
+            "note": "mock=内存回环, virtual=跨进程总线, 其他=物理串口"
+          },
+          "baudrate": {
+            "type": "int",
+            "required": false,
+            "desc": "波特率",
+            "examples": [
+              9600,
+              115200
+            ],
+            "default": 9600
+          },
+          "parity": {
+            "type": "choice",
+            "required": false,
+            "desc": "校验位",
+            "examples": [
+              "N",
+              "E",
+              "O"
+            ],
+            "default": "N"
+          },
+          "bytesize": {
+            "type": "int",
+            "required": false,
+            "desc": "数据位",
+            "examples": [
+              8
+            ],
+            "default": 8
+          },
+          "display": {
+            "type": "choice",
+            "required": false,
+            "desc": "RX 终端显示格式",
+            "examples": [
+              "hex",
+              "ascii"
+            ],
+            "default": "hex"
+          },
+          "to": {
+            "type": "str",
+            "required": false,
+            "recommended": true,
+            "desc": "连接目标",
+            "examples": [
+              "default",
+              "cco",
+              "sta1"
+            ],
+            "default": "default",
+            "note": "多连接时后续 send/close 需指定同一 to"
+          }
+        }
+      },
+      "open": {
+        "desc": "Re-open last connection without re-specifying params",
+        "params": {
+          "to": {
+            "type": "str",
+            "required": false,
+            "recommended": true,
+            "desc": "连接目标",
+            "examples": [
+              "default",
+              "cco"
+            ],
+            "default": "default"
+          }
+        }
+      },
+      "close": {
+        "desc": "Close a serial connection",
+        "params": {
+          "to": {
+            "type": "str",
+            "required": false,
+            "recommended": true,
+            "desc": "连接目标",
+            "examples": [
+              "default",
+              "cco"
+            ]
+          }
+        }
+      },
+      "disconnect": {
+        "desc": "Alias for close",
+        "params": {
+          "to": {
+            "type": "str",
+            "required": false,
+            "recommended": true,
+            "desc": "连接目标",
+            "examples": [
+              "default",
+              "cco"
+            ]
+          }
+        }
+      },
+      "send": {
+        "desc": "Send hex frame only (RX handled by background monitor or /wait-frame)",
+        "params": {
+          "hex": {
+            "type": "str",
+            "required": true,
+            "desc": "发送数据(十六进制)",
+            "examples": [
+              "68 0C 00 40 03 01 01 03 00 E8 30 16"
+            ]
+          },
+          "to": {
+            "type": "str",
+            "required": false,
+            "recommended": true,
+            "desc": "连接目标",
+            "examples": [
+              "default",
+              "cco"
+            ],
+            "note": "仅一个已连接串口时可省略；多连接时必须指定"
+          }
+        }
+      },
+      "set": {
+        "desc": "Change serial params (takes effect on next open)",
+        "params": {
+          "baudrate": {
+            "type": "int",
+            "required": false,
+            "desc": "波特率",
+            "examples": [
+              9600,
+              115200
+            ]
+          },
+          "parity": {
+            "type": "choice",
+            "required": false,
+            "desc": "校验位",
+            "examples": [
+              "N",
+              "E",
+              "O"
+            ]
+          },
+          "bytesize": {
+            "type": "int",
+            "required": false,
+            "desc": "数据位",
+            "examples": [
+              8
+            ]
+          },
+          "display": {
+            "type": "choice",
+            "required": false,
+            "desc": "RX 终端显示格式",
+            "examples": [
+              "hex",
+              "ascii"
+            ]
+          },
+          "to": {
+            "type": "str",
+            "required": false,
+            "recommended": true,
+            "desc": "连接目标",
+            "examples": [
+              "default",
+              "cco"
+            ]
+          }
+        }
+      },
+      "ports": {
+        "desc": "List available serial ports and connection status",
+        "params": {}
+      },
+      "list": {
+        "desc": "Alias for ports",
+        "params": {}
+      }
+    }
+  },
+  "split": {
+    "desc": "Open a new terminal window/tab/pane inheriting current session state",
+    "module": "console.handlers.split",
+    "handler": "handle",
+    "enabled": true,
+    "params": {},
+    "sub_commands": {
+      "open": {
+        "desc": "Open a new terminal window/tab/pane inheriting current session state",
+        "params": {
+          "mode": {
+            "type": "choice",
+            "required": false,
+            "desc": "启动模式",
+            "examples": [
+              "split",
+              "tab",
+              "window"
+            ],
+            "default": "tab"
+          },
+          "dry-run": {
+            "type": "bool",
+            "required": false,
+            "desc": "仅打印启动命令，不实际执行"
+          }
+        }
+      }
+    }
+  },
+  "time": {
+    "desc": "Toggle timestamp prefix on serial TX/RX terminal display. /time on | /time off",
+    "module": "console.handlers.time",
+    "handler": "handle",
+    "enabled": true,
+    "params": {},
+    "sub_commands": {
+      "on": {
+        "desc": "Enable timestamp on serial display output",
+        "params": {}
+      },
+      "off": {
+        "desc": "Disable timestamp on serial display output",
+        "params": {}
+      }
+    }
   },
   "upg": {
     "desc": "Firmware upgrade via CSG AFN=07 file transfer",
     "module": "console.handlers.upg",
     "handler": "handle",
     "enabled": true,
-    "params": {
-      "file": {
-        "type": "str",
-        "required": true,
-        "desc": "Firmware file path",
-        "examples": [
-          "database/bin/firmware_v2.bin"
-        ]
-      },
-      "segment-size": {
-        "type": "int",
-        "required": false,
-        "desc": "Segment size (128/256/512/1024)",
-        "examples": [
-          1024,
-          512
-        ],
-        "default": 1024
-      },
-      "timeout": {
-        "type": "int",
-        "required": false,
-        "desc": "Per-segment timeout (seconds)",
-        "examples": [
-          5,
-          10
-        ],
-        "default": 5
-      },
-      "retries": {
-        "type": "int",
-        "required": false,
-        "desc": "Retries per segment",
-        "examples": [
-          3
-        ],
-        "default": 3
-      },
-      "dest": {
-        "type": "str",
-        "required": false,
-        "desc": "Destination address",
-        "examples": [
-          "000000000000"
-        ]
-      },
-      "name": {
-        "type": "str",
-        "required": false,
-        "desc": "Serial connection name",
-        "examples": [
-          "default",
-          "cco"
-        ]
+    "params": {},
+    "sub_commands": {
+      "transfer": {
+        "desc": "Firmware upgrade via CSG AFN=07 file transfer",
+        "params": {
+          "file": {
+            "type": "str",
+            "required": true,
+            "order": 1,
+            "desc": "Firmware file path (quotes and database/bin relative paths supported)",
+            "examples": [
+              "database/bin/firmware_v2.bin",
+              "\"/path/with spaces/fw.bin\""
+            ]
+          },
+          "proto": {
+            "type": "str",
+            "required": false,
+            "desc": "Protocol (default csg; aliases csg2016, csg_2016)",
+            "examples": [
+              "csg",
+              "csg2016"
+            ],
+            "default": "csg"
+          },
+          "segment-size": {
+            "type": "int",
+            "required": false,
+            "desc": "Segment size (128/256/512/1024)",
+            "examples": [
+              1024,
+              512
+            ],
+            "default": 1024
+          },
+          "file-type": {
+            "type": "int",
+            "required": false,
+            "desc": "File type (0=clear, 1=CCO module, 2=slave module, 3=collector)",
+            "examples": [
+              1,
+              2
+            ],
+            "default": 1
+          },
+          "file-id": {
+            "type": "int",
+            "required": false,
+            "desc": "File ID",
+            "examples": [
+              1
+            ],
+            "default": 1
+          },
+          "dest": {
+            "type": "str",
+            "required": false,
+            "desc": "Destination address",
+            "examples": [
+              "999999999999"
+            ],
+            "default": "999999999999"
+          },
+          "timeout-min": {
+            "type": "int",
+            "required": false,
+            "desc": "File transfer timeout in minutes",
+            "examples": [
+              30
+            ],
+            "default": 30
+          },
+          "ack-timeout": {
+            "type": "str",
+            "required": false,
+            "desc": "Per-segment ACK timeout (e.g. 5s, 500ms); alias: timeout",
+            "examples": [
+              "5s",
+              "10s"
+            ],
+            "default": "5s"
+          },
+          "timeout": {
+            "type": "str",
+            "required": false,
+            "desc": "Alias for ack-timeout",
+            "examples": [
+              "5s"
+            ]
+          },
+          "final-ack-timeout": {
+            "type": "str",
+            "required": false,
+            "desc": "Final segment ACK timeout",
+            "examples": [
+              "30s"
+            ],
+            "default": "30s"
+          },
+          "interval": {
+            "type": "str",
+            "required": false,
+            "desc": "Inter-frame delay",
+            "examples": [
+              "0ms",
+              "100ms"
+            ],
+            "default": "0"
+          },
+          "ack-wait": {
+            "type": "str",
+            "required": false,
+            "desc": "ACK wait_time handling: ignore or respect",
+            "examples": [
+              "ignore",
+              "respect"
+            ],
+            "default": "ignore"
+          },
+          "resume": {
+            "type": "bool",
+            "required": false,
+            "desc": "Enable resume from E8000703 query",
+            "default": true
+          },
+          "no-resume": {
+            "type": "bool",
+            "required": false,
+            "desc": "Disable resume"
+          },
+          "clear": {
+            "type": "str",
+            "required": false,
+            "desc": "Clear mode: auto, always, never",
+            "examples": [
+              "auto",
+              "always",
+              "never"
+            ],
+            "default": "auto"
+          },
+          "finish": {
+            "type": "str",
+            "required": false,
+            "desc": "Finish mode: none, progress, report",
+            "examples": [
+              "none",
+              "progress",
+              "report"
+            ],
+            "default": "none"
+          },
+          "finish-timeout": {
+            "type": "str",
+            "required": false,
+            "desc": "Finish progress poll timeout",
+            "examples": [
+              "60s"
+            ],
+            "default": "60s"
+          },
+          "seq": {
+            "type": "int",
+            "required": false,
+            "desc": "Starting SEQ value",
+            "examples": [
+              1
+            ],
+            "default": 1
+          },
+          "retries": {
+            "type": "int",
+            "required": false,
+            "desc": "Retries per segment",
+            "examples": [
+              3
+            ],
+            "default": 3
+          },
+          "to": {
+            "type": "str",
+            "required": false,
+            "desc": "Serial connection name; omitted when exactly one connection is active",
+            "examples": [
+              "cco"
+            ]
+          },
+          "no-cache": {
+            "type": "bool",
+            "required": false,
+            "desc": "Force rebuild .upg_cache"
+          },
+          "build-only": {
+            "type": "bool",
+            "required": false,
+            "desc": "Only build/validate cache, do not transfer"
+          }
+        }
       }
-    },
-    "sub_commands": {}
+    }
+  },
+  "var": {
+    "desc": "Variable management. Sub: set, get, show, delete, clear, export, import",
+    "module": "console.handlers.var",
+    "handler": "handle",
+    "enabled": true,
+    "params": {},
+    "sub_commands": {
+      "set": {
+        "desc": "Set a variable: /var set <name> --value=<value> [--type=<type>]",
+        "params": {
+          "name": {
+            "type": "str",
+            "required": false,
+            "recommended": true,
+            "positional": true,
+            "order": 0,
+            "desc": "变量名"
+          },
+          "value": {
+            "type": "str",
+            "required": true,
+            "desc": "变量值"
+          },
+          "type": {
+            "type": "choice",
+            "required": false,
+            "desc": "变量类型",
+            "examples": [
+              "string",
+              "integer",
+              "decimal",
+              "boolean",
+              "hex",
+              "json"
+            ],
+            "default": "string"
+          }
+        }
+      },
+      "get": {
+        "desc": "Get a variable value: /var get <name>",
+        "params": {
+          "name": {
+            "type": "str",
+            "required": false,
+            "recommended": true,
+            "positional": true,
+            "order": 0,
+            "desc": "变量名"
+          }
+        }
+      },
+      "show": {
+        "desc": "Show all variables (table or --json)",
+        "params": {
+          "json": {
+            "type": "bool",
+            "required": false,
+            "desc": "以 JSON 格式输出"
+          }
+        }
+      },
+      "delete": {
+        "desc": "Delete a variable: /var delete <name>",
+        "params": {
+          "name": {
+            "type": "str",
+            "required": false,
+            "recommended": true,
+            "positional": true,
+            "order": 0,
+            "desc": "变量名"
+          }
+        }
+      },
+      "clear": {
+        "desc": "Clear all variables",
+        "params": {}
+      },
+      "export": {
+        "desc": "Export variables to YAML: /var export --file=<path.yaml>",
+        "params": {
+          "file": {
+            "type": "str",
+            "required": true,
+            "desc": "YAML文件路径"
+          }
+        }
+      },
+      "import": {
+        "desc": "Import variables from YAML: /var import --file=<path.yaml> [--mode=merge|replace]",
+        "params": {
+          "file": {
+            "type": "str",
+            "required": true,
+            "desc": "YAML文件路径"
+          },
+          "mode": {
+            "type": "choice",
+            "required": false,
+            "desc": "导入模式",
+            "examples": [
+              "merge",
+              "replace"
+            ],
+            "default": "merge"
+          }
+        }
+      }
+    }
   },
   "wait-frame": {
     "desc": "Listen on serial port, decode frames, and match against expect conditions",
     "module": "console.handlers.wait_frame",
     "handler": "handle",
     "enabled": true,
-    "params": {
-      "name": {
-        "type": "str",
-        "required": false,
-        "desc": "Serial connection name",
-        "examples": ["default", "cco"]
-      },
-      "timeout": {
-        "type": "int",
-        "required": false,
-        "desc": "Max wait time in ms",
-        "examples": [5000, 10000],
-        "default": 5000
-      },
-      "proto": {
-        "type": "choice",
-        "required": false,
-        "desc": "Protocol to decode (auto-detect if omitted)",
-        "examples": ["csg", "dlt645"]
-      },
-      "expect.afn": {
-        "type": "str",
-        "required": false,
-        "desc": "Expected AFN value"
-      },
-      "expect.di": {
-        "type": "str",
-        "required": false,
-        "desc": "Expected DI value"
-      },
-      "expect.dir": {
-        "type": "choice",
-        "required": false,
-        "desc": "Expected direction",
-        "examples": ["uplink", "downlink"]
-      },
-      "expect": {
-        "type": "str",
-        "required": false,
-        "desc": "Full expect JSON: {\"all\":[{\"path\":\"$.afn\",\"op\":\"eq\",\"value\":\"04\"}]}"
-      },
-      "*": {
-        "type": "dynamic",
-        "required": false,
-        "desc": "Additional expect paths: --expect.user_data.result=success"
+    "params": {},
+    "sub_commands": {
+      "listen": {
+        "desc": "Listen on serial port, decode frames, and match against expect conditions",
+        "params": {
+          "timeout": {
+            "type": "int",
+            "required": false,
+            "desc": "Max wait time in ms",
+            "examples": [
+              5000,
+              10000
+            ],
+            "default": 5000
+          },
+          "proto": {
+            "type": "choice",
+            "required": false,
+            "desc": "Protocol to decode (auto-detect if omitted)",
+            "examples": [
+              "csg",
+              "dlt645"
+            ]
+          },
+          "expect.afn": {
+            "type": "str",
+            "required": false,
+            "desc": "Expected AFN value"
+          },
+          "expect.di": {
+            "type": "str",
+            "required": false,
+            "desc": "Expected DI value"
+          },
+          "expect.dir": {
+            "type": "choice",
+            "required": false,
+            "desc": "Expected direction",
+            "examples": [
+              "uplink",
+              "downlink"
+            ]
+          },
+          "expect": {
+            "type": "str",
+            "required": false,
+            "desc": "Full expect JSON: {\"all\":[{\"path\":\"$.afn\",\"op\":\"eq\",\"value\":\"04\"}]}"
+          },
+          "*": {
+            "type": "dynamic",
+            "required": false,
+            "desc": "Additional expect paths: --expect.user_data.result=success"
+          },
+          "to": {
+            "type": "str",
+            "required": false,
+            "recommended": true,
+            "desc": "Serial connection target",
+            "examples": [
+              "default",
+              "cco"
+            ]
+          }
+        }
       }
-    },
-    "sub_commands": {}
-  },
-  "request": {
-    "desc": "Send a frame and wait for matching response (automated test primitive)",
-    "module": "console.handlers.request",
-    "handler": "handle",
-    "enabled": true,
-    "params": {
-      "name": {
-        "type": "str",
-        "required": false,
-        "desc": "Serial connection name",
-        "examples": ["default", "cco"]
-      },
-      "send": {
-        "type": "str",
-        "required": true,
-        "desc": "Hex frame to send",
-        "examples": ["68 0C 00 40 03 01 01 03 00 E8 30 16"]
-      },
-      "timeout": {
-        "type": "int",
-        "required": false,
-        "desc": "Max wait time in ms",
-        "examples": [3000, 5000],
-        "default": 5000
-      },
-      "proto": {
-        "type": "choice",
-        "required": false,
-        "desc": "Protocol for decode (auto-detect if omitted)",
-        "examples": ["csg", "dlt645"]
-      },
-      "wait.afn": {
-        "type": "str",
-        "required": false,
-        "desc": "Expected AFN in response"
-      },
-      "wait.di": {
-        "type": "str",
-        "required": false,
-        "desc": "Expected DI in response"
-      },
-      "wait.dir": {
-        "type": "choice",
-        "required": false,
-        "desc": "Expected direction in response",
-        "examples": ["uplink", "downlink"]
-      },
-      "*": {
-        "type": "dynamic",
-        "required": false,
-        "desc": "Additional wait paths: --wait.user_data.result=success"
-      }
-    },
-    "sub_commands": {}
+    }
   }
 }

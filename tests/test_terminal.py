@@ -24,6 +24,8 @@ def test_plain_terminal_executes_one_command_and_exits():
 
 
 def test_terminal_completion_uses_runtime_registry():
-    candidates = _completion_candidates("/se")
+    from console.terminal import _completion_candidates
+
+    candidates = [item for item, _ in _completion_candidates("/se")]
 
     assert "/serial" in candidates

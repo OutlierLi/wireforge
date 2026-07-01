@@ -7,15 +7,29 @@ runtime 管理多轮交互状态，返回 protocol-tui.v1 契约响应。
 - 执行命令前解析 args 中的 ${name} / ${object.field} 引用。
 - 完整引用保留变量类型，模板引用结果统一为 string。
 - 命令成功后自动写入 last_result / last_* 结果变量。
+- 串口 RX（后台 monitor 或 wait-frame/request）写入 last_rx。
 """
 
 from __future__ import annotations
 
 import re
-import shlex, uuid
+import shlex
+import uuid
 from typing import Any
 
+from console.arg_utils import (
+    HEX_MERGE_KEYS,
+    clean_string_arg,
+    merge_hex_value_tail,
+    merge_quoted_value_tail,
+)
+
 from console.command import registry
+from console.command_schema import (
+    effective_params,
+    validate_args,
+    sorted_params,
+)
 from console.protocol import (
     Interaction,
     response_success, response_need_input, response_need_disambiguation,
@@ -36,7 +50,7 @@ class Runtime:
     def execute(self, command: str, args: dict[str, Any]) -> dict:
         """执行命令。返回 protocol-tui.v1 响应。"""
         command = command.lstrip("/")
-        args = _normalize_args(args)
+        args = _consume_sub_command(command, _normalize_args(args))
 
         # 解析变量引用 ${name} / ${object.field}（print 自己处理引用）
         if command != "print":
@@ -46,6 +60,13 @@ class Runtime:
         if not fn:
             return response_no_route(f"unknown command: {command}")
 
+        cmd = registry.get(command)
+        if cmd:
+            schema_error = validate_args(cmd, args)
+            if schema_error:
+                self._set_error_result(command, schema_error.get("error", ""))
+                return self._map_result(command, args, schema_error)
+
         try:
             result = fn(args)
         except Exception as e:
@@ -53,7 +74,7 @@ class Runtime:
             return response_execution_error(str(e))
 
         # 自动写入结果变量
-        self._set_result_vars(command, result)
+        self._set_result_vars(command, args, result)
 
         # 将业务模块的 dict 映射为协议响应
         return self._map_result(command, args, result)
@@ -83,44 +104,19 @@ class Runtime:
         merged = {**parsed_args, **(args or {})}
         return self.execute(command, merged)
 
-    def complete(self, prefix: str = "", command: str = "") -> dict:
-        """返回命令/参数补全候选。"""
-        prefix = prefix or ""
-        command = command.lstrip("/")
-        completions: list[dict[str, Any]] = []
+    def complete(
+        self,
+        prefix: str = "",
+        command: str = "",
+        sub: str = "",
+        text: str = "",
+    ) -> dict:
+        """返回命令/参数补全候选（按命令树顺序、已选去重）。"""
+        from console.completion import complete_legacy, complete_text
 
-        if not command:
-            raw = prefix[1:] if prefix.startswith("/") else prefix
-            for name in registry.names():
-                if not raw or name.startswith(raw):
-                    completions.append({
-                        "kind": "command",
-                        "value": f"/{name}",
-                        "label": f"/{name}",
-                    })
-        else:
-            cmd = registry.get(command)
-            if cmd:
-                raw = prefix[2:] if prefix.startswith("--") else prefix
-                for key, meta in cmd.params.items():
-                    if key == "*":
-                        continue
-                    if not raw or key.startswith(raw):
-                        item = {
-                            "kind": "argument",
-                            "value": f"--{key}",
-                            "label": f"--{key}",
-                            "type": meta.get("type", "str"),
-                            "required": meta.get("required", False),
-                            "description": meta.get("desc", ""),
-                        }
-                        if "examples" in meta:
-                            item["examples"] = meta["examples"]
-                        if "default" in meta:
-                            item["default"] = meta["default"]
-                        completions.append(item)
-
-        return response_success({"completions": completions})
+        if text:
+            return complete_text(text)
+        return complete_legacy(prefix=prefix, command=command, sub=sub)
 
     # ── 变量引用解析 ─────────────────────────────────────────────────
 
@@ -176,8 +172,8 @@ class Runtime:
 
     # ── 结果变量 ────────────────────────────────────────────────────
 
-    def _set_result_vars(self, command: str, result: dict):
-        """命令成功后自动写入结果变量（仅 build/decode/serial）。"""
+    def _set_result_vars(self, command: str, args: dict[str, Any], result: dict):
+        """命令成功后自动写入结果变量。"""
         from console.variable_store import store as var_store
 
         if not result.get("success"):
@@ -222,16 +218,92 @@ class Runtime:
             except Exception:
                 pass
 
-        elif command in ("serial",):
+        elif command == "find":
             try:
-                var_store.set("last_send", data, "json", source={
-                    "kind": "auto", "command": command,
+                var_store.set("last_find", data, "json", source={
+                    "kind": "auto", "command": "find",
                 })
             except Exception:
                 pass
             try:
                 var_store.set("last_result", data, "json", source={
+                    "kind": "auto", "command": "find",
+                })
+            except Exception:
+                pass
+
+        elif command == "split":
+            try:
+                var_store.set("last_split", data, "json", source={
+                    "kind": "auto", "command": "split",
+                })
+            except Exception:
+                pass
+            try:
+                var_store.set("last_result", data, "json", source={
+                    "kind": "auto", "command": "split",
+                })
+            except Exception:
+                pass
+
+        elif command == "serial":
+            sub = str(args.get("sub") or "").lower()
+            if sub == "send" or ("sent" in data and "sent_bytes" in data):
+                try:
+                    var_store.set("last_send", data, "json", source={
+                        "kind": "auto", "command": "serial.send",
+                    })
+                except Exception:
+                    pass
+            try:
+                var_store.set("last_result", data, "json", source={
                     "kind": "auto", "command": command,
+                })
+            except Exception:
+                pass
+
+        elif command == "wait-frame":
+            try:
+                update_last_rx({
+                    "frame_hex": data.get("frame_hex"),
+                    "decoded": data.get("decoded"),
+                    "matched": data.get("matched"),
+                    "elapsed_ms": data.get("elapsed_ms"),
+                    "frame_index": data.get("frame_index"),
+                }, command="wait-frame")
+            except Exception:
+                pass
+            try:
+                var_store.set("last_result", data, "json", source={
+                    "kind": "auto", "command": "wait-frame",
+                })
+            except Exception:
+                pass
+
+        elif command == "request":
+            resp = data.get("response") if isinstance(data.get("response"), dict) else {}
+            req = data.get("request") if isinstance(data.get("request"), dict) else {}
+            try:
+                update_last_rx({
+                    "frame_hex": resp.get("frame_hex"),
+                    "decoded": resp.get("decoded"),
+                    "frame_index": resp.get("frame_index"),
+                    "elapsed_ms": data.get("elapsed_ms"),
+                }, command="request")
+            except Exception:
+                pass
+            if req.get("frame_hex"):
+                try:
+                    var_store.set("last_send", {
+                        "frame_hex": req.get("frame_hex"),
+                        "decoded": req.get("decoded"),
+                        "sent": req.get("frame_hex"),
+                    }, "json", source={"kind": "auto", "command": "request"})
+                except Exception:
+                    pass
+            try:
+                var_store.set("last_result", data, "json", source={
+                    "kind": "auto", "command": "request",
                 })
             except Exception:
                 pass
@@ -344,10 +416,15 @@ def parse_command_text(text: str) -> tuple[str, dict[str, Any]]:
             raw = token[2:]
             if "=" in raw:
                 key, value = raw.split("=", 1)
-                _add_arg(args, key, value)
+                value, i = merge_quoted_value_tail(value, parts, i)
+                _add_arg(args, key, clean_string_arg(value, key=key))
             elif i + 1 < len(parts) and not parts[i + 1].startswith("--"):
-                _add_arg(args, raw, parts[i + 1])
+                key = raw
+                value = parts[i + 1]
                 i += 1
+                if key in HEX_MERGE_KEYS:
+                    value, i = merge_hex_value_tail(value, parts, i)
+                _add_arg(args, key, clean_string_arg(value, key=key))
             else:
                 _add_arg(args, raw, True)
         else:
@@ -380,6 +457,37 @@ def _normalize_args(args: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _consume_sub_command(command: str, args: dict[str, Any]) -> dict[str, Any]:
+    """将位置参数中的子命令名移入 ``sub``，避免进入业务字段（如 build 的 ``_``）。"""
+    cmd = registry.get(command)
+    if not cmd or not cmd.sub_commands:
+        return args
+    out = dict(args)
+    if out.get("sub"):
+        return out
+    pos = list(out.get("_") or [])
+    if pos and str(pos[0]) in cmd.sub_commands:
+        out["sub"] = str(pos.pop(0))
+        if pos:
+            out["_"] = pos
+        else:
+            out.pop("_", None)
+    return out
+
+
 # ── 全局单例 ──────────────────────────────────────────────────────────
+
+def update_last_rx(payload: dict[str, Any], *, command: str = "serial.rx") -> None:
+    """写入 last_rx 变量（串口 RX chunk 或 wait-frame/request 匹配帧）。"""
+    from console.variable_store import store as var_store
+
+    try:
+        var_store.set("last_rx", payload, "json", source={
+            "kind": "auto",
+            "command": command,
+        })
+    except Exception:
+        pass
+
 
 runtime = Runtime()

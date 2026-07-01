@@ -1,5 +1,6 @@
-"""串口 JSON API — 连接、发送、接收、断开。
+"""串口 JSON API — 连接、发送、断开。
 
+send 只写 TX，不读 RX；接收由后台 monitor 与 /wait-frame 处理。
 输入/输出均为 JSON 格式，所有操作自动记录到 log/serial.log。
 """
 
@@ -12,8 +13,8 @@ from typing import Any
 
 from wireforge_serial.transport import SerialTransport, SerialSettings
 from wireforge_serial.logger import (
-    log_connect, log_disconnect, log_tx, log_rx, log_rx_timeout, log_rx_error,
-    display_tx, display_rx, display_rx_timeout, display_connect, display_disconnect,
+    log_connect, log_disconnect, log_tx, log_rx, log_rx_error,
+    display_tx, display_rx, display_connect, display_disconnect,
 )
 
 # 全局连接实例 — 所有串口后台运行，无 active 概念
@@ -79,12 +80,12 @@ def serial_open(args: dict[str, Any]) -> SerialResult:
             _connection_meta.pop(cid, None)
         t = SerialTransport(settings)
         t.open()
-        t.on_rx_chunk = lambda d: (_log_and_display_rx(cid, d))
+        bind_rx_display(t, cid)
         t.start_rx_monitor()
         _connections[cid] = t
         _connection_meta[cid] = {
             "id": cid,
-            "name": cid,
+            "to": cid,
             "port": port,
             "baudrate": settings.baudrate,
             "bytesize": settings.bytesize,
@@ -97,7 +98,7 @@ def serial_open(args: dict[str, Any]) -> SerialResult:
             "last_error": "",
         }
         result = SerialResult(True, "open", data={
-            "id": cid, "name": cid, "port": port, "baudrate": settings.baudrate,
+            "id": cid, "to": cid, "port": port, "baudrate": settings.baudrate,
             "bytesize": settings.bytesize, "parity": settings.parity,
             "stopbits": settings.stopbits, "status": "connected",
         })
@@ -111,15 +112,15 @@ def serial_open(args: dict[str, Any]) -> SerialResult:
 
 
 def serial_send(args: dict[str, Any]) -> SerialResult:
-    """发送数据并等待响应。
+    """发送数据（不读 RX；接收由后台 monitor 与 /wait-frame 处理）。
 
-    args: {hex, timeout?, id?}
+    args: {hex, id?}
     """
     args = _normalize_args(args)
     cid = _connection_id(args)
     t = _connections.get(cid)
     if not t:
-        return SerialResult(False, "send", error=f"not connected (name={cid})")
+        return SerialResult(False, "send", error=f"not connected (to={cid})")
 
     hex_str = str(args.get("hex", "")).replace(" ", "").replace("\n", "")
     if not hex_str:
@@ -130,9 +131,7 @@ def serial_send(args: dict[str, Any]) -> SerialResult:
     except ValueError as e:
         return SerialResult(False, "send", error=str(e))
 
-    timeout = float(args.get("timeout", 1.0))
     try:
-        # 先检查连接状态
         if not t.connected:
             reason = getattr(t, '_last_error', '') or "port not open"
             _connections.pop(cid, None)
@@ -141,22 +140,9 @@ def serial_send(args: dict[str, Any]) -> SerialResult:
             display_disconnect(cid, reason)
             return SerialResult(False, "send", error=reason)
 
-        # 设置实时显示回调
-        t.on_tx = lambda d: (_log_and_display_tx(cid, d))
-        t.clear_rx_buffer()
+        bind_rx_display(t, cid)
+        written = write_with_tx_display(t, cid, data)
 
-        written = t.write(data)
-        response = t.read_response(timeout)
-
-        # 清理回调
-        t.on_tx = None
-
-        # 超时提示
-        if not response:
-            log_rx_timeout(cid, timeout)
-            display_rx_timeout(cid, timeout)
-
-        # 发送后再次检查连接状态
         disconnect_reason = ""
         if not t.connected:
             disconnect_reason = getattr(t, '_last_error', '') or "port not open"
@@ -165,20 +151,14 @@ def serial_send(args: dict[str, Any]) -> SerialResult:
             log_disconnect(cid, disconnect_reason)
             display_disconnect(cid, disconnect_reason)
 
-        display = (_connection_meta.get(cid, {}).get("display") or
-                   args.get("display", "hex"))
         result = SerialResult(True, "send", data={
-            "id": cid, "name": cid, "sent": data.hex(" ").upper(),
+            "id": cid, "to": cid, "sent": data.hex(" ").upper(),
             "sent_bytes": written,
-            "received": _format_received(response, display),
-            "received_bytes": len(response),
-            "display": display,
         })
         if disconnect_reason:
             result.data["warning"] = f"disconnected: {disconnect_reason}"
         return result
     except Exception as e:
-        # 清理回调
         t.on_tx = None
         log_rx_error(cid, str(e))
         _set_last_error(cid, str(e))
@@ -194,11 +174,11 @@ def serial_close(args: dict[str, Any]) -> SerialResult:
     cid = _connection_id(args)
     t = _connections.pop(cid, None)
     if not t:
-        return SerialResult(False, "close", error=f"not connected (name={cid})")
+        return SerialResult(False, "close", error=f"not connected (to={cid})")
     try:
         t.close()
         _mark_disconnected(cid, "")
-        result = SerialResult(True, "close", data={"id": cid, "name": cid, "status": "closed"})
+        result = SerialResult(True, "close", data={"id": cid, "to": cid, "status": "closed"})
         log_disconnect(cid)
         display_disconnect(cid)
         return result
@@ -218,6 +198,11 @@ def serial_ports(args: dict[str, Any] | None = None) -> SerialResult:
         })
     except Exception as e:
         return SerialResult(False, "ports", error=str(e))
+
+
+def list_connected_names() -> list[str]:
+    """Return sorted names of currently open serial connections."""
+    return sorted(_connections.keys())
 
 
 def _auto_detect_name() -> str | None:
@@ -251,29 +236,35 @@ def get_connection_settings(name: str) -> dict[str, Any] | None:
 
 
 def _normalize_args(args: dict[str, Any]) -> dict[str, Any]:
+    """Canonical serial connection target is ``to`` (aliases: conn, name, id)."""
     normalized = dict(args)
-    if "name" in normalized and "id" not in normalized:
-        normalized["id"] = normalized["name"]
+    if not normalized.get("to"):
+        for alias in ("conn", "name", "id"):
+            val = normalized.get(alias)
+            if val not in (None, ""):
+                normalized["to"] = val
+                break
+    if normalized.get("to") not in (None, ""):
+        normalized["id"] = str(normalized["to"])
     return normalized
 
 
 def _connection_id(args: dict[str, Any]) -> str:
-    """获取连接 ID。优先使用显式 name/id；单连接时自动检测。"""
-    explicit = args.get("id") or args.get("name")
+    """获取连接 ID。优先显式 ``to``/``id``；单连接时自动检测。"""
+    explicit = args.get("to") or args.get("id")
     if explicit:
         return str(explicit)
     auto = _auto_detect_name()
     if auto:
         return auto
-    # 无连接时需要显式指定 — 调用方会在需要时检查
-    return str(args.get("id") or args.get("name") or "")
+    return str(args.get("to") or args.get("id") or "")
 
 
 def _validate_name(name: str) -> str:
     if _NAME_RE.match(name):
         return ""
     return (
-        f"invalid connection name: {name}. "
+        f"invalid connection target: {name}. "
         "Use [A-Za-z_][A-Za-z0-9_-]*"
     )
 
@@ -299,7 +290,7 @@ def _connection_snapshot(cid: str) -> dict[str, Any]:
         _mark_disconnected(cid, getattr(transport, "_last_error", "") or "port not open")
         meta = dict(_connection_meta.get(cid, meta))
     if not meta:
-        meta = {"id": cid, "name": cid}
+        meta = {"id": cid, "to": cid}
     meta["state"] = "connected" if cid in _connections else meta.get("state", "disconnected")
     meta.setdefault("display", "hex")
     return meta
@@ -319,30 +310,22 @@ def _set_last_error(cid: str, reason: str) -> None:
         meta["last_error"] = reason
 
 
-def _format_received(data: bytes, display: str) -> str:
-    """根据显示格式格式化接收数据。"""
-    if not data:
-        return ""
-    if display == "ascii":
-        result = []
-        for b in data:
-            if 0x20 <= b <= 0x7E:
-                result.append(chr(b))
-            elif b == 0x0A:
-                result.append("\\n")
-            elif b == 0x0D:
-                result.append("\\r")
-            elif b == 0x09:
-                result.append("\\t")
-            else:
-                result.append(".")
-        return "".join(result)
-    # 默认 hex
-    return data.hex(" ").upper()
-
-
 def _now() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def bind_rx_display(transport: SerialTransport, cid: str) -> None:
+    """绑定 RX 实时打印与日志（connect 后默认启用；可重复调用恢复）。"""
+    transport.on_rx_chunk = lambda d: _log_and_display_rx(cid, d)
+
+
+def write_with_tx_display(transport: SerialTransport, cid: str, data: bytes) -> int:
+    """发送并实时打印/记录 TX；发送后清除 on_tx。"""
+    transport.on_tx = lambda d: _log_and_display_tx(cid, d)
+    try:
+        return transport.write(data)
+    finally:
+        transport.on_tx = None
 
 
 def _log_and_display_tx(device: str, data: bytes) -> None:
@@ -355,3 +338,20 @@ def _log_and_display_rx(device: str, data: bytes) -> None:
     """实时打印 + 日志记录接收数据。"""
     log_rx(device, data)
     display_rx(device, data)
+    try:
+        from console.runtime import update_last_rx
+
+        update_last_rx({
+            "id": device,
+            "to": device,
+            "rx": data.hex(" ").upper(),
+            "rx_bytes": len(data),
+        })
+    except Exception:
+        pass
+    try:
+        from console.handlers.auto_rule import process_rx_chunk
+
+        process_rx_chunk(device, data)
+    except Exception:
+        pass

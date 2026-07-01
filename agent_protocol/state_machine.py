@@ -207,8 +207,10 @@ def _apply_user_input(record: RunRecord, user_input: dict[str, Any]) -> None:
     if "frame_hex" in normalized:
         record.facts["frame_hex"] = normalized["frame_hex"]
 
-    if "name" in normalized:
-        record.facts["name"] = normalized["name"]
+    if "to" in normalized:
+        record.facts["to"] = normalized["to"]
+    elif "name" in normalized:
+        record.facts["to"] = normalized["name"]
     if "port" in normalized:
         record.facts["port"] = normalized["port"]
 
@@ -550,17 +552,19 @@ def _execute_decode(record: RunRecord) -> bool:
 
 def _execute_send(record: RunRecord) -> bool:
     args = {"hex": record.facts["frame_hex"]}
-    if record.facts.get("name"):
-        args["name"] = record.facts["name"]
+    if record.facts.get("to"):
+        args["to"] = record.facts["to"]
+    elif record.facts.get("name"):
+        args["to"] = record.facts["name"]
     elif record.facts.get("port"):
         generated_name = f"run_{record.run_id[:8]}"
-        open_result = serial_open({"name": generated_name, "port": record.facts["port"]})
+        open_result = serial_open({"to": generated_name, "port": record.facts["port"]})
         _append_event(record, "send_open_result", {"summary": _handler_summary(open_result.to_dict()), "result": open_result.to_dict()})
         if not open_result.success:
             record.state = "FAILED"
             record.error = open_result.error
             return False
-        args["name"] = generated_name
+        args["to"] = generated_name
     _append_event(record, "send_request", args)
     response = serial_send(args).to_dict()
     _append_event(record, "send_result", {"summary": _handler_summary(response), "result": response})
@@ -648,11 +652,12 @@ def _ensure_send_ready(record: RunRecord) -> bool:
     if not record.facts.get("frame_hex"):
         _wait(record, "hex", "发送需要完整 HEX 报文或成功构造的 frame_hex。", examples=["AA 55"])
         return False
-    if not record.facts.get("port") and not record.facts.get("name"):
-        _wait(record, "name", "发送需要明确连接名或串口号。", examples=["cco", "COM9", "mock://loop"])
+    conn_to = record.facts.get("to") or record.facts.get("name")
+    if not record.facts.get("port") and not conn_to:
+        _wait(record, "to", "发送需要明确连接目标或串口号。", examples=["cco", "COM9", "mock://loop"])
         return False
-    if record.facts.get("name") and not get_connection(str(record.facts["name"])):
-        _wait(record, "name", f"串口连接不存在: {record.facts['name']}", examples=["/serial connect --name cco --port COM9"])
+    if conn_to and not get_connection(str(conn_to)):
+        _wait(record, "to", f"串口连接不存在: {conn_to}", examples=["/serial connect --to cco --port COM9"])
         return False
     return True
 

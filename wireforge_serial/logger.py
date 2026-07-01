@@ -14,6 +14,27 @@ from typing import TextIO
 
 _LOG_DIR = Path(__file__).resolve().parent.parent / "log"
 _FILE: str | None = None
+_show_timestamp: bool = False
+
+
+def get_show_timestamp() -> bool:
+    return _show_timestamp
+
+
+def set_show_timestamp(enabled: bool) -> None:
+    global _show_timestamp
+    _show_timestamp = bool(enabled)
+
+
+def _display_ts() -> str:
+    now = datetime.now().astimezone()
+    return now.strftime("%H:%M:%S.") + f"{now.microsecond // 1000:03d}"
+
+
+def _display_prefix() -> str:
+    if not _show_timestamp:
+        return ""
+    return f"[{_display_ts()}] "
 
 
 def _ensure() -> Path:
@@ -96,21 +117,24 @@ def _fmt_stopbits(val: float) -> str:
 def display_tx(device: str, data: bytes, out: TextIO | None = None) -> None:
     """实时打印发送数据到终端。"""
     import sys
-    (out or sys.stdout).write(f"[{device}] TX: {data.hex(' ').upper()}\n")
+    prefix = _display_prefix()
+    (out or sys.stdout).write(f"{prefix}[{device}] TX: {data.hex(' ').upper()}\n")
     (out or sys.stdout).flush()
 
 
 def display_rx(device: str, data: bytes, out: TextIO | None = None) -> None:
     """实时打印接收数据到终端。"""
     import sys
-    (out or sys.stdout).write(f"[{device}] RX: {data.hex(' ').upper()}\n")
+    prefix = _display_prefix()
+    (out or sys.stdout).write(f"{prefix}[{device}] RX: {data.hex(' ').upper()}\n")
     (out or sys.stdout).flush()
 
 
 def display_rx_timeout(device: str, timeout: float, out: TextIO | None = None) -> None:
     """实时打印接收超时。"""
     import sys
-    (out or sys.stdout).write(f"[{device}] RX: <timeout {timeout}s>\n")
+    prefix = _display_prefix()
+    (out or sys.stdout).write(f"{prefix}[{device}] RX: <timeout {timeout}s>\n")
     (out or sys.stdout).flush()
 
 
@@ -119,8 +143,9 @@ def display_connect(device: str, port: str, baudrate: int,
                     out: TextIO | None = None) -> None:
     """实时打印连接事件到终端。"""
     import sys
+    prefix = _display_prefix()
     (out or sys.stdout).write(
-        f"[{device}] Connected to {port} @ {baudrate} {bytesize}{parity}{_fmt_stopbits(stopbits)}\n"
+        f"{prefix}[{device}] Connected to {port} @ {baudrate} {bytesize}{parity}{_fmt_stopbits(stopbits)}\n"
     )
     (out or sys.stdout).flush()
 
@@ -128,7 +153,8 @@ def display_connect(device: str, port: str, baudrate: int,
 def display_disconnect(device: str, reason: str = "", out: TextIO | None = None) -> None:
     """实时打印断连事件到终端。"""
     import sys
-    msg = f"[{device}] Disconnected"
+    prefix = _display_prefix()
+    msg = f"{prefix}[{device}] Disconnected"
     if reason:
         msg += f" ({reason})"
     (out or sys.stdout).write(msg + "\n")

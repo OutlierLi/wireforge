@@ -30,9 +30,63 @@ from typing import Any
 
 from console.response import ok, fail
 
+
+def has_condition_spec(args: dict) -> bool:
+    """add/update 是否提供了有效匹配条件（非 type:any）。"""
+    match = args.get("match", args.get("pattern", ""))
+    if isinstance(match, str) and match.strip():
+        return True
+    if isinstance(match, dict) and match:
+        return True
+    return bool(_collect_decoded_fields(args))
+
+
+def has_then_action(args: dict) -> bool:
+    raw = args.get("then", args.get("actions"))
+    if raw is None or raw == "":
+        return False
+    if isinstance(raw, str):
+        return bool(raw.strip())
+    if isinstance(raw, list):
+        return len(raw) > 0
+    return True
+
+
+def validate_add_args(args: dict) -> dict | None:
+    missing: list[dict] = []
+    if not str(args.get("id", "")).strip():
+        missing.append({
+            "key": "id",
+            "type": "str",
+            "desc": "规则ID（唯一标识）",
+            "examples": ["csg_query_vendor_ack", "auto_reply_login"],
+            "note": "不可省略，后续管理/测试均依赖 id",
+        })
+    if not has_condition_spec(args):
+        missing.append({
+            "key": "match",
+            "type": "str",
+            "desc": "匹配条件：regex/JSON，或 field/di/afn/dir",
+            "examples": ["010300E8", "68.*16"],
+            "note": "不可省略，否则规则无匹配意义",
+        })
+    if not has_then_action(args):
+        missing.append({
+            "key": "then",
+            "type": "str",
+            "desc": "匹配后执行的命令",
+            "examples": ["/send --hex \"68 ... 16\""],
+            "note": "不可省略，否则规则无动作",
+        })
+    if not missing:
+        return None
+    return fail("missing required parameter", detail={"missing": missing})
+
 # 全局规则存储
 _rules: dict[str, dict] = {}
 _rule_history: list[dict] = []
+_rx_buffers: dict[str, bytearray] = {}
+_last_fired: dict[str, float] = {}
 
 
 @dataclass
@@ -59,19 +113,28 @@ def handle(args: dict[str, Any]) -> dict:
         "test":   _test,   "load":   _load,   "history": _history,
     }
     fn = cmd_map.get(sub, _list)
+    if sub == "add":
+        err = validate_add_args(args)
+        if err:
+            return err
     return fn(args)
 
 
 # ── 子命令 ────────────────────────────────────────────────────────────
 
 def _add(args: dict) -> dict:
+    rid = str(args.get("id", "")).strip()
+    if not rid:
+        return fail("missing required parameter", detail={
+            "missing": [{"key": "id", "type": "str", "desc": "规则ID"}],
+        })
     name = args.get("name", "")
-    rid = args.get("id", name.replace(" ", "_").lower() or f"rule_{len(_rules)+1}")
     if rid in _rules:
         return fail(f"rule {rid} already exists")
 
     rule = {
         "id": rid, "name": name, "enabled": True,
+        "proto": _normalize_proto(args.get("proto") or args.get("protocol")),
         "trigger": {"source": args.get("source", "serial:default"),
                      "event": args.get("event", "frame_received")},
         "condition": _parse_condition(args),
@@ -137,8 +200,10 @@ def _update(args: dict) -> dict:
     rule = _rules[rid]
     if args.get("name"):
         rule["name"] = args["name"]
+    if "proto" in args or "protocol" in args:
+        rule["proto"] = _normalize_proto(args.get("proto") or args.get("protocol"))
     if any(k in args for k in (
-        "match", "pattern", "field", "match_type", "condition_type", "di", "afn", "dir", "proto",
+        "match", "pattern", "field", "match_type", "condition_type", "di", "afn", "dir", "func",
     )):
         rule["condition"] = _parse_condition(args)
     if any(k in args for k in ("then", "actions")):
@@ -210,16 +275,23 @@ def _history(args: dict) -> dict:
 # ── 匹配 ──────────────────────────────────────────────────────────────
 
 def match_all(frame_hex: str, frame_bytes: bytes,
-              decoded: dict | None = None) -> list[MatchResult]:
+              decoded: dict | None = None,
+              *, connection_id: str | None = None,
+              event: str = "frame_received") -> list[MatchResult]:
     """对所有启用的规则执行匹配。后添加的规则优先，命中即返回（覆盖较早规则）。"""
     for rid, rule in reversed(list(_rules.items())):
         if not rule.get("enabled", True):
             continue
+        if connection_id is not None and not _trigger_matches(rule, connection_id, event):
+            continue
+        if not _cooldown_ready(rid, rule):
+            continue
         cond = rule.get("condition", {})
         if decoded is None and _condition_needs_decode(cond):
-            decoded = _decode_request_flat("csg", frame_bytes)
+            decoded = _decode_request_flat(_rule_proto(rule), frame_bytes)
         match = _match_rule(rule, frame_bytes, decoded)
         if match:
+            _mark_fired(rid)
             _rule_history.append({
                 "rule_id": rid, "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 "matched_frame": frame_hex, "match_result": "hit",
@@ -229,8 +301,37 @@ def match_all(frame_hex: str, frame_bytes: bytes,
     return []
 
 
+def process_rx_chunk(connection_id: str, chunk: bytes) -> None:
+    """串口 RX 分帧后触发 frame_received 规则并执行动作（含 /print）。"""
+    if not chunk or not _rules:
+        return
+    from console.handlers.frame_splitter import split_frames
+
+    buf = _rx_buffers.setdefault(connection_id, bytearray())
+    buf.extend(chunk)
+    frames, remainder = split_frames(bytes(buf))
+    for frame in frames:
+        _fire_rx_rule(connection_id, frame)
+    if remainder and remainder[-1] == 0x16:
+        _fire_rx_rule(connection_id, bytes(remainder))
+        remainder = b""
+    _rx_buffers[connection_id] = bytearray(remainder)
+
+
+def _fire_rx_rule(connection_id: str, frame: bytes) -> None:
+    matches = match_all(
+        frame.hex().upper(),
+        frame,
+        connection_id=connection_id,
+        event="frame_received",
+    )
+    for match in matches:
+        execute_actions(match, context={"connection_id": connection_id})
+
+
 def execute_actions(match: MatchResult, context: dict | None = None) -> list[dict]:
     """执行规则的动作。"""
+    import sys
     from console.api import exec_cmd
     results = []
     for action in match.actions:
@@ -240,8 +341,13 @@ def execute_actions(match: MatchResult, context: dict | None = None) -> list[dic
             args = {}
         try:
             r = exec_cmd(cmd, args)
-            results.append({"command": cmd, "status": r.get("status", "?"),
-                           "output": r.get("data")})
+            status = r.get("status", "?")
+            output = (r.get("data") or {}).get("output")
+            if cmd == "print" and status == "success" and output:
+                sys.stdout.write(f"{output}\n")
+                sys.stdout.flush()
+            results.append({"command": cmd, "status": status,
+                           "output": output or r.get("data")})
         except Exception as e:
             results.append({"command": cmd, "status": "error", "error": str(e)})
     return results
@@ -281,8 +387,53 @@ def append_action_replies_to_buf(
 
 # ── helpers ───────────────────────────────────────────────────────────
 
-_ROUTE_KEYS = ("di", "afn", "dir")
-_ROUTE_FIELD_MAP = {"di": "user_data.di", "afn": "user_data.afn", "dir": "dir"}
+def _trigger_matches(rule: dict, connection_id: str, event: str) -> bool:
+    trigger = rule.get("trigger") or {}
+    want_event = str(trigger.get("event") or "frame_received")
+    if want_event != event:
+        return False
+    source = str(trigger.get("source") or "")
+    if not source:
+        return True
+    if source.startswith("serial:"):
+        return source.split(":", 1)[1] == connection_id
+    return source == connection_id
+
+
+def _cooldown_ready(rule_id: str, rule: dict) -> bool:
+    execution = rule.get("execution") or {}
+    cooldown_ms = int(execution.get("cooldown_ms") or 0)
+    if cooldown_ms <= 0:
+        return True
+    last = _last_fired.get(rule_id, 0.0)
+    return (time.monotonic() - last) * 1000 >= cooldown_ms
+
+
+def _mark_fired(rule_id: str) -> None:
+    _last_fired[rule_id] = time.monotonic()
+
+
+_PROTO_ALIASES = {
+    "csg": "csg", "csg_2016": "csg",
+    "dlt645": "dlt645", "dlt645_2007": "dlt645", "645": "dlt645",
+}
+
+
+def _normalize_proto(raw: Any, default: str = "csg") -> str:
+    if raw in (None, ""):
+        return default
+    key = str(raw).strip().lower()
+    return _PROTO_ALIASES.get(key, key)
+
+
+def _rule_proto(rule: dict) -> str:
+    return _normalize_proto(rule.get("proto") or rule.get("protocol"))
+
+
+_ROUTE_KEYS = ("di", "afn", "dir", "func")
+_ROUTE_FIELD_MAP = {
+    "di": "user_data.di", "afn": "user_data.afn", "dir": "dir", "func": "func",
+}
 
 
 def _parse_condition(args: dict) -> dict:
@@ -392,47 +543,101 @@ def _parse_actions(args: dict) -> list[dict]:
     actions = []
     raw = args.get("then", args.get("actions", []))
     if isinstance(raw, str):
+        raw = _reconstruct_then_value(args)
+        raw = [raw]
+    elif isinstance(raw, list):
+        pass
+    else:
         raw = [raw]
     for a in raw:
         if isinstance(a, dict):
             actions.append(a)
         elif isinstance(a, str):
-            # 解析 "/send --hex ..." 格式
-            parts = a.split(maxsplit=1)
-            cmd = parts[0] if parts else ""
-            act_args = {}
-            if len(parts) > 1:
-                # 简单解析 --key value
-                tokens = parts[1].split()
-                i = 0
-                while i < len(tokens):
-                    if tokens[i].startswith("--"):
-                        key = tokens[i][2:]
-                        if "=" in key:
-                            k, v = key.split("=", 1)
-                            act_args[k] = v
-                            i += 1
-                        elif key == "hex" and i + 1 < len(tokens):
-                            # --hex 后可能跟带空格的完整帧，取剩余 tokens
-                            act_args[key] = " ".join(tokens[i + 1:])
-                            i = len(tokens)
-                        elif i + 1 < len(tokens) and not tokens[i+1].startswith("--"):
-                            act_args[key] = tokens[i+1]
-                            i += 2
-                        else:
-                            act_args[key] = "true"
-                            i += 1
-                    else:
-                        i += 1
-            actions.append({"command": cmd, "args": act_args})
+            parsed = _parse_action_string(a)
+            if parsed:
+                actions.append(parsed)
     return actions
+
+
+_ADD_RULE_PARAM_KEYS = frozenset({
+    "sub", "_", "id", "match", "pattern", "then", "actions", "name", "source", "event",
+    "field", "di", "afn", "dir", "func", "proto", "protocol",
+    "match_type", "condition_type",
+    "cooldown", "mode", "on_error", "enabled",
+})
+
+
+def _reconstruct_then_value(args: dict) -> str:
+    """Shell 会把 ``--then /print --text=success`` 拆成 then + text，此处合并回一条命令。"""
+    then = str(args.get("then") or "").strip()
+    if not then or " " in then:
+        return then
+    if not then.startswith("/"):
+        return then
+    suffix: list[str] = []
+    for key, val in args.items():
+        if key in _ADD_RULE_PARAM_KEYS:
+            continue
+        if val in (None, "", False):
+            continue
+        if val is True:
+            suffix.append(f"--{key}")
+        else:
+            suffix.append(f"--{key}={val}")
+    if not suffix:
+        return then
+    return then + " " + " ".join(suffix)
+
+
+def _parse_action_string(text: str) -> dict | None:
+    """解析动作：JSON dict/list、或 ``/cmd --flag=value`` 命令行。"""
+    import json
+
+    stripped = text.strip()
+    if not stripped:
+        return None
+    if stripped.startswith(("[", "{")):
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, dict) and parsed.get("command"):
+            return parsed
+        if isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
+            return parsed[0]
+
+    parts = stripped.split(maxsplit=1)
+    cmd = parts[0] if parts else ""
+    act_args: dict[str, Any] = {}
+    if len(parts) > 1:
+        tokens = parts[1].split()
+        i = 0
+        while i < len(tokens):
+            if tokens[i].startswith("--"):
+                key = tokens[i][2:]
+                if "=" in key:
+                    k, v = key.split("=", 1)
+                    act_args[k] = v
+                    i += 1
+                elif key == "hex" and i + 1 < len(tokens):
+                    act_args[key] = " ".join(tokens[i + 1:])
+                    i = len(tokens)
+                elif i + 1 < len(tokens) and not tokens[i + 1].startswith("--"):
+                    act_args[key] = tokens[i + 1]
+                    i += 2
+                else:
+                    act_args[key] = "true"
+                    i += 1
+            else:
+                i += 1
+    return {"command": cmd, "args": act_args}
 
 
 def _match_rule(rule: dict, frame_bytes: bytes, decoded: dict | None = None) -> MatchResult | None:
     cond = rule.get("condition", {})
     hex_str = frame_bytes.hex().upper()
     if decoded is None and _condition_needs_decode(cond):
-        decoded = _decode_request_flat("csg", frame_bytes)
+        decoded = _decode_request_flat(_rule_proto(rule), frame_bytes)
 
     if _eval_condition(cond, hex_str, frame_bytes, decoded):
         return MatchResult(
@@ -502,7 +707,7 @@ def _decoded_value_matches(decoded: dict, field_path: str, expected: Any) -> boo
     actual = decoded.get(field_path, "")
     if field_path == "user_data.di":
         return _normalize_hex_token(actual) == _normalize_hex_token(expected)
-    if field_path == "user_data.afn":
+    if field_path in ("user_data.afn", "func", "user_data.func", "control.func"):
         actual_int = _parse_int_token(actual)
         expected_int = _parse_int_token(expected)
         if actual_int is not None and expected_int is not None:

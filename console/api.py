@@ -46,9 +46,14 @@ def cancel_cmd(interaction_id: str) -> dict:
     return runtime.cancel(interaction_id)
 
 
-def complete_cmd(prefix: str = "", command: str = "") -> dict:
-    """请求命令/参数补全。"""
-    return runtime.complete(prefix=prefix, command=command)
+def complete_cmd(
+    prefix: str = "",
+    command: str = "",
+    sub: str = "",
+    text: str = "",
+) -> dict:
+    """请求命令/参数补全。优先传 text（整行光标前文本）。"""
+    return runtime.complete(prefix=prefix, command=command, sub=sub, text=text)
 
 
 def list_cmds() -> list[dict]:

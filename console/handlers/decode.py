@@ -9,12 +9,13 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def handle(args: dict[str, Any]) -> dict:
+    from console.arg_utils import normalize_hex_from_args
     from console.build_resolver import _proto, _ensure_ir
 
     proto = _proto(args.get("proto", "dlt645"))
     _ensure_ir(proto)
 
-    hx = str(args.get("hex", "")).replace(" ", "").replace("\n", "")
+    hx = normalize_hex_from_args(args)
     if not hx:
         return {
             "success": False,

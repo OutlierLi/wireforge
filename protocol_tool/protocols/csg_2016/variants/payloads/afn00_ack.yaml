@@ -14,5 +14,5 @@ variants:
     - name: wait_time
       type: uint16_le
       default: 0
-  description: 确认
+  description: 确认，csg确认帧
 

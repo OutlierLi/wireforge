@@ -63,7 +63,7 @@
 @expect success
 
 ### Send data
-/serial send --name default --hex 680C00400301010300E83016
+/serial send --to default --hex 680C00400301010300E83016
 @expect success
 
 ### List ports
@@ -78,9 +78,32 @@
 /serial close
 @expect success
 
+## /time — Serial display timestamp
+
+### Enable timestamp on TX/RX display
+/time on
+@expect success
+
+### Disable timestamp
+/time off
+@expect success
+
+### Show current status
+/time
+@expect success
+
 ## /auto_rule — Auto-reply rules
 
-`mock://auto` 仅在规则命中时回复；无规则时 RX 为空。`then` 推荐 dict 格式。
+`mock://auto` 仅在规则命中时回复；无规则时 RX 为空。
+
+**CLI 写法**（终端直接输入，用命令行，不用 JSON）：
+
+```text
+/auto_rule add --id test2 --match 68.*16 --then /print --text=success
+/auto_rule add --id ack --match 010300E8 --then /send --hex "68 0E 00 80 00 01 01 00 01 E8 00 6B 16"
+```
+
+**TestPlan YAML** 仍用 dict 格式（`command` + `args`），见各 example md。
 
 ### Add rule (dict then — recommended)
 /auto_rule add --id test_rule --match 010300E8 --then '[{"command":"/send","args":{"hex":"68 0E 00 80 00 01 01 00 01 E8 00 00 6B 16"}}]'
