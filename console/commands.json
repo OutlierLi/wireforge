@@ -23,13 +23,13 @@
             "type": "str",
             "required": true,
             "order": 2,
-            "desc": "匹配条件：regex/JSON 片段，或用 field/di/afn/dir 指定解码字段条件",
+            "desc": "匹配条件：regex/JSON 片段，或 --match --proto 进入协议 decode 路由（同 /build）",
             "examples": [
               "010300E8",
               "68.*16",
               "{\"all\":[\"010300E8\",\"0040\"]}"
             ],
-            "note": "与 --field/--di/--afn/--dir 二选一或组合；不可省略"
+            "note": "空格后可选 --proto csg 再 --afn/--di（带功能缩略）；或 --field path=value；或直接写 regex"
           },
           "then": {
             "type": "str",
@@ -852,13 +852,84 @@
       "send": {
         "desc": "Send hex frame only (RX handled by background monitor or /wait-frame)",
         "params": {
+          "build": {
+            "type": "bool",
+            "required": false,
+            "order": 1,
+            "recommended": true,
+            "desc": "用 /build 路由构造报文再发送",
+            "note": "--build --proto csg --afn --di ... 与 /build 相同；与 --hex 二选一"
+          },
           "hex": {
             "type": "str",
-            "required": true,
+            "required": false,
+            "order": 2,
+            "recommended": true,
             "desc": "发送数据(十六进制)",
             "examples": [
               "68 0C 00 40 03 01 01 03 00 E8 30 16"
+            ],
+            "note": "与 --build 二选一"
+          },
+          "proto": {
+            "type": "choice",
+            "required": false,
+            "desc": "协议类型（--build 模式）",
+            "examples": [
+              "csg",
+              "dlt645"
             ]
+          },
+          "func": {
+            "type": "hex",
+            "required": false,
+            "desc": "功能码 func（DLT645，--build 模式）",
+            "examples": [
+              "0x11",
+              "0x13"
+            ]
+          },
+          "afn": {
+            "type": "hex",
+            "required": false,
+            "desc": "应用功能码 AFN（CSG，--build 模式）",
+            "examples": [
+              "0x00",
+              "0x03"
+            ]
+          },
+          "di": {
+            "type": "str",
+            "required": false,
+            "desc": "数据标识 DI（--build 模式）",
+            "examples": [
+              "E8010001",
+              "00010000"
+            ]
+          },
+          "dir": {
+            "type": "choice",
+            "required": false,
+            "desc": "传输方向（--build 模式）",
+            "examples": [
+              "downlink",
+              "uplink"
+            ],
+            "default": "downlink"
+          },
+          "set": {
+            "type": "str",
+            "required": false,
+            "desc": "覆盖 build 字段值（--build 模式）",
+            "examples": [
+              "wait_time=0",
+              "freeze_year=26"
+            ]
+          },
+          "*": {
+            "type": "dynamic",
+            "required": false,
+            "desc": "resolve 后的业务字段（--build 模式）"
           },
           "to": {
             "type": "str",

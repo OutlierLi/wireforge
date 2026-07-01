@@ -328,6 +328,134 @@ class TestLegacyApi:
         assert "--hex" not in keys
 
 
+class TestAutoRuleMatchCompletion:
+    def setup_method(self):
+        from console.build_completion import (
+            _load_ir_routers, _load_protocol_map, _resolve_schema_cached,
+        )
+        _load_protocol_map.cache_clear()
+        _resolve_schema_cached.cache_clear()
+        _load_ir_routers.cache_clear()
+
+    def test_match_space_suggests_proto_and_regex(self):
+        vals = _values("/auto_rule add --id test --match ")
+        assert "--proto" in vals
+        assert "--field" in vals
+        assert "68.*16" in vals
+
+    def test_match_proto_csg_suggests_afn(self):
+        vals = _values("/auto_rule add --id test --match --proto csg ")
+        assert "--afn" in vals
+        assert "--then" in vals
+        assert "--func" not in vals
+
+    def test_match_afn_suggests_di_dir_and_then(self):
+        vals = _values("/auto_rule add --id test --match --proto csg --afn 0x04 ")
+        assert "--di" in vals
+        assert "--dir" in vals
+        assert "--then" in vals
+        assert "--wait_time" not in vals
+        assert "--addr" not in vals
+
+    def test_match_proto_afn_di_labeled(self):
+        r = complete_text("/auto_rule add --id test --match --proto csg --afn=0x00 --di=")
+        labels = [c.get("label", "") for c in r["data"]["completions"]]
+        assert any("E8010001" in lb for lb in labels)
+        assert any("—" in lb for lb in labels)
+
+    def test_match_route_complete_suggests_then_not_build_schema(self):
+        vals = _values(
+            "/auto_rule add --id test --match --proto csg --afn=0x00 --di=E8010001 --dir=downlink "
+        )
+        assert "--then" in vals
+        assert "--wait_time" not in vals
+        assert "--addr" not in vals
+
+    def test_match_complete_suggests_then(self):
+        vals = _values(
+            "/auto_rule add --id test --match --proto csg --afn=0x00 --di=E8010001 --dir=downlink "
+        )
+        assert "--then" in vals
+
+    def test_match_regex_not_nested_route(self):
+        st = analyze_completion_line("/auto_rule add --id test --match 68.*16 ")
+        assert st.stage != "nested_match"
+        assert "--then" in _values("/auto_rule add --id test --match 68.*16 ")
+
+    def test_stage_nested_match(self):
+        st = analyze_completion_line("/auto_rule add --id test --match --proto csg ")
+        assert st.stage == "nested_match"
+        assert st.nested is not None
+        assert st.nested.command == "auto_rule_match"
+
+    def test_then_serial_send_build_suggests_proto(self):
+        vals = _values(
+            "/auto_rule add --id test --match --proto csg --afn 0x01 "
+            "--then /serial send --build "
+        )
+        assert "--proto" in vals
+        assert "--build" not in vals
+
+    def test_then_serial_send_build_proto_csg_suggests_afn(self):
+        vals = _values(
+            "/auto_rule add --id test --match --proto csg --afn 0x01 "
+            "--then /serial send --build --proto csg "
+        )
+        assert "--afn" in vals
+        assert "--proto" not in vals
+
+    def test_then_tail_not_truncated_at_proto(self):
+        st = analyze_completion_line(
+            "/auto_rule add --id test --then /serial send --build --proto csg "
+        )
+        assert st.nested is not None
+        assert st.nested.stage == "nested_serial_send_build"
+        assert st.nested.nested is not None
+        assert st.nested.nested.used_args.get("proto") == "csg"
+
+
+class TestSerialSendBuildCompletion:
+    def setup_method(self):
+        from console.build_completion import (
+            _load_ir_routers, _load_protocol_map, _resolve_schema_cached,
+        )
+        _load_protocol_map.cache_clear()
+        _resolve_schema_cached.cache_clear()
+        _load_ir_routers.cache_clear()
+
+    def test_send_without_build_no_proto(self):
+        vals = _values("/serial send ")
+        assert "--build" in vals
+        assert "--hex" in vals
+        assert "--proto" not in vals
+
+    def test_send_build_space_suggests_proto(self):
+        vals = _values("/serial send --build ")
+        assert "--proto" in vals
+        assert "--hex" not in vals
+
+    def test_send_build_proto_csg_suggests_afn(self):
+        vals = _values("/serial send --build --proto csg ")
+        assert "--afn" in vals
+
+    def test_send_build_di_labeled(self):
+        r = complete_text("/serial send --build --proto csg --afn=0x00 --di=")
+        labels = [c.get("label", "") for c in r["data"]["completions"]]
+        assert any("E8010001" in lb for lb in labels)
+
+    def test_send_build_complete_suggests_to(self):
+        vals = _values(
+            "/serial send --build --proto csg --afn=0x00 --di=E8010001 --dir=downlink --wait_time=0 "
+        )
+        assert "--to" in vals
+
+    def test_stage_nested_serial_send_build(self):
+        st = analyze_completion_line("/serial send --build --proto csg ")
+        assert st.stage == "nested_serial_send_build"
+        assert st.nested is not None
+        assert st.nested.command == "serial_send_build"
+
+
 class TestAnalyzeState:
     def test_stage_transitions(self):
         assert analyze_completion_line("").stage == "command"

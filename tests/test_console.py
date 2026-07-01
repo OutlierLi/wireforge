@@ -340,6 +340,27 @@ class TestSerial:
         assert r["data"]["sent_bytes"] == 12
         assert "received" not in r["data"]
 
+    def test_send_build_mode(self):
+        exec_cmd("serial", {"sub": "connect", "port": "mock://loop"})
+        r = exec_cmd("serial", {
+            "sub": "send",
+            "build": True,
+            "proto": "csg",
+            "afn": "0x00",
+            "di": "E8010001",
+            "dir": "downlink",
+            "wait_time": "0",
+        })
+        _ok(r)
+        assert r["data"]["sent_bytes"] > 0
+        assert "built" in r["data"]
+        assert r["data"]["built"]["frame"]
+
+    def test_send_build_missing_route(self):
+        exec_cmd("serial", {"sub": "connect", "port": "mock://loop"})
+        r = exec_cmd("serial", {"sub": "send", "build": True, "proto": "csg"})
+        assert r["status"] in ("no_route", "route_required", "fail")
+
     def test_receive_prints_without_send(self, capsys):
         import time
         from wireforge_serial.api import get_connection

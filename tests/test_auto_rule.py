@@ -509,6 +509,21 @@ class TestRouteSugarMatch:
         _ok(r)
         assert r["data"]["matched"] is True
 
+    def test_shell_match_proto_route_payload_field(self):
+        exec_cmd("auto_rule", {
+            "sub": "add", "id": "ack_wait",
+            "match": True,
+            "proto": "csg",
+            "afn": "0x00",
+            "di": "E8010001",
+            "dir": "downlink",
+            "wait_time": "0",
+            "then": "/log --message ack",
+        })
+        show = exec_cmd("auto_rule", {"sub": "show", "id": "ack_wait"})
+        fields = show["data"]["rule"]["condition"]["fields"]
+        assert fields.get("user_data.wait_time") == "0"
+
     def test_match_di_payload_miss(self):
         exec_cmd("auto_rule", {
             "sub": "add", "id": "di_payload_miss",

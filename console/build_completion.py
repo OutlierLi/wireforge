@@ -447,7 +447,7 @@ def protocol_route_argument_completions(
     if typing_flag and completions:
         return completions
 
-    if command == "build":
+    if command in ("build", "serial_send_build"):
         schema = _schema_fields(used_args)
         if schema:
             for name, required, desc, _default in schema:
@@ -509,10 +509,10 @@ def protocol_route_value_completions(
                 out.insert(0, _make_value_item("downlink", "dir", default=True))
         return out
 
-    if command != "build":
+    if command not in ("build", "serial_send_build"):
         return None
 
-    if param_key == "addr":
+    if param_key == "addr" and command == "build":
         vals = ["false", "true"]
         return [
             _make_value_item(v, "addr", default=(v == "false" and not value_prefix))
@@ -553,4 +553,134 @@ def route_argument_value_completions(
 ) -> list[dict[str, Any]] | None:
     return protocol_route_value_completions(
         used_args, param_key, value_prefix, command="route",
+    )
+
+
+_AUTO_RULE_MATCH_ENTRY_FLAGS: tuple[tuple[str, str], ...] = (
+    ("proto", "协议 decode 匹配（按 AFN/DI/字段，同 /build 路由）"),
+    ("field", "解码字段 path=value（可多次）"),
+)
+
+_AUTO_RULE_MATCH_REGEX_EXAMPLES: tuple[tuple[str, str], ...] = (
+    ("68.*16", "正则：完整帧"),
+    ("010300E8", "正则：DI hex 片段"),
+)
+
+
+def _auto_rule_match_entry_completions(flag_prefix: str) -> list[dict[str, Any]]:
+    """``--match `` 后尚未选协议时：正则示例或进入 decode 路由。"""
+    typing_flag = bool(flag_prefix)
+    items: list[dict[str, Any]] = []
+    for key, desc in _AUTO_RULE_MATCH_ENTRY_FLAGS:
+        flag = f"--{key}"
+        if typing_flag and not _flag_matches(flag, flag_prefix):
+            continue
+        items.append(_make_flag_item(key, desc=desc))
+    if typing_flag:
+        return items
+    for val, desc in _AUTO_RULE_MATCH_REGEX_EXAMPLES:
+        items.append({
+            "kind": "argument_value",
+            "value": val,
+            "label": f"{val} — {desc}",
+            "param": "match",
+            "description": desc,
+        })
+    return items
+
+
+def auto_rule_match_argument_completions(
+    used_args: dict[str, Any],
+    flag_prefix: str,
+) -> list[dict[str, Any]] | None:
+    if not _proto_family(used_args.get("proto")):
+        return _auto_rule_match_entry_completions(flag_prefix)
+    return _auto_rule_match_route_argument_completions(used_args, flag_prefix)
+
+
+_AUTO_RULE_MATCH_ROUTE_DESC = {
+    "afn": "按 AFN 匹配（类别，可选）",
+    "func": "按 func 匹配（DLT645，可选）",
+    "di": "按 DI 匹配（具体功能，可选）",
+    "dir": "按方向匹配（可选）",
+}
+
+
+def _auto_rule_match_route_argument_completions(
+    used_args: dict[str, Any],
+    flag_prefix: str,
+) -> list[dict[str, Any]]:
+    """auto_rule decode 匹配：仅路由键 + field，不要求完整 build schema。"""
+    proto = _proto_family(used_args.get("proto"))
+    if not proto:
+        return []
+    typing_flag = bool(flag_prefix)
+    completions: list[dict[str, Any]] = []
+    for key in _ROUTE_KEYS.get(proto, ()):
+        if _route_key_used(key, used_args):
+            continue
+        flag = f"--{key}"
+        if typing_flag and not _flag_matches(flag, flag_prefix):
+            continue
+        completions.append(_make_flag_item(
+            key,
+            desc=_AUTO_RULE_MATCH_ROUTE_DESC.get(key, ""),
+            dynamic=True,
+        ))
+    field_flag = "--field"
+    if not typing_flag or _flag_matches(field_flag, flag_prefix):
+        completions.append(_make_flag_item(
+            "field", desc="解码字段 path=value（可多次，可选）",
+        ))
+    return completions
+
+
+def auto_rule_match_value_completions(
+    used_args: dict[str, Any],
+    param_key: str,
+    value_prefix: str,
+) -> list[dict[str, Any]] | None:
+    if param_key in ("proto", "protocol") and not _proto_family(used_args.get("proto")):
+        out: list[dict[str, Any]] = []
+        for val, default in (("csg", True), ("dlt645", False)):
+            if _value_prefix_matches(val, value_prefix):
+                out.append(_make_value_item(val, "proto", default=default and not value_prefix))
+        return out
+    return protocol_route_value_completions(
+        used_args, param_key, value_prefix, command="auto_rule_match",
+    )
+
+
+def serial_send_build_argument_completions(
+    used_args: dict[str, Any],
+    flag_prefix: str,
+) -> list[dict[str, Any]] | None:
+    if not _proto_family(used_args.get("proto")):
+        typing_flag = bool(flag_prefix)
+        items: list[dict[str, Any]] = []
+        flag = "--proto"
+        if not typing_flag or _flag_matches(flag, flag_prefix):
+            items.append(_make_flag_item(
+                "proto", required=True,
+                desc="协议类型（CSG/DLT645，同 /build）",
+            ))
+        return items
+    return protocol_route_argument_completions(
+        used_args, flag_prefix, command="serial_send_build",
+    )
+
+
+def serial_send_build_value_completions(
+    used_args: dict[str, Any],
+    param_key: str,
+    value_prefix: str,
+) -> list[dict[str, Any]] | None:
+    if param_key in ("proto", "protocol") and not _proto_family(used_args.get("proto")):
+        out: list[dict[str, Any]] = []
+        for val, default in (("csg", True), ("dlt645", False)):
+            if _value_prefix_matches(val, value_prefix):
+                out.append(_make_value_item(val, "proto", default=default and not value_prefix))
+        return out
+    return protocol_route_value_completions(
+        used_args, param_key, value_prefix, command="serial_send_build",
     )

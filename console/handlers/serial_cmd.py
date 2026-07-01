@@ -17,6 +17,10 @@ from wireforge_serial.api import (
 from wireforge_serial.logger import log_config_change
 from console.response import ok, fail, missing_param
 
+_SERIAL_SEND_BUILD_RESERVED = frozenset({
+    "build", "hex", "to", "conn", "name", "id",
+})
+
 
 def handle(args: dict[str, Any]) -> dict:
     sub = args.get("sub", "")
@@ -70,14 +74,43 @@ def _close(args: dict) -> dict:
 
 def _send(args: dict) -> dict:
     args = _with_connection_to(args, auto_detect=True)
-    if "hex" not in args or not args["hex"]:
-        return missing_param("hex", "str",
-                             examples=["68 0C 00 40 03 01 01 03 00 E8 30 16"])
     if not args.get("to") and not _connection_id(args):
         return fail("multiple serial connections active — specify --to",
                     detail={"hint": "use /serial ports to list connections"})
+
+    build_info: dict[str, Any] | None = None
+    if args.get("build"):
+        from console.handlers.build import build_frame_from_args
+
+        build_result = build_frame_from_args(
+            args, extra_reserved=_SERIAL_SEND_BUILD_RESERVED,
+        )
+        if not build_result.get("success"):
+            detail = build_result.get("detail")
+            err = build_result.get("error", "build failed")
+            if build_result.get("status") == "route_required":
+                return fail(err, detail=detail)
+            return fail(err, detail=detail)
+        build_info = build_result.get("data") or {}
+        args = {**args, "hex": build_info.get("frame", "")}
+    elif "hex" not in args or not args["hex"]:
+        return missing_param(
+            "hex", "str",
+            examples=["68 0C 00 40 03 01 01 03 00 E8 30 16"],
+            note="或使用 --build --proto csg --afn ... 由路由构造报文",
+        )
+
     r = serial_send(args)
-    return r.to_dict()
+    out = r.to_dict()
+    if build_info and out.get("success"):
+        data = dict(out.get("data") or {})
+        data["built"] = {
+            "path": build_info.get("path"),
+            "frame": build_info.get("frame"),
+            "resolved": build_info.get("resolved"),
+        }
+        out["data"] = data
+    return out
 
 
 def _set(args: dict) -> dict:

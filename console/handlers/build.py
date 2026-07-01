@@ -71,31 +71,34 @@ def _smart_coerce(value: str) -> Any:
     return v
 
 
-def handle(args: dict[str, Any]) -> dict:
-    from console.build_resolver import resolve, encode, decode_frame
+_BUILD_TARGET_KEYS = frozenset({
+    "proto", "func", "afn", "di", "dir", "address", "intent",
+    "preamble", "seq", "addr", "direction", "has_address",
+    "resolve", "schema", "describe", "from_frame", "from-frame", "set",
+})
+_BUILD_BASE_RESERVED = frozenset({"sub", "_"})
 
-    # ── 解析 --set 参数 ──
+
+def build_frame_from_args(
+    args: dict[str, Any],
+    *,
+    extra_reserved: frozenset[str] | None = None,
+) -> dict:
+    """构造协议帧（与 ``/build`` 相同逻辑）。供 ``/serial send --build`` 等复用。"""
+    from console.build_resolver import resolve, encode
+
     set_overrides = _parse_set_args(args.get("set"))
-
-    # ── 处理 --from-frame ──
     from_frame = args.get("from_frame", args.get("from-frame", ""))
     from_frame = str(from_frame).strip().strip('"').strip("'")
-
     if from_frame:
         return _handle_from_frame(args, from_frame, set_overrides)
 
-    # ── 正常 build 流程 ──
     proto = _proto(args.get("proto", "dlt645"))
     _ensure_ir(proto)
 
-    target_keys = {"proto", "func", "afn", "di", "dir", "address", "intent",
-                   "preamble", "seq", "addr", "direction", "has_address",
-                   "resolve", "schema", "describe", "from_frame", "from-frame", "set"}
-    reserved = target_keys | {"sub", "_"}
-    target_info = {k: v for k, v in args.items() if k in target_keys and v is not None}
+    reserved = _BUILD_TARGET_KEYS | _BUILD_BASE_RESERVED | (extra_reserved or frozenset())
+    target_info = {k: v for k, v in args.items() if k in _BUILD_TARGET_KEYS and v is not None}
     business_values = {k: v for k, v in args.items() if k not in reserved}
-
-    # 合并 --set 覆盖
     business_values.update(set_overrides)
 
     try:
@@ -107,8 +110,6 @@ def handle(args: dict[str, Any]) -> dict:
         return {"success": True, "data": target.to_dict()}
 
     schema_names = {f.name for f in target.input_schema}
-    schema_list = [{"name": f.name, "type": f.type, "required": f.required,
-                    "desc": f.desc} for f in target.input_schema]
     for k, v in target_info.items():
         if k in schema_names and k not in business_values:
             business_values[k] = v
@@ -119,10 +120,12 @@ def handle(args: dict[str, Any]) -> dict:
     ):
         from console.build_resolver import _hex_byte_length
         business_values["payload_length"] = _hex_byte_length(business_values["payload"])
-    # ── 校验：检测字段不匹配 → 要求先调 /route ──
+
     unknown_fields = [k for k in business_values if k not in schema_names]
-    missing_required = [f for f in target.input_schema
-                        if f.required and f.name not in business_values]
+    missing_required = [
+        f for f in target.input_schema
+        if f.required and f.name not in business_values
+    ]
 
     if unknown_fields or missing_required:
         detail: dict[str, Any] = {
@@ -132,12 +135,14 @@ def handle(args: dict[str, Any]) -> dict:
         }
         if unknown_fields:
             detail["unknown_fields"] = unknown_fields
-            detail["error"] = f"未识别的字段: {', '.join(unknown_fields)}。字段名已变更，请通过 /route 确认当前 schema"
+            detail["error"] = (
+                f"未识别的字段: {', '.join(unknown_fields)}。"
+                "字段名已变更，请通过 /route 确认当前 schema"
+            )
         if missing_required:
             detail["missing_required"] = [f.name for f in missing_required]
             if not unknown_fields:
                 detail["error"] = "缺少必填字段，请通过 /route 确认当前 schema"
-
         return {
             "success": False,
             "status": "route_required",
@@ -154,7 +159,10 @@ def handle(args: dict[str, Any]) -> dict:
                 "protocol": target.protocol,
                 "path": target.path,
                 "frame": frame_hex,
-                "resolved": {"message_id": target.message_id, "variant_id": target.variant_id},
+                "resolved": {
+                    "message_id": target.message_id,
+                    "variant_id": target.variant_id,
+                },
             },
         }
     except Exception as e:
@@ -175,6 +183,10 @@ def handle(args: dict[str, Any]) -> dict:
             "detail": detail,
             "path": target.path,
         }
+
+
+def handle(args: dict[str, Any]) -> dict:
+    return build_frame_from_args(args)
 
 
 def _handle_from_frame(args: dict[str, Any], hex_text: str, set_overrides: dict) -> dict:

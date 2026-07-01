@@ -474,6 +474,20 @@ def _parse_condition(args: dict) -> dict:
     return {"type": "any"}
 
 
+def _is_decoded_args_context(src: dict) -> bool:
+    """仅 decode 路由/字段匹配时收集 payload 级参数（避免吞掉 then 的 text/hex 等）。"""
+    match = src.get("match", src.get("pattern"))
+    if match is True:
+        return True
+    if any(src.get(k) not in (None, "") for k in _ROUTE_KEYS):
+        return True
+    if src.get("field"):
+        return True
+    if src.get("proto") or src.get("protocol"):
+        return True
+    return False
+
+
 def _collect_decoded_fields(src: dict) -> dict[str, str]:
     fields: dict[str, str] = {}
     raw_fields = src.get("field", [])
@@ -486,6 +500,13 @@ def _collect_decoded_fields(src: dict) -> dict[str, str]:
     for key in _ROUTE_KEYS:
         if key in src and src[key] not in (None, ""):
             fields[_ROUTE_FIELD_MAP[key]] = str(src[key]).strip()
+    if _is_decoded_args_context(src):
+        for key, val in src.items():
+            if key in _ADD_RULE_PARAM_KEYS or key in _ROUTE_KEYS:
+                continue
+            if val in (None, "", False, True):
+                continue
+            fields[_decoded_field_path(key)] = str(val).strip()
     return fields
 
 

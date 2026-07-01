@@ -9,6 +9,8 @@
 - ``--then`` 等脚本参数内嵌 ``/command`` 时，按嵌套命令继续联想（如 ``/print --text``）
 - ``/help`` 的 ``target`` 为嵌套命令路径（``--target /serial connect`` 或 ``/help /serial``）逐级联想
 - ``/build`` / ``/route`` 在 ``--proto`` 之后按路由键 → protocol_map 全量取值 → resolve schema 动态联想
+- ``/auto_rule add --match`` 后可选正则或 ``--proto`` 协议 decode 匹配，路由/schema 联想同 ``/build``
+- ``/serial send --build`` 后 ``--proto`` 起路由/schema 联想同 ``/build``
 - 输入 --prefix 时跨层级前缀匹配
 """
 
@@ -29,11 +31,16 @@ from console.command_schema import (
 )
 from console.protocol import response_success
 from console.build_completion import (
+    _proto_family,
+    auto_rule_match_argument_completions,
+    auto_rule_match_value_completions,
     build_argument_completions,
     build_argument_value_completions,
     route_argument_completions,
     route_argument_value_completions,
     schema_field_meta,
+    serial_send_build_argument_completions,
+    serial_send_build_value_completions,
 )
 
 # 终端内置命令（不在 commands.json，由 terminal 直接处理）
@@ -65,7 +72,20 @@ _NESTED_COMMAND_TARGET_COMMANDS = frozenset({"help"})
 _OUTER_AUTO_RULE_FLAGS = frozenset({
     "--id", "--match", "--name", "--source", "--field", "--di", "--afn", "--dir",
     "--cooldown", "--mode", "--on_error", "--event", "--pattern", "--match_type",
-    "--condition_type", "--enabled", "--sub", "--actions",
+    "--condition_type", "--enabled", "--sub", "--actions", "--proto", "--protocol", "--func",
+})
+# then 脚本尾截断：仅 auto_rule 外层参数；不含 --proto/--afn/--di 等（嵌套 /build /send 会用）
+_THEN_TAIL_STOP_FLAGS = frozenset({
+    "--id", "--match", "--name", "--source", "--cooldown", "--mode", "--on_error",
+    "--event", "--pattern", "--match_type", "--condition_type", "--enabled",
+    "--sub", "--actions", "--then",
+})
+_MATCH_ZONE_DECODED_FLAGS = frozenset({
+    "--proto", "--protocol", "--field", "--di", "--afn", "--dir", "--func",
+})
+_SERIAL_SEND_OUTER_FLAGS = frozenset({"--hex", "--to", "--build", "--conn", "--name", "--id"})
+_SERIAL_SEND_BUILD_ONLY_PARAMS = frozenset({
+    "proto", "func", "afn", "di", "dir", "set", "protocol",
 })
 
 
@@ -279,9 +299,223 @@ def _resolve_value_completion(state: CompletionState) -> bool:
 
 def analyze_completion_line(text: str) -> CompletionState:
     state = _analyze_completion_line_impl(text)
-    _maybe_attach_nested_script(state)
+    _maybe_attach_nested_match(state)
+    if _cursor_in_then_zone(state):
+        _maybe_attach_nested_script(state)
+    _maybe_attach_serial_send_build(state)
     _maybe_attach_nested_command_target(state)
+    _attach_nested_depth_completions(state)
     return state
+
+
+def _attach_nested_depth_completions(state: CompletionState, depth: int = 0) -> None:
+    """then 内嵌套 ``/serial send --build`` 等继续挂载二层补全。"""
+    if depth > 4 or state.nested is None:
+        return
+    child = state.nested
+    if state.stage == "nested_script":
+        _maybe_attach_serial_send_build(child)
+        _maybe_attach_nested_command_target(child)
+        if child.nested and child.stage.startswith("nested_"):
+            _attach_nested_depth_completions(child, depth + 1)
+
+
+def _find_flag_index(tokens: list[str], flag: str) -> int | None:
+    for i, t in enumerate(tokens):
+        if t == flag or t.startswith(f"{flag}="):
+            return i
+    return None
+
+
+def _cursor_in_then_zone(state: CompletionState) -> bool:
+    tokens = state.complete_tokens
+    partial = state.current_token
+    ti = _find_flag_index(tokens, "--then")
+    if ti is None:
+        return partial.startswith("/") and "--then" in tokens
+    if partial.startswith("/"):
+        return True
+    if len(tokens) > ti + 1:
+        return True
+    last = tokens[-1] if tokens else ""
+    if last == "--then" and state.ends_with_space:
+        return True
+    if last.startswith("--then="):
+        return True
+    return False
+
+
+def _match_zone_active(state: CompletionState) -> bool:
+    if state.command != "auto_rule" or state.sub not in ("add", "update") or not state.sub_locked:
+        return False
+    if _cursor_in_then_zone(state):
+        return False
+    tokens = state.complete_tokens
+    mi = _find_flag_index(tokens, "--match")
+    if mi is None:
+        return False
+    if tokens[mi] == "--match" and state.ends_with_space and mi == len(tokens) - 1:
+        return True
+    if state.used_args.get("match") is True:
+        return True
+    ti = _find_flag_index(tokens, "--then")
+    end = ti if ti is not None else len(tokens)
+    for t in tokens[mi + 1:end]:
+        base = t.split("=", 1)[0]
+        if base in _MATCH_ZONE_DECODED_FLAGS:
+            return True
+    return False
+
+
+def _match_zone_used_args(state: CompletionState) -> dict[str, Any]:
+    tokens = state.complete_tokens
+    mi = _find_flag_index(tokens, "--match")
+    if mi is None:
+        return {}
+    ti = _find_flag_index(tokens, "--then")
+    end = ti if ti is not None else len(tokens)
+    start = mi + 1
+    if start < end and not tokens[start].startswith("--"):
+        start += 1
+    zone_tokens = list(tokens[start:end])
+    partial = state.current_token
+    if partial and partial not in tokens and not partial.startswith("/"):
+        zone_tokens.append(partial)
+    return _parse_used_args_for_completion(
+        zone_tokens,
+        0,
+        ends_with_space=state.ends_with_space,
+        current_token=partial if partial not in tokens else "",
+    )
+
+
+def _maybe_attach_nested_match(state: CompletionState) -> None:
+    if not _match_zone_active(state):
+        return
+    used = _match_zone_used_args(state)
+    tokens = state.complete_tokens
+    mi = _find_flag_index(tokens, "--match")
+    ti = _find_flag_index(tokens, "--then")
+    end = ti if ti is not None else len(tokens)
+    start = mi + 1
+    if start < end and not tokens[start].startswith("--"):
+        start += 1
+    tail_tokens = list(tokens[start:end])
+    partial = state.current_token
+    if partial and partial not in tokens and not partial.startswith("/"):
+        if not tail_tokens or tail_tokens[-1] != partial:
+            tail_tokens.append(partial)
+
+    if not tail_tokens and not used:
+        nested = CompletionState(
+            text="",
+            command="auto_rule_match",
+            sub="match",
+            sub_locked=True,
+            stage="argument",
+            used_args={},
+            ends_with_space=state.ends_with_space,
+            flag_prefix=partial if partial.startswith("--") else "",
+        )
+    else:
+        fake = "build"
+        if tail_tokens:
+            fake += " " + " ".join(tail_tokens)
+        if state.ends_with_space:
+            fake += " "
+        nested = _analyze_completion_line_impl(fake)
+        nested.used_args = used
+        nested.command = "auto_rule_match"
+        nested.sub = "match"
+        nested.sub_locked = True
+        if partial.startswith("--") and partial not in fake:
+            nested.flag_prefix = partial
+    state.nested = nested
+    state.stage = "nested_match"
+
+
+def _serial_send_build_active(state: CompletionState) -> bool:
+    if state.command != "serial" or state.sub != "send" or not state.sub_locked:
+        return False
+    if state.stage.startswith("nested_"):
+        return False
+    tokens = state.complete_tokens
+    if _find_flag_index(tokens, "--build") is None:
+        return False
+    partial = state.current_token
+    if partial in ("--hex", "--to") or partial.startswith(("--hex=", "--to=")):
+        return False
+    if tokens and tokens[-1] in ("--hex", "--to") and state.ends_with_space:
+        return False
+    return True
+
+
+def _serial_send_build_used_args(state: CompletionState) -> dict[str, Any]:
+    tokens = state.complete_tokens
+    bi = _find_flag_index(tokens, "--build")
+    if bi is None:
+        return {}
+    zone_tokens: list[str] = []
+    for t in tokens[bi + 1:]:
+        base = t.split("=", 1)[0]
+        if base in _SERIAL_SEND_OUTER_FLAGS and base != "--build":
+            break
+        zone_tokens.append(t)
+    partial = state.current_token
+    if partial and partial not in tokens and not partial.startswith("/"):
+        if not zone_tokens or zone_tokens[-1] != partial:
+            zone_tokens.append(partial)
+    return _parse_used_args_for_completion(
+        zone_tokens,
+        0,
+        ends_with_space=state.ends_with_space,
+        current_token=partial if partial not in tokens else "",
+    )
+
+
+def _maybe_attach_serial_send_build(state: CompletionState) -> None:
+    if not _serial_send_build_active(state):
+        return
+    used = _serial_send_build_used_args(state)
+    tokens = state.complete_tokens
+    bi = _find_flag_index(tokens, "--build")
+    zone_tokens: list[str] = []
+    for t in tokens[bi + 1:]:
+        base = t.split("=", 1)[0]
+        if base in _SERIAL_SEND_OUTER_FLAGS and base != "--build":
+            break
+        zone_tokens.append(t)
+    partial = state.current_token
+    if partial and partial not in tokens and not partial.startswith("/"):
+        if not zone_tokens or zone_tokens[-1] != partial:
+            zone_tokens.append(partial)
+
+    if not zone_tokens and not used:
+        nested = CompletionState(
+            text="",
+            command="serial_send_build",
+            sub="build",
+            sub_locked=True,
+            stage="argument",
+            used_args={},
+            ends_with_space=state.ends_with_space,
+            flag_prefix=partial if partial.startswith("--") else "",
+        )
+    else:
+        fake = "build"
+        if zone_tokens:
+            fake += " " + " ".join(zone_tokens)
+        if state.ends_with_space:
+            fake += " "
+        nested = _analyze_completion_line_impl(fake)
+        nested.used_args = used
+        nested.command = "serial_send_build"
+        nested.sub = "build"
+        nested.sub_locked = True
+        if partial.startswith("--") and partial not in fake:
+            nested.flag_prefix = partial
+    state.nested = nested
+    state.stage = "nested_serial_send_build"
 
 
 def _then_is_active(tokens: list[str], partial: str) -> bool:
@@ -316,7 +550,7 @@ def _extract_nested_script_tail(
         parts.append(inline_value)
     for t in tokens[then_idx + 1:]:
         base = t.split("=", 1)[0]
-        if base in _OUTER_AUTO_RULE_FLAGS:
+        if base in _THEN_TAIL_STOP_FLAGS:
             break
         parts.append(t)
 
@@ -336,7 +570,7 @@ def _extract_nested_script_tail(
 def _maybe_attach_nested_script(state: CompletionState) -> None:
     if state.command != "auto_rule" or state.sub not in ("add", "update") or not state.sub_locked:
         return
-    if not _then_is_active(state.complete_tokens, state.current_token):
+    if not _cursor_in_then_zone(state):
         return
     tail = _extract_nested_script_tail(
         state.complete_tokens,
@@ -627,6 +861,20 @@ def _argument_completions(
     prefix_matches: list[tuple[str, dict[str, Any]]] = []
 
     for key, meta in sorted_params(params):
+        if (
+            cmd_name == "serial"
+            and sub == "send"
+            and key in _SERIAL_SEND_BUILD_ONLY_PARAMS
+            and not used_args.get("build")
+        ):
+            continue
+        if (
+            cmd_name == "serial"
+            and sub == "send"
+            and used_args.get("build")
+            and key == "hex"
+        ):
+            continue
         flag = f"--{key}"
         if typing_flag and not _flag_matches(flag, flag_prefix):
             continue
@@ -725,6 +973,87 @@ def _argument_value_completions(
     return completions
 
 
+def _completions_for_auto_rule_match(state: CompletionState) -> list[dict[str, Any]]:
+    nested = state.nested
+    if nested is None:
+        return []
+    if nested.stage == "argument_value" and nested.value_param:
+        dynamic = auto_rule_match_value_completions(
+            nested.used_args, nested.value_param, nested.value_prefix,
+        )
+        if dynamic is not None:
+            return dynamic
+        return []
+    items: list[dict[str, Any]] = []
+    if nested.stage == "argument":
+        route = auto_rule_match_argument_completions(nested.used_args, nested.flag_prefix)
+        if route:
+            items.extend(route)
+        if _proto_family(nested.used_args.get("proto")):
+            items.extend(_auto_rule_match_then_completions(state, nested.flag_prefix))
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for item in items:
+        val = item.get("value", "")
+        if val in seen:
+            continue
+        seen.add(val)
+        out.append(item)
+    return out
+
+
+def _auto_rule_match_then_completions(
+    state: CompletionState,
+    flag_prefix: str,
+) -> list[dict[str, Any]]:
+    """match 区在 proto 已选后随时可接 ``--then``。"""
+    if param_is_used("then", state.used_args, {"type": "str"}):
+        return []
+    flag = "--then"
+    if flag_prefix and not _flag_matches(flag, flag_prefix):
+        return []
+    cmd = registry.get("auto_rule")
+    sub = state.sub or "add"
+    meta = effective_params(cmd, sub).get("then", {}) if cmd else {}
+    item: dict[str, Any] = {
+        "kind": "argument",
+        "value": "--then",
+        "label": "--then",
+        "type": meta.get("type", "str"),
+        "required": bool(meta.get("required", True)),
+        "description": meta.get("desc", "匹配后执行的命令"),
+    }
+    return [item]
+
+
+def _outer_auto_rule_after_match_completions(state: CompletionState) -> list[dict[str, Any]]:
+    """match 区无路由候选时的兜底（proto 未选等）。"""
+    return _auto_rule_match_then_completions(state, "")
+
+
+def _completions_for_serial_send_build(state: CompletionState) -> list[dict[str, Any]]:
+    nested = state.nested
+    if nested is None:
+        return []
+    if nested.stage == "argument_value" and nested.value_param:
+        dynamic = serial_send_build_value_completions(
+            nested.used_args, nested.value_param, nested.value_prefix,
+        )
+        if dynamic is not None:
+            return dynamic
+    if nested.stage == "argument":
+        dynamic = serial_send_build_argument_completions(nested.used_args, nested.flag_prefix)
+        if dynamic:
+            return dynamic
+    return []
+
+
+def _outer_serial_send_after_build_completions(state: CompletionState) -> list[dict[str, Any]]:
+    """build 区填完后继续联想 ``--to`` 等 send 外层参数。"""
+    items = _argument_completions(state.command, "send", state.used_args, "")
+    return [c for c in items if c.get("value") in ("--to",)]
+
+
 def _completions_for_state(state: CompletionState) -> list[dict[str, Any]]:
     completions: list[dict[str, Any]] = []
 
@@ -821,10 +1150,47 @@ def complete_text(text: str) -> dict[str, Any]:
         })
 
 
+def _resolve_completion_active(state: CompletionState) -> CompletionState:
+    """嵌套链上实际产生补全的状态（then → serial send --build → proto/afn…）。"""
+    cur = state
+    while cur.nested and cur.stage == "nested_script":
+        if cur.nested.stage.startswith("nested_"):
+            cur = cur.nested
+            continue
+        cur = cur.nested
+        break
+    if cur.stage == "nested_serial_send_build" and cur.nested:
+        return cur.nested
+    if cur.stage.startswith("nested_") and cur.nested:
+        return cur.nested
+    return cur
+
+
 def _complete_text_impl(text: str) -> dict[str, Any]:
     state = analyze_completion_line(text)
-    active = state.nested if state.stage.startswith("nested_") and state.nested else state
-    completions = _completions_for_state(active)
+    active = _resolve_completion_active(state)
+    if state.stage == "nested_match" and state.nested:
+        completions = _completions_for_auto_rule_match(state)
+        if not completions:
+            completions = _outer_auto_rule_after_match_completions(state)
+            active = state
+    elif state.stage == "nested_serial_send_build" and state.nested:
+        completions = _completions_for_serial_send_build(state)
+        if not completions:
+            completions = _outer_serial_send_after_build_completions(state)
+    elif state.stage == "nested_script" and state.nested:
+        inner = state.nested
+        if inner.stage == "nested_serial_send_build":
+            completions = _completions_for_serial_send_build(inner)
+            if not completions:
+                completions = _outer_serial_send_after_build_completions(inner)
+            active = inner.nested or inner
+        else:
+            completions = _completions_for_state(inner)
+            active = inner
+    else:
+        active = state.nested if state.stage.startswith("nested_") and state.nested else state
+        completions = _completions_for_state(active)
     return response_success({
         "completions": completions,
         "stage": state.stage,
