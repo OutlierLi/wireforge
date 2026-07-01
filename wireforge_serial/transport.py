@@ -99,6 +99,10 @@ class _AutoRulePort:
     def __init__(self):
         self._rx_buf = bytearray()
 
+    def prepend_rx(self, data: bytes) -> None:
+        if data:
+            self._rx_buf = bytearray(data) + self._rx_buf
+
     def write(self, data: bytes) -> int:
         try:
             from console.handlers.auto_rule import match_all, append_action_replies_to_buf
@@ -169,10 +173,14 @@ class SerialTransport:
         self.settings = settings
         self._port: _PortLike | None = None
         self._last_error: str = ""
+<<<<<<< Updated upstream
         self._rx_buf = bytearray()
         self._rx_cond = threading.Condition()
         self._reader_stop = threading.Event()
         self._reader_thread: threading.Thread | None = None
+=======
+        self._rx_pushback = bytearray()
+>>>>>>> Stashed changes
         # 实时回调: 每个读取到的 chunk 都会触发
         self.on_rx_chunk: Callable[[bytes], None] | None = None
         self.on_tx: Callable[[bytes], None] | None = None
@@ -223,10 +231,24 @@ class SerialTransport:
             self._last_error = str(e)
             raise
 
+    def prepend_rx(self, data: bytes) -> None:
+        """Put bytes back for the next read (e.g. wait-frame consumed one of many)."""
+        if not data:
+            return
+        if self._port is not None and hasattr(self._port, "prepend_rx"):
+            self._port.prepend_rx(data)
+        else:
+            self._rx_pushback = bytearray(data) + self._rx_pushback
+
     def read_available(self, max_size: int = 4096) -> bytes:
         if not self._port:
             return b""
         try:
+            if self._rx_pushback:
+                n = min(max_size, len(self._rx_pushback))
+                result = bytes(self._rx_pushback[:n])
+                self._rx_pushback = self._rx_pushback[n:]
+                return result
             return self._port.read(max_size)
         except Exception as e:
             self._last_error = str(e)

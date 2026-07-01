@@ -30,79 +30,45 @@ def _extract_one_frame(data: bytes) -> tuple[bytes | None, bytes]:
     if len(data) < 6:
         return None, data
 
-    # Try DLT645 preamble first
-    preamble_idx = data.find(b"\x68")
-    if preamble_idx < 0:
-        # No start byte found, skip to end
+    preamble, body = _split_fe_preamble(data)
+    if not body or body[0] != 0x68:
+        # No start byte found, skip one byte and retry later
+        if len(data) > 1:
+            return None, data[1:]
         return None, data
 
-    # Skip anything before the 68
-    if preamble_idx > 0 and preamble_idx < 4:
-        # Partial preamble, skip to 68
-        data = data[preamble_idx:]
+    # DLT645: 68 + addr(6) + 68 + ctrl + len + data + cs + 16
+    if len(body) >= 10 and body[7] == 0x68:
+        data_len = body[9]
+        frame_len = 12 + data_len
+        if len(body) < frame_len:
+            return None, data
+        if body[frame_len - 1] != 0x16:
+            return None, data[1:]
+        frame = preamble + body[:frame_len]
+        return frame, body[frame_len:]
 
-    start_idx = data.find(b"\x68")
-    if start_idx < 0:
+    # CSG: 68 + uint16_le total length (includes start and end)
+    if len(body) < 3:
         return None, data
 
-    # Discard garbage before frame start
-    if start_idx > 0:
-        # Check if there are FE bytes (DLT645 preamble)
-        garbage = data[:start_idx]
-        if not all(b == 0xFE for b in garbage):
-            # Non-preamble garbage, discard it
-            data = data[start_idx:]
-            start_idx = 0
-
-    # Now data starts with 68 (possibly preceded by FE preamble)
-    # Find the actual 68 position
-    pos_68 = data.find(b"\x68")
-    if pos_68 < 0:
-        return None, data
-    if pos_68 > 0:
-        # Preamble before 68
-        if not all(b == 0xFE for b in data[:pos_68]):
-            data = data[pos_68:]
-            pos_68 = 0
-        else:
-            # Include preamble in frame
-            pass
-
-    frame_start = pos_68 if all(b == 0xFE for b in data[:pos_68]) else pos_68
-    # Actually simpler: just use 68 position
-    idx_68 = data.find(b"\x68")
-    if idx_68 < 0:
-        return None, data
-
-    # Include any FE preamble bytes before 68
-    preamble = b""
-    if idx_68 > 0:
-        preamble = data[:idx_68]
-        if not all(b == 0xFE for b in preamble):
-            # Not preamble, discard
-            return None, data[idx_68:]
-        data = data[idx_68:]  # strip preamble for length calculation
-
-    # Need at least 68 + 2 bytes length
-    if len(data) < 3:
-        return None, preamble + data if preamble else data
-
-    # CSG frame: length is uint16 LE at offset 1 from 68
-    total_len = int.from_bytes(data[1:3], "little")
+    total_len = int.from_bytes(body[1:3], "little")
     if total_len < 6:
-        # Invalid length, skip this 68
         return None, data[1:]
 
-    if len(data) < total_len:
-        # Incomplete frame
-        return None, preamble + data if preamble else data
+    if len(body) < total_len:
+        return None, data
 
-    # Check end byte
-    if data[total_len - 1] != 0x16:
-        # CSG frame must end with 16
-        # Could be DLT645 with 16 at end
-        # Try again by skipping this invalid frame
+    if body[total_len - 1] != 0x16:
         return None, data[1:]
 
-    frame = preamble + data[:total_len]
-    return frame, data[total_len:]
+    frame = preamble + body[:total_len]
+    return frame, body[total_len:]
+
+
+def _split_fe_preamble(data: bytes) -> tuple[bytes, bytes]:
+    """Strip leading 0xFE preamble; return (preamble, rest)."""
+    idx = 0
+    while idx < len(data) and data[idx] == 0xFE:
+        idx += 1
+    return data[:idx], data[idx:]

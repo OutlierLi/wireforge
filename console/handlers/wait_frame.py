@@ -68,7 +68,7 @@ def handle(args: dict[str, Any]) -> dict:
             frames, remainder = split_frames(data)
             buffer = bytearray(remainder)
 
-            for frame_bytes in frames:
+            for idx, frame_bytes in enumerate(frames):
                 received_count += 1
                 frame_hex = frame_bytes.hex(" ").upper()
 
@@ -84,6 +84,9 @@ def handle(args: dict[str, Any]) -> dict:
                 # Match against expect conditions
                 match_result = _match_expect(decoded, expect, received_count)
                 if match_result is True:
+                    leftover = b"".join(frames[idx + 1:]) + bytes(remainder)
+                    if leftover:
+                        transport.prepend_rx(leftover)
                     elapsed_ms = int((time.monotonic() - (deadline - timeout_ms / 1000.0)) * 1000)
                     result_data = {
                         "matched": True,
