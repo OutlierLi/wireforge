@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, TYPE_CHECKING
 
 from protocol_tool.codecs.base import FieldCodec
@@ -48,12 +49,26 @@ class UIntCodec(FieldCodec):
         if value is None:
             value = 0  # auto-computed field, will be fixed in two-pass encode
         elif not isinstance(value, int):
-            value = int(value)
+            value = self._coerce_int(value)
         byte_order = self._effective_byte_order(field)
         length = self.field_length(field, context) or self._width
         raw = value.to_bytes(length, byte_order)
         raw = self._apply_transforms_encode(field, raw)
         writer.write(raw)
+
+    @staticmethod
+    def _coerce_int(value: Any) -> int:
+        if isinstance(value, bool):
+            raise ValueError("bool is not a valid unsigned integer field value")
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
+        if isinstance(value, str):
+            text = value.strip().replace(" ", "")
+            if re.fullmatch(r"0x[0-9A-Fa-f]+", text):
+                return int(text, 16)
+            if re.fullmatch(r"\d+", text):
+                return int(text, 10)
+        return int(value)
 
     def field_length(
         self,

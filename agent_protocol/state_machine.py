@@ -1,4 +1,4 @@
-"""Recoverable MCP state machine driven by a deterministic protocol map."""
+﻿"""Recoverable MCP state machine driven by a deterministic protocol map."""
 
 from __future__ import annotations
 
@@ -606,10 +606,22 @@ def _route_args(facts: dict[str, Any]) -> dict[str, Any]:
 
 
 def _required_schema_fields(schema: list[dict[str, Any]]) -> list[str]:
+    field_names = {str(field.get("name")) for field in schema if isinstance(field, dict) and field.get("name")}
+    derived_fields = {"payload_length"} if "payload" in field_names else set()
     return [
         str(field["name"])
         for field in schema
-        if field.get("default") in (None, "")
+        if field.get("default") in (None, "") and str(field.get("name")) not in derived_fields
+    ]
+
+
+def _public_input_schema(schema: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    field_names = {str(field.get("name")) for field in schema if isinstance(field, dict) and field.get("name")}
+    derived_fields = {"payload_length"} if "payload" in field_names else set()
+    return [
+        field
+        for field in schema
+        if not (isinstance(field, dict) and str(field.get("name")) in derived_fields)
     ]
 
 
@@ -841,16 +853,25 @@ def _detect_tasks(raw_input: str) -> list[TaskType]:
     has_hex = bool(_extract_hex(raw_input))
     frame_hex = _extract_hex(raw_input)
     frame_like = bool(frame_hex and _looks_like_protocol_frame(frame_hex))
-    from_frame_intent = frame_like and any(
-        word in raw_input for word in ["旧报文", "基于", "根据", "修改", "重建", "from_frame", "from-frame"]
+    build_words = [
+        "构造", "生成", "组帧", "回复", "响应", "添加", "设置", "查询", "读取", "重建",
+        "鏋勯€?", "鐢熸垚", "缁勫抚", "鍥炲", "鍝嶅簲", "娣诲姞", "璁剧疆", "鏌ヨ", "璇诲彇", "閲嶅缓",
+    ]
+    decode_words = ["解析", "解码", "瑙ｆ瀽", "瑙ｇ爜"]
+    send_words = ["发送", "下发", "写入", "执行", "鍙戦€?", "涓嬪彂", "鍐欏叆", "鎵ц"]
+    from_frame_words = [
+        "旧报文", "基于", "根据", "修改", "重建",
+        "鏃ф姤鏂?", "鍩轰簬", "鏍规嵁", "淇敼", "閲嶅缓",
+        "from_frame", "from-frame",
+    ]
+    from_frame_intent = frame_like and any(word in raw_input for word in from_frame_words)
+    wants_build = any(word in raw_input for word in build_words) or "build" in text or from_frame_intent
+    wants_decode = any(word in raw_input for word in decode_words) or "decode" in text
+    wants_send = (
+        any(word in raw_input for word in send_words)
+        or "send" in text
+        or bool(re.search(r"(?:通过|閫氳繃)\s*COM\d+", raw_input, re.I))
     )
-    wants_build = (
-        any(word in raw_input for word in ["构造", "生成", "组帧", "回复", "响应", "添加", "设置", "查询", "读取", "重建"])
-        or "build" in text
-        or from_frame_intent
-    )
-    wants_decode = any(word in raw_input for word in ["解析", "解码"]) or "decode" in text
-    wants_send = any(word in raw_input for word in ["发送", "下发", "写入", "执行"]) or "send" in text or bool(re.search(r"通过\s*COM\d+", raw_input, re.I))
 
     tasks: list[TaskType] = []
     if wants_build:
@@ -863,7 +884,6 @@ def _detect_tasks(raw_input: str) -> list[TaskType]:
         elif "SEND" not in tasks:
             tasks.append("SEND")
     return tasks
-
 
 def _extract_hex(raw_input: str) -> str:
     candidates = re.findall(r"(?:[0-9A-Fa-f]{2}[\s,;:-]*){4,}", raw_input)
@@ -885,10 +905,9 @@ def _is_from_frame_build(
     hex_text = _extract_hex(raw_input)
     if not hex_text or not _looks_like_protocol_frame(hex_text):
         return False
-    if any(word in raw_input for word in ["旧报文", "基于", "根据", "修改", "重建", "from_frame", "from-frame"]):
+    if any(word in raw_input for word in ["旧报文", "基于", "根据", "修改", "重建", "鏃ф姤鏂?", "鍩轰簬", "鏍规嵁", "淇敼", "閲嶅缓", "from_frame", "from-frame"]):
         return True
-    return any(word in raw_input for word in ["构造", "生成", "组帧", "回复", "响应", "添加", "设置", "查询", "读取"]) or "build" in raw_input.lower()
-
+    return any(word in raw_input for word in ["构造", "生成", "组帧", "回复", "响应", "添加", "设置", "查询", "读取", "鏋勯€?", "鐢熸垚", "缁勫抚", "鍥炲", "鍝嶅簲", "娣诲姞", "璁剧疆", "鏌ヨ", "璇诲彇"]) or "build" in raw_input.lower()
 
 def _looks_like_protocol_frame(hex_text: str) -> bool:
     clean = re.sub(r"\s+", "", hex_text).upper()
@@ -1066,16 +1085,13 @@ def _compact_waiting_input(waiting_input: dict[str, Any]) -> dict[str, Any]:
             fields = [item.get("name") for item in waiting_input["input_schema"] if isinstance(item, dict) and item.get("name")]
         public["fields"] = fields or []
         schema = waiting_input.get("input_schema") if isinstance(waiting_input.get("input_schema"), list) else []
-        public["input_schema"] = schema
+        public_schema = _public_input_schema(schema)
+        public["input_schema"] = public_schema
         if waiting_input.get("source_mode") == "from_frame":
             public["required_fields"] = []
             public["fields"] = []
         else:
-            public["required_fields"] = [
-                item.get("name")
-                for item in schema
-                if isinstance(item, dict) and item.get("required") and item.get("name")
-            ]
+            public["required_fields"] = _required_schema_fields(schema)
         defaulted = {
             item.get("name"): item.get("default")
             for item in schema
@@ -1554,3 +1570,4 @@ def _mapping_lines(data: dict[str, Any]) -> list[str]:
 def _inline(value: Any) -> str:
     text = json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
     return text[:700] + "..." if len(text) > 700 else text
+

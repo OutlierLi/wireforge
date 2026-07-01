@@ -131,6 +131,7 @@ def build_csg_field_values(
 @dataclass
 class MessageTestResult:
     pair_id: str
+    scenario_id: str
     slot: str
     side: str
     role: str | None
@@ -147,6 +148,7 @@ class MessageTestResult:
         out = {
             "pair_id": self.pair_id,
             "slot": self.slot,
+            "scenario_id": getattr(self, "scenario_id", ""),
             "side": self.side,
             "role": self.role,
             "dir": self.dir,
@@ -177,6 +179,7 @@ def run_pair_message(
     info = csg_to_route_info(msg)
     base = MessageTestResult(
         pair_id=msg.pair_id,
+        scenario_id=msg.scenario_id,
         slot=msg.slot,
         side=msg.side,
         role=msg.role,
@@ -255,6 +258,7 @@ def run_dlt645_pair_message(
     info = dlt645_to_route_info(msg)
     base = MessageTestResult(
         pair_id=msg.pair_id,
+        scenario_id=getattr(msg, "scenario_id", "default"),
         slot=msg.slot,
         side=msg.side,
         role=msg.role,

@@ -1,4 +1,4 @@
-"""Protocol-specific extension profiles (CSG 2016 / DLT645-2007)."""
+﻿"""Protocol-specific extension profiles (CSG 2016 / DLT645-2007)."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ class ProtocolProfile:
     def detect_from_text(self, text: str) -> bool:
         raise NotImplementedError
 
-    def missing_c_struct_input(self, user_input: dict[str, Any]) -> list[str]:
+    def missing_schema_input(self, user_input: dict[str, Any]) -> list[str]:
         raise NotImplementedError
 
     def apply_defaults(self, spec: ExtensionSpec) -> None:
@@ -141,21 +141,21 @@ class CsgProfile(ProtocolProfile):
             return True
         return False
 
-    def missing_c_struct_input(self, user_input: dict[str, Any]) -> list[str]:
+    def missing_schema_input(self, user_input: dict[str, Any]) -> list[str]:
         missing: list[str] = []
         if not user_input.get("afn"):
             missing.append("afn")
         if not user_input.get("di"):
             missing.append("di")
-        has_main = bool(user_input.get("c_struct") or user_input.get("c_struct_path"))
+        has_main = isinstance(user_input.get("fields"), list)
         has_empty = bool(user_input.get("empty_payload"))
         if not has_main and not has_empty and not user_input.get("variants"):
-            missing.append("c_struct|c_struct_path|empty_payload")
+            missing.append("fields|empty_payload")
         if user_input.get("pair"):
-            has_resp = bool(user_input.get("resp_c_struct") or user_input.get("resp_c_struct_path"))
+            has_resp = isinstance(user_input.get("resp_fields"), list)
             has_resp_empty = bool(user_input.get("resp_empty_payload"))
             if not has_resp and not has_resp_empty:
-                missing.append("resp_c_struct|resp_c_struct_path|resp_empty_payload")
+                missing.append("resp_fields|resp_empty_payload")
         return missing
 
     def apply_defaults(self, spec: ExtensionSpec) -> None:
@@ -329,19 +329,19 @@ class Dlt645Profile(ProtocolProfile):
             return True
         return False
 
-    def missing_c_struct_input(self, user_input: dict[str, Any]) -> list[str]:
+    def missing_schema_input(self, user_input: dict[str, Any]) -> list[str]:
         missing: list[str] = []
         if not user_input.get("di"):
             missing.append("di")
-        has_main = bool(user_input.get("c_struct") or user_input.get("c_struct_path"))
+        has_main = isinstance(user_input.get("fields"), list)
         has_empty = bool(user_input.get("empty_payload"))
         if not has_main and not has_empty and not user_input.get("variants"):
-            missing.append("c_struct|c_struct_path|empty_payload")
+            missing.append("fields|empty_payload")
         if user_input.get("pair"):
-            has_resp = bool(user_input.get("resp_c_struct") or user_input.get("resp_c_struct_path"))
+            has_resp = isinstance(user_input.get("resp_fields"), list)
             has_resp_empty = bool(user_input.get("resp_empty_payload"))
             if not has_resp and not has_resp_empty:
-                missing.append("resp_c_struct|resp_c_struct_path|resp_empty_payload")
+                missing.append("resp_fields|resp_empty_payload")
         return missing
 
     def apply_defaults(self, spec: ExtensionSpec) -> None:
@@ -525,31 +525,31 @@ def detect_protocol(raw_input: str, user_input: dict[str, Any] | None = None) ->
 
 
 def input_schema_for(protocol: str) -> list[dict[str, Any]]:
-    common = [
-        {"name": "protocol", "type": "string", "required": False, "desc": "csg / dlt645（可自动识别）"},
-        {"name": "di", "type": "string", "required": True, "desc": "8 位 DI（CSG 如 E8030306；645 如 00010000）"},
-        {"name": "c_struct", "type": "string", "required": False, "desc": "inline C 结构体源码（DI payload）"},
-        {"name": "c_struct_path", "type": "string", "required": False, "desc": ".h 文件路径"},
-        {"name": "dir", "type": "string", "required": False, "desc": "downlink/uplink；645 默认 uplink（读数据应答载荷）"},
-        {"name": "description", "type": "string", "required": False, "desc": "报文描述（也可写在 @wireforge 注释）"},
-        {"name": "pair", "type": "boolean", "required": False, "desc": "是否生成请求/响应成对 variant"},
-        {"name": "empty_payload", "type": "boolean", "required": False, "desc": "true 表示空 payload"},
-        {"name": "resp_empty_payload", "type": "boolean", "required": False, "desc": "成对报文响应侧空 payload"},
-        {"name": "resp_c_struct", "type": "string", "required": False, "desc": "响应 payload C 结构体源码"},
-        {"name": "resp_c_struct_path", "type": "string", "required": False, "desc": "响应 payload .h 路径"},
-        {"name": "resp_description", "type": "string", "required": False, "desc": "响应报文描述"},
-        {"name": "variants", "type": "array", "required": False, "desc": "批量扩展 manifest"},
-    ]
     profile = get_profile(protocol)
+    common_schema = [
+        {"name": "protocol", "type": "string", "required": False, "desc": "csg / dlt645, auto-detected when omitted"},
+        {"name": "di", "type": "string", "required": True, "desc": "8-hex DI, e.g. E8030306 or 00010000"},
+        {"name": "fields", "type": "array", "required": False, "desc": "Agent-authored payload schema fields"},
+        {"name": "dir", "type": "string", "required": False, "desc": "downlink/uplink; DLT645 defaults by func"},
+        {"name": "description", "type": "string", "required": False, "desc": "message description"},
+        {"name": "pair", "type": "boolean", "required": False, "desc": "generate request/response variants"},
+        {"name": "empty_payload", "type": "boolean", "required": False, "desc": "true means payload has no fields"},
+        {"name": "resp_empty_payload", "type": "boolean", "required": False, "desc": "pair response has no fields"},
+        {"name": "resp_fields", "type": "array", "required": False, "desc": "Agent-authored response payload schema fields"},
+        {"name": "resp_description", "type": "string", "required": False, "desc": "response message description"},
+        {"name": "variants", "type": "array", "required": False, "desc": "batch extension entries"},
+    ]
     if profile.id == "dlt645_2007":
         return [
             {"name": "func", "type": "string", "required": False,
-             "desc": "控制码 FUNC（0x11 读数据/0x14 写数据/0x16 冻结/0x1B 事件清零等；默认 0x11）",
+             "desc": "DL/T 645 FUNC, default 0x11",
              "default": "0x11"},
-            *common,
+            *common_schema,
         ]
     return [
-        {"name": "afn", "type": "string", "required": True, "desc": "应用功能码 AFN（hex 或十进制）"},
-        {"name": "add", "type": "boolean", "required": False, "desc": "是否带地址域；默认 false"},
-        *common,
+        {"name": "afn", "type": "string", "required": True, "desc": "CSG AFN, hex or decimal"},
+        {"name": "add", "type": "boolean", "required": False, "desc": "whether CSG address area is present; default false"},
+        *common_schema,
     ]
+
+

@@ -1,5 +1,5 @@
-# CSG 2016 routing groups only
-# DI payload fields live in c_struct/ and variants/payloads/ (generated)
+﻿# CSG 2016 routing groups only
+# DI payload fields live in variants/payloads/.
 
 variants:
 - kind: variant
@@ -106,3 +106,4 @@ variants:
       router: afn07_di_router
       boundary:
         kind: remaining
+

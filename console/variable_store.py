@@ -148,6 +148,7 @@ class VariableStore:
         """
         path = Path(filepath).resolve()
         tmp = path.with_suffix(path.suffix + ".tmp")
+        path.parent.mkdir(parents=True, exist_ok=True)
 
         doc = {
             "version": 1,

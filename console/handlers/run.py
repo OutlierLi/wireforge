@@ -21,6 +21,8 @@ def handle(args: dict[str, Any]) -> dict:
             timeout_ms=_optional_int(args.get("timeout")),
             report=str(args["report"]) if args.get("report") else None,
         )
+        if isinstance(data, dict) and isinstance(data.get("_legacy"), dict):
+            data = data["_legacy"]
     except PlanError as exc:
         return fail(str(exc))
     except Exception as exc:

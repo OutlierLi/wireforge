@@ -1,5 +1,5 @@
-# Generated from payloads/afn02_query_remaining_allocatable_resp.h
-# Source: c_struct manifest — do not edit by hand
+﻿# Generated from payloads/afn02_query_remaining_allocatable_resp.h
+# Source: checked-in YAML payload definition
 
 variants:
 - kind: variant
@@ -16,3 +16,4 @@ variants:
       type: uint16_le
       description: 剩余可分配任务数
   description: 返回查询剩余可分配任务数
+

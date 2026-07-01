@@ -1,5 +1,5 @@
-# Generated from payloads/afn03_query_mode.h
-# Source: c_struct manifest — do not edit by hand
+﻿# Generated from payloads/afn03_query_mode.h
+# Source: checked-in YAML payload definition
 
 variants:
 - kind: variant
@@ -13,3 +13,4 @@ variants:
     type: struct
     fields: []
   description: 查询本地通信模块运行模式信息
+

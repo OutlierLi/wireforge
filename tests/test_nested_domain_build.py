@@ -10,7 +10,6 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 REGISTRY = ROOT / "protocol_tool" / "protocols" / "registry.yaml"
 IR_PATH = ROOT / "compiled" / "csg_2016.ir.json"
-CSG_PAYLOADS = ROOT / "protocol_tool" / "protocols" / "csg_2016" / "c_struct" / "payloads"
 
 
 @pytest.fixture(scope="module", autouse=True)

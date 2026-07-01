@@ -1,389 +1,603 @@
 version: 1
 exclude:
-  - reason: broadcast
-    # CSG 表4 无广播；预留字段供后续 DLT645 复用
-
+- reason: broadcast
 pairs:
-  # ── AFN00 下行确认/否认（集中器→模块，无后续响应）──
-  - id: afn00_ack_downlink
-    request:
-      afn: "00"
+- id: afn00_ack_downlink
+  request:
+    afn: '00'
+    di: E8010001
+    dir: downlink
+  responses: []
+- id: afn00_nak_downlink
+  request:
+    afn: '00'
+    di: E8010002
+    dir: downlink
+  responses: []
+- id: afn01_reset_hardware
+  request:
+    afn: '01'
+    di: E8020101
+    dir: downlink
+  response_scenarios:
+  - id: success
+    responses:
+    - role: ack
+      afn: '00'
       di: E8010001
-      dir: downlink
-    responses: []
-
-  - id: afn00_nak_downlink
-    request:
-      afn: "00"
+      dir: uplink
+  - id: nak
+    responses:
+    - role: nak
+      afn: '00'
       di: E8010002
-      dir: downlink
-    responses: []
-
-  # ── AFN01 管理命令 → ACK ──
-  - id: afn01_reset_hardware
-    request:
-      afn: "01"
-      di: E8020101
-      dir: downlink
+      dir: uplink
+- id: afn01_init_archive
+  request:
+    afn: '01'
+    di: E8020102
+    dir: downlink
+  response_scenarios:
+  - id: success
     responses:
-      - role: ack
-        afn: "00"
-        di: E8010001
-        dir: uplink
-
-  - id: afn01_init_archive
-    request:
-      afn: "01"
-      di: E8020102
-      dir: downlink
+    - role: ack
+      afn: '00'
+      di: E8010001
+      dir: uplink
+  - id: nak
     responses:
-      - role: ack
-        afn: "00"
-        di: E8010001
-        dir: uplink
-
-  - id: afn01_init_task
-    request:
-      afn: "01"
-      di: E8020103
-      dir: downlink
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn01_init_task
+  request:
+    afn: '01'
+    di: E8020103
+    dir: downlink
+  response_scenarios:
+  - id: success
     responses:
-      - role: ack
-        afn: "00"
-        di: E8010001
-        dir: uplink
-
-  # ── AFN02 任务管理 ──
-  - id: afn02_add_task
-    request:
-      afn: "02"
-      di: E8020201
-      dir: downlink
+    - role: ack
+      afn: '00'
+      di: E8010001
+      dir: uplink
+  - id: nak
+    responses:
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn02_add_task
+  request:
+    afn: '02'
+    di: E8020201
+    dir: downlink
+    has_address: true
+  response_scenarios:
+  - id: success
+    responses:
+    - role: ack
+      afn: '00'
+      di: E8010001
+      dir: uplink
+    - role: follow_up
+      afn: '05'
+      di: E8050501
+      dir: uplink
       has_address: true
+      repeat: 3
+    - role: follow_up
+      afn: '05'
+      di: E8050505
+      dir: uplink
+  - id: nak
     responses:
-      - role: ack
-        afn: "00"
-        di: E8010001
-        dir: uplink
-      - role: follow_up
-        afn: "05"
-        di: E8050501
-        dir: uplink
-        has_address: true
-        repeat: 3
-      - role: follow_up
-        afn: "05"
-        di: E8050505
-        dir: uplink
-
-  - id: afn02_delete_task
-    request:
-      afn: "02"
-      di: E8020202
-      dir: downlink
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn02_delete_task
+  request:
+    afn: '02'
+    di: E8020202
+    dir: downlink
+  response_scenarios:
+  - id: success
     responses:
-      - role: ack
-        afn: "00"
-        di: E8010001
-        dir: uplink
-
-  - id: afn02_query_remaining
-    request:
-      afn: "02"
-      di: E8000203
-      dir: downlink
+    - role: ack
+      afn: '00'
+      di: E8010001
+      dir: uplink
+  - id: nak
     responses:
-      - role: data
-        afn: "02"
-        di: E8000103
-        dir: uplink
-
-  - id: afn02_query_task_list
-    request:
-      afn: "02"
-      di: E8030204
-      dir: downlink
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn02_query_remaining
+  request:
+    afn: '02'
+    di: E8000203
+    dir: downlink
+  response_scenarios:
+  - id: success
     responses:
-      - role: data
-        afn: "02"
-        di: E8040204
-        dir: uplink
-
-  - id: afn02_query_task_detail
-    request:
-      afn: "02"
-      di: E8030205
-      dir: downlink
+    - role: data
+      afn: '02'
+      di: E8000103
+      dir: uplink
+  - id: nak
     responses:
-      - role: data
-        afn: "02"
-        di: E8040205
-        dir: uplink
-
-  - id: afn02_query_remaining_allocatable
-    request:
-      afn: "02"
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn02_query_task_list
+  request:
+    afn: '02'
+    di: E8030204
+    dir: downlink
+  response_scenarios:
+  - id: success
+    responses:
+    - role: data
+      afn: '02'
+      di: E8040204
+      dir: uplink
+  - id: nak
+    responses:
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn02_query_task_detail
+  request:
+    afn: '02'
+    di: E8030205
+    dir: downlink
+  response_scenarios:
+  - id: success
+    responses:
+    - role: data
+      afn: '02'
+      di: E8040205
+      dir: uplink
+  - id: nak
+    responses:
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn02_query_remaining_allocatable
+  request:
+    afn: '02'
+    di: E8000206
+    dir: downlink
+  response_scenarios:
+  - id: success
+    responses:
+    - role: data
+      afn: '02'
       di: E8000206
-      dir: downlink
+      dir: uplink
+  - id: nak
     responses:
-      - role: data
-        afn: "02"
-        di: E8000206
-        dir: uplink
-
-  - id: afn02_add_multicast_task
-    request:
-      afn: "02"
-      di: E8020207
-      dir: downlink
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn02_add_multicast_task
+  request:
+    afn: '02'
+    di: E8020207
+    dir: downlink
+  response_scenarios:
+  - id: success
     responses:
-      - role: ack
-        afn: "00"
-        di: E8010001
-        dir: uplink
-
-  - id: afn02_start_task
-    request:
-      afn: "02"
-      di: E8020208
-      dir: downlink
+    - role: ack
+      afn: '00'
+      di: E8010001
+      dir: uplink
+  - id: nak
     responses:
-      - role: ack
-        afn: "00"
-        di: E8010001
-        dir: uplink
-
-  - id: afn02_pause_task
-    request:
-      afn: "02"
-      di: E8020209
-      dir: downlink
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn02_start_task
+  request:
+    afn: '02'
+    di: E8020208
+    dir: downlink
+  response_scenarios:
+  - id: success
     responses:
-      - role: ack
-        afn: "00"
-        di: E8010001
-        dir: uplink
-
-  # ── AFN03 查询 ──
-  - id: afn03_query_vendor
-    request:
-      afn: "03"
+    - role: ack
+      afn: '00'
+      di: E8010001
+      dir: uplink
+  - id: nak
+    responses:
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn02_pause_task
+  request:
+    afn: '02'
+    di: E8020209
+    dir: downlink
+  response_scenarios:
+  - id: success
+    responses:
+    - role: ack
+      afn: '00'
+      di: E8010001
+      dir: uplink
+  - id: nak
+    responses:
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn03_query_vendor
+  request:
+    afn: '03'
+    di: E8000301
+    dir: downlink
+  response_scenarios:
+  - id: success
+    responses:
+    - role: data
+      afn: '03'
       di: E8000301
-      dir: downlink
+      dir: uplink
+  - id: nak
     responses:
-      - role: data
-        afn: "03"
-        di: E8000301
-        dir: uplink
-
-  - id: afn03_query_mode
-    request:
-      afn: "03"
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn03_query_mode
+  request:
+    afn: '03'
+    di: E8000302
+    dir: downlink
+  response_scenarios:
+  - id: success
+    responses:
+    - role: data
+      afn: '03'
       di: E8000302
-      dir: downlink
+      dir: uplink
+  - id: nak
     responses:
-      - role: data
-        afn: "03"
-        di: E8000302
-        dir: uplink
-
-  - id: afn03_query_master_addr
-    request:
-      afn: "03"
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn03_query_master_addr
+  request:
+    afn: '03'
+    di: E8000303
+    dir: downlink
+  response_scenarios:
+  - id: success
+    responses:
+    - role: data
+      afn: '03'
       di: E8000303
-      dir: downlink
+      dir: uplink
+  - id: nak
     responses:
-      - role: data
-        afn: "03"
-        di: E8000303
-        dir: uplink
-
-  - id: afn03_query_delay
-    request:
-      afn: "03"
-      di: E8030304
-      dir: downlink
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn03_query_delay
+  request:
+    afn: '03'
+    di: E8030304
+    dir: downlink
+  response_scenarios:
+  - id: success
     responses:
-      - role: data
-        afn: "03"
-        di: E8040304
-        dir: uplink
-
-  - id: afn03_query_slave_count
-    request:
-      afn: "03"
+    - role: data
+      afn: '03'
+      di: E8040304
+      dir: uplink
+  - id: nak
+    responses:
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn03_query_slave_count
+  request:
+    afn: '03'
+    di: E8000305
+    dir: downlink
+  response_scenarios:
+  - id: success
+    responses:
+    - role: data
+      afn: '03'
       di: E8000305
-      dir: downlink
+      dir: uplink
+  - id: nak
     responses:
-      - role: data
-        afn: "03"
-        di: E8000305
-        dir: uplink
-
-  - id: afn03_query_slave_info
-    request:
-      afn: "03"
-      di: E8030306
-      dir: downlink
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn03_query_slave_info
+  request:
+    afn: '03'
+    di: E8030306
+    dir: downlink
+  response_scenarios:
+  - id: success
     responses:
-      - role: data
-        afn: "03"
-        di: E8040306
-        dir: uplink
-
-  - id: afn03_query_slave_register_progress
-    request:
-      afn: "03"
+    - role: data
+      afn: '03'
+      di: E8040306
+      dir: uplink
+  - id: nak
+    responses:
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn03_query_slave_register_progress
+  request:
+    afn: '03'
+    di: E8000307
+    dir: downlink
+  response_scenarios:
+  - id: success
+    responses:
+    - role: data
+      afn: '03'
       di: E8000307
-      dir: downlink
+      dir: uplink
+  - id: nak
     responses:
-      - role: data
-        afn: "03"
-        di: E8000307
-        dir: uplink
-
-  - id: afn03_query_slave_parent
-    request:
-      afn: "03"
-      di: E8030308
-      dir: downlink
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn03_query_slave_parent
+  request:
+    afn: '03'
+    di: E8030308
+    dir: downlink
+  response_scenarios:
+  - id: success
     responses:
-      - role: data
-        afn: "03"
-        di: E8040308
-        dir: uplink
-
-  # ── AFN04 档案/注册管理 → ACK ──
-  - id: afn04_set_master_addr
-    request:
-      afn: "04"
-      di: E8020401
-      dir: downlink
+    - role: data
+      afn: '03'
+      di: E8040308
+      dir: uplink
+  - id: nak
     responses:
-      - role: ack
-        afn: "00"
-        di: E8010001
-        dir: uplink
-
-  - id: afn04_add_slave
-    request:
-      afn: "04"
-      di: E8020402
-      dir: downlink
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn04_set_master_addr
+  request:
+    afn: '04'
+    di: E8020401
+    dir: downlink
+  response_scenarios:
+  - id: success
     responses:
-      - role: ack
-        afn: "00"
-        di: E8010001
-        dir: uplink
-
-  - id: afn04_delete_slave
-    request:
-      afn: "04"
-      di: E8020403
-      dir: downlink
+    - role: ack
+      afn: '00'
+      di: E8010001
+      dir: uplink
+  - id: nak
     responses:
-      - role: ack
-        afn: "00"
-        di: E8010001
-        dir: uplink
-
-  - id: afn04_event_report_ctl
-    request:
-      afn: "04"
-      di: E8020404
-      dir: downlink
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn04_add_slave
+  request:
+    afn: '04'
+    di: E8020402
+    dir: downlink
+  response_scenarios:
+  - id: success
     responses:
-      - role: ack
-        afn: "00"
-        di: E8010001
-        dir: uplink
-
-  - id: afn04_active_register
-    request:
-      afn: "04"
-      di: E8020405
-      dir: downlink
+    - role: ack
+      afn: '00'
+      di: E8010001
+      dir: uplink
+  - id: nak
     responses:
-      - role: ack
-        afn: "00"
-        di: E8010001
-        dir: uplink
-
-  - id: afn04_stop_register
-    request:
-      afn: "04"
-      di: E8020406
-      dir: downlink
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn04_delete_slave
+  request:
+    afn: '04'
+    di: E8020403
+    dir: downlink
+  response_scenarios:
+  - id: success
     responses:
-      - role: ack
-        afn: "00"
-        di: E8010001
-        dir: uplink
-
-  # ── AFN06 请求时间（同 DI 上下行）──
-  - id: afn06_request_time
-    request:
-      afn: "06"
+    - role: ack
+      afn: '00'
+      di: E8010001
+      dir: uplink
+  - id: nak
+    responses:
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn04_event_report_ctl
+  request:
+    afn: '04'
+    di: E8020404
+    dir: downlink
+  response_scenarios:
+  - id: success
+    responses:
+    - role: ack
+      afn: '00'
+      di: E8010001
+      dir: uplink
+  - id: nak
+    responses:
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn04_active_register
+  request:
+    afn: '04'
+    di: E8020405
+    dir: downlink
+  response_scenarios:
+  - id: success
+    responses:
+    - role: ack
+      afn: '00'
+      di: E8010001
+      dir: uplink
+  - id: nak
+    responses:
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn04_stop_register
+  request:
+    afn: '04'
+    di: E8020406
+    dir: downlink
+  response_scenarios:
+  - id: success
+    responses:
+    - role: ack
+      afn: '00'
+      di: E8010001
+      dir: uplink
+  - id: nak
+    responses:
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn06_request_time
+  request:
+    afn: '06'
+    di: E8060601
+    dir: downlink
+  response_scenarios:
+  - id: success
+    responses:
+    - role: data
+      afn: '06'
       di: E8060601
-      dir: downlink
+      dir: uplink
+  - id: nak
     responses:
-      - role: data
-        afn: "06"
-        di: E8060601
-        dir: uplink
-
-  # ── AFN07 文件传输 ──
-  - id: afn07_file_transfer_start
-    request:
-      afn: "07"
-      di: E8020701
-      dir: downlink
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn07_file_transfer_start
+  request:
+    afn: '07'
+    di: E8020701
+    dir: downlink
+  response_scenarios:
+  - id: success
     responses:
-      - role: ack
-        afn: "00"
-        di: E8010001
-        dir: uplink
-
-  - id: afn07_file_transfer_data
-    request:
-      afn: "07"
-      di: E8020702
-      dir: downlink
+    - role: ack
+      afn: '00'
+      di: E8010001
+      dir: uplink
+  - id: nak
     responses:
-      - role: ack
-        afn: "00"
-        di: E8010001
-        dir: uplink
-
-  - id: afn07_query_file_info
-    request:
-      afn: "07"
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn07_file_transfer_data
+  request:
+    afn: '07'
+    di: E8020702
+    dir: downlink
+  response_scenarios:
+  - id: success
+    responses:
+    - role: ack
+      afn: '00'
+      di: E8010001
+      dir: uplink
+  - id: nak
+    responses:
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn07_query_file_info
+  request:
+    afn: '07'
+    di: E8000703
+    dir: downlink
+  response_scenarios:
+  - id: success
+    responses:
+    - role: data
+      afn: '07'
       di: E8000703
-      dir: downlink
+      dir: uplink
+  - id: nak
     responses:
-      - role: data
-        afn: "07"
-        di: E8000703
-        dir: uplink
-
-  - id: afn07_query_progress
-    request:
-      afn: "07"
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn07_query_progress
+  request:
+    afn: '07'
+    di: E8000704
+    dir: downlink
+  response_scenarios:
+  - id: success
+    responses:
+    - role: data
+      afn: '07'
       di: E8000704
-      dir: downlink
+      dir: uplink
+  - id: nak
     responses:
-      - role: data
-        afn: "07"
-        di: E8000704
-        dir: uplink
-
-  - id: afn07_query_failed_nodes
-    request:
-      afn: "07"
-      di: E8030704
-      dir: downlink
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink
+- id: afn07_query_failed_nodes
+  request:
+    afn: '07'
+    di: E8030704
+    dir: downlink
+  response_scenarios:
+  - id: success
     responses:
-      - role: data
-        afn: "07"
-        di: E8040704
-        dir: uplink
+    - role: data
+      afn: '07'
+      di: E8040704
+      dir: uplink
+  - id: nak
+    responses:
+    - role: nak
+      afn: '00'
+      di: E8010002
+      dir: uplink

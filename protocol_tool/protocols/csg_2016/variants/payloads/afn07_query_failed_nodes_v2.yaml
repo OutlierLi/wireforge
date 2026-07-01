@@ -1,5 +1,5 @@
-# Generated from payloads/afn07_query_failed_nodes_v2.h
-# Source: c_struct manifest — do not edit by hand
+﻿# Generated from payloads/afn07_query_failed_nodes_v2.h
+# Source: checked-in YAML payload definition
 
 variants:
 - kind: variant
@@ -19,3 +19,4 @@ variants:
       type: uint8
       description: 本次查询的节点数量
   description: 查询文件传输失败节点
+

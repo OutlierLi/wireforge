@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 import uuid
 from collections.abc import Callable
@@ -168,6 +169,10 @@ class SerialTransport:
         self.settings = settings
         self._port: _PortLike | None = None
         self._last_error: str = ""
+        self._rx_buf = bytearray()
+        self._rx_cond = threading.Condition()
+        self._reader_stop = threading.Event()
+        self._reader_thread: threading.Thread | None = None
         # 实时回调: 每个读取到的 chunk 都会触发
         self.on_rx_chunk: Callable[[bytes], None] | None = None
         self.on_tx: Callable[[bytes], None] | None = None
@@ -201,6 +206,7 @@ class SerialTransport:
                 raise RuntimeError(str(e)) from e
 
     def close(self):
+        self.stop_rx_monitor()
         if self._port:
             self._port.close()
             self._port = None
@@ -226,6 +232,63 @@ class SerialTransport:
             self._last_error = str(e)
             return b""
 
+    def start_rx_monitor(self) -> None:
+        if self._reader_thread and self._reader_thread.is_alive():
+            return
+        self._reader_stop.clear()
+        self._reader_thread = threading.Thread(
+            target=self._rx_monitor_loop,
+            name=f"wireforge-rx-{self.settings.port}",
+            daemon=True,
+        )
+        self._reader_thread.start()
+
+    def stop_rx_monitor(self) -> None:
+        self._reader_stop.set()
+        thread = self._reader_thread
+        if thread and thread.is_alive():
+            thread.join(timeout=0.2)
+        self._reader_thread = None
+
+    @property
+    def rx_monitoring(self) -> bool:
+        return bool(self._reader_thread and self._reader_thread.is_alive())
+
+    def clear_rx_buffer(self) -> None:
+        with self._rx_cond:
+            self._rx_buf.clear()
+
+    def _rx_monitor_loop(self) -> None:
+        while not self._reader_stop.is_set():
+            chunk = self.read_available(4096)
+            if chunk:
+                with self._rx_cond:
+                    self._rx_buf.extend(chunk)
+                    self._rx_cond.notify_all()
+                if self.on_rx_chunk:
+                    self.on_rx_chunk(chunk)
+            else:
+                time.sleep(0.01)
+
+    def _read_monitored_response(self, timeout: float, idle_timeout: float) -> bytes:
+        deadline = time.monotonic() + timeout
+        buf = bytearray()
+        idle_deadline: float | None = None
+
+        while time.monotonic() < deadline:
+            with self._rx_cond:
+                if not self._rx_buf:
+                    wait_until = idle_deadline or deadline
+                    self._rx_cond.wait(timeout=max(0.0, min(0.05, wait_until - time.monotonic())))
+                if self._rx_buf:
+                    buf.extend(self._rx_buf)
+                    self._rx_buf.clear()
+                    idle_deadline = time.monotonic() + idle_timeout
+            if idle_deadline and time.monotonic() >= idle_deadline:
+                break
+
+        return bytes(buf)
+
     @property
     def connected(self) -> bool:
         """检查串口是否仍然连接。"""
@@ -244,6 +307,9 @@ class SerialTransport:
 
         每收到一个 chunk 触发 on_rx_chunk 回调，用于实时终端显示。
         """
+        if self.rx_monitoring:
+            return self._read_monitored_response(timeout, idle_timeout)
+
         deadline = time.monotonic() + timeout
         buf = bytearray()
         idle_deadline = None

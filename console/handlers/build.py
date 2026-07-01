@@ -1,4 +1,4 @@
-"""build 命令处理器 — 支持 --from-frame 从已有报文修改重写。
+﻿"""build 命令处理器 — 支持 --from-frame 从已有报文修改重写。
 
 用法:
   /build --proto=dlt645 --func=0x11 --di=00010000           # 新构造
@@ -111,7 +111,13 @@ def handle(args: dict[str, Any]) -> dict:
     for k, v in target_info.items():
         if k in schema_names and k not in business_values:
             business_values[k] = v
-
+    if (
+        "payload" in business_values
+        and "payload_length" in schema_names
+        and "payload_length" not in business_values
+    ):
+        from console.build_resolver import _hex_byte_length
+        business_values["payload_length"] = _hex_byte_length(business_values["payload"])
     # ── 校验：检测字段不匹配 → 要求先调 /route ──
     unknown_fields = [k for k in business_values if k not in schema_names]
     missing_required = [f for f in target.input_schema
@@ -282,3 +288,4 @@ def _flatten_values(values: dict[str, Any], prefix: str = "") -> dict[str, Any]:
     # 同时保留原始嵌套 key（如 control、di）
     flat.update({k: v for k, v in values.items() if k not in flat})
     return flat
+

@@ -1,5 +1,5 @@
-# Generated from payloads/afn04_event_report_ctl.h
-# Source: c_struct manifest — do not edit by hand
+﻿# Generated from payloads/afn04_event_report_ctl.h
+# Source: checked-in YAML payload definition
 
 variants:
 - kind: variant
@@ -18,3 +18,4 @@ variants:
         '0x00': 禁止上报
         '0x01': 允许上报
   description: 允许/禁止上报从节点事件
+

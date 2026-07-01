@@ -1,4 +1,4 @@
-"""Extension schema — protocol-aware via profiles."""
+﻿"""Extension schema — protocol-aware via profiles."""
 
 from __future__ import annotations
 
@@ -133,11 +133,11 @@ def normalize_add(raw: Any) -> bool | None:
     return None
 
 
-def missing_c_struct_input(user_input: dict[str, Any] | None) -> list[str]:
+def missing_schema_input(user_input: dict[str, Any] | None) -> list[str]:
     from protocol_extend.profiles import detect_protocol, get_profile
     data = dict(user_input or {})
     protocol = detect_protocol("", data)
-    return get_profile(protocol).missing_c_struct_input(data)
+    return get_profile(protocol).missing_schema_input(data)
 
 
 def missing_fields(spec: ExtensionSpec) -> list[str]:
@@ -174,18 +174,16 @@ def partial_with_defaults(spec: ExtensionSpec) -> dict[str, Any]:
 
 
 INPUT_SCHEMA: list[dict[str, Any]] = [
-    {"name": "afn", "type": "string", "required": True, "desc": "应用功能码 AFN（hex 或十进制）"},
-    {"name": "di", "type": "string", "required": True, "desc": "8 位 CSG 数据标识 DI（如 E8030304）"},
-    {"name": "c_struct", "type": "string", "required": False, "desc": "inline C 结构体源码（DI payload）"},
-    {"name": "c_struct_path", "type": "string", "required": False, "desc": ".h 文件路径（与 c_struct 二选一）"},
-    {"name": "dir", "type": "string", "required": False, "desc": "downlink/uplink；成对报文 pair=true 时可省略"},
-    {"name": "description", "type": "string", "required": False, "desc": "报文描述（也可写在 @wireforge 注释）"},
-    {"name": "add", "type": "boolean", "required": False, "desc": "是否带地址域；默认 false"},
-    {"name": "pair", "type": "boolean", "required": False, "desc": "是否生成请求/响应成对 variant"},
-    {"name": "empty_payload", "type": "boolean", "required": False, "desc": "true 表示 DI payload 无字段（空 struct）"},
-    {"name": "resp_empty_payload", "type": "boolean", "required": False, "desc": "成对报文响应侧空 payload"},
-    {"name": "resp_c_struct", "type": "string", "required": False, "desc": "响应 payload C 结构体源码"},
-    {"name": "resp_c_struct_path", "type": "string", "required": False, "desc": "响应 payload .h 路径"},
-    {"name": "resp_description", "type": "string", "required": False, "desc": "响应报文描述"},
-    {"name": "variants", "type": "array", "required": False, "desc": "批量扩展 manifest（每项含 afn/di/c_struct*）"},
+    {"name": "afn", "type": "string", "required": True, "desc": "CSG AFN, hex or decimal"},
+    {"name": "di", "type": "string", "required": True, "desc": "8-hex DI, for example E8030304"},
+    {"name": "fields", "type": "array", "required": False, "desc": "Agent-authored payload schema fields"},
+    {"name": "dir", "type": "string", "required": False, "desc": "downlink/uplink; optional for pair=true"},
+    {"name": "description", "type": "string", "required": False, "desc": "message description"},
+    {"name": "add", "type": "boolean", "required": False, "desc": "whether CSG address area is present; default false"},
+    {"name": "pair", "type": "boolean", "required": False, "desc": "generate request/response variants"},
+    {"name": "empty_payload", "type": "boolean", "required": False, "desc": "true means payload has no fields"},
+    {"name": "resp_empty_payload", "type": "boolean", "required": False, "desc": "pair response has no fields"},
+    {"name": "resp_fields", "type": "array", "required": False, "desc": "Agent-authored response payload schema fields"},
+    {"name": "resp_description", "type": "string", "required": False, "desc": "response message description"},
+    {"name": "variants", "type": "array", "required": False, "desc": "batch extension entries; each item contains afn/di/fields"},
 ]

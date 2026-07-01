@@ -1,5 +1,5 @@
-# Generated from payloads/afn02_delete_task.h
-# Source: c_struct manifest — do not edit by hand
+﻿# Generated from payloads/afn02_delete_task.h
+# Source: checked-in YAML payload definition
 
 variants:
 - kind: variant
@@ -16,3 +16,4 @@ variants:
       type: uint16_le
       description: 任务ID,区分不同任务的任务标识,取值范围0x0000-0xEFFF
   description: 删除任务
+

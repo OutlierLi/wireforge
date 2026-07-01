@@ -298,6 +298,25 @@ class TestSerial:
         _ok(r)
         assert r["data"]["received_bytes"] > 0, "loopback should echo"
 
+    def test_receive_prints_without_send(self, capsys):
+        import time
+        from wireforge_serial.api import get_connection
+
+        exec_cmd("serial", {"sub": "connect", "name": "rxonly", "port": "mock://loop"})
+        capsys.readouterr()
+        transport = get_connection("rxonly")
+        assert transport is not None
+        transport.write(bytes.fromhex("AA BB"))
+        deadline = time.monotonic() + 1.0
+        captured = ""
+        while time.monotonic() < deadline:
+            captured += capsys.readouterr().out
+            if "[rxonly] RX: AA BB" in captured:
+                break
+            time.sleep(0.02)
+        exec_cmd("serial", {"sub": "close", "name": "rxonly"})
+        assert "[rxonly] RX: AA BB" in captured
+
     def test_send_missing_hex(self):
         r = exec_cmd("serial", {"sub": "send", "timeout": 1})
         _fail(r)

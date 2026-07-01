@@ -1,4 +1,4 @@
-"""Integration tests for protocol_extend_run MCP (C struct pipeline)."""
+"""Integration tests for protocol_extend_run MCP (schema-to-YAML pipeline)."""
 
 from __future__ import annotations
 
@@ -14,7 +14,6 @@ from protocol_extend.validator import find_conflicts
 from tests.base_protocol_csg import DI_QUERY_VENDOR
 
 ROOT = Path(__file__).resolve().parent.parent
-C_STRUCT_DIR = ROOT / "tests" / "fixtures" / "c_struct"
 
 
 @pytest.fixture
@@ -31,10 +30,10 @@ def ext_dir_isolated(ext_dir, monkeypatch):
     return ext_dir
 
 
-def test_extend_requires_c_struct_input():
+def test_extend_requires_schema_input():
     result = run_protocol_extend("扩展 CSG 报文")
     assert result["state"] == "FAILED"
-    assert "c_struct" in result["error"]
+    assert "fields" in result["error"]
 
 
 def test_find_conflicts_existing():

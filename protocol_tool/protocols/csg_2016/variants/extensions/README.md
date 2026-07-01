@@ -1,12 +1,12 @@
-# CSG 2016 扩展报文
+﻿# CSG 2016 extension variants
 
-本目录存放 **Agent 新增** 的扩展变体 YAML，由 `protocol_extend_run` MCP 从 C 结构体生成。
+This directory stores Agent-authored extension variant YAML written by `protocol_extend_run` from payload schema fields.
 
-- 内置报文 payload 见 [`../c_struct/`](../c_struct/) → 生成到 [`../payloads/`](../payloads/)
-- 编译器通过 `variants/**/*.yaml` 自动加载
-- 文件名规范：`{AFN}_{DI}.yaml`
+- Built-in payloads are checked in under `../payloads/`.
+- The compiler loads `variants/**/*.yaml` automatically.
+- File naming convention: `{AFN}_{DI}.yaml`.
 
-写入后运行：
+After adding files, run:
 
 ```bash
 python3 scripts/bootstrap_protocol_cache.py

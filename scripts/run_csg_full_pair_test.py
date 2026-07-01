@@ -25,7 +25,8 @@ from protocol_tool.runtime.engine import BuildEngine, DecodeEngine
 
 from tests.csg_pair_catalog import (
     format_pair_di_chain,
-    iter_pair_messages,
+    iter_pair_scenario_messages,
+    iter_pair_scenarios,
     load_csg_pairs,
     serial_trace_lines,
     validate_table4_coverage,
@@ -87,43 +88,62 @@ def run_all_pairs(
                 continue
 
             emit(f"\n--- pair: {pid} ---")
-            di_chain = format_pair_di_chain(pair)
-            emit(f"  chain: {di_chain}")
             pair_results: list[MessageTestResult] = []
             pair_failed = False
+            scenario_summaries: list[dict] = []
 
-            for msg in iter_pair_messages(pair):
-                result = run_pair_message(msg, ir, build_engine, decode_engine, defaults)
-                pair_results.append(result)
-                results.append(result)
+            for scenario in iter_pair_scenarios(pair):
+                scenario_id = scenario["id"]
+                di_chain = format_pair_di_chain(pair, scenario_id)
+                emit(f"  scenario: {scenario_id}")
+                emit(f"  chain: {di_chain}")
+                scenario_results: list[MessageTestResult] = []
 
-                label = f"{pid}/{msg.slot} AFN={msg.afn} DI={msg.di} {msg.dir}"
-                if result.status == "PASS":
-                    emit(f"  [✓] PASS | {label}")
-                    if not quiet:
-                        emit(f"        {result.path_str}")
-                        emit(f"        {result.frame_hex}")
-                else:
-                    emit(f"  [✗] FAIL | {label} | {result.error}")
-                    pair_failed = True
-                    if fail_fast:
-                        break
+                for msg in iter_pair_scenario_messages(pair, scenario_id):
+                    result = run_pair_message(msg, ir, build_engine, decode_engine, defaults)
+                    scenario_results.append(result)
+                    pair_results.append(result)
+                    results.append(result)
 
-            trace = serial_trace_lines(pair, pair_results)
-            if trace:
-                emit("  serial:")
-                for line in trace:
-                    emit(f"    {line}")
+                    label = f"{pid}/{scenario_id}/{msg.slot} AFN={msg.afn} DI={msg.di} {msg.dir}"
+                    if result.status == "PASS":
+                        emit(f"  [PASS] {label}")
+                        if not quiet:
+                            emit(f"        {result.path_str}")
+                            emit(f"        {result.frame_hex}")
+                    else:
+                        emit(f"  [FAIL] {label} | {result.error}")
+                        pair_failed = True
+                        if fail_fast:
+                            break
 
-            all_serial_lines.append(f"=== {pid} ===")
-            all_serial_lines.append(f"chain: {di_chain}")
-            all_serial_lines.extend(trace)
-            all_serial_lines.append("")
+                scenario_pair = dict(pair)
+                scenario_pair["response_scenarios"] = [scenario]
+                trace = serial_trace_lines(scenario_pair, scenario_results)
+                if trace:
+                    emit("  serial:")
+                    for line in trace:
+                        emit(f"    {line}")
+
+                all_serial_lines.append(f"=== {pid}/{scenario_id} ===")
+                all_serial_lines.append(f"chain: {di_chain}")
+                all_serial_lines.extend(trace)
+                all_serial_lines.append("")
+                scenario_summaries.append({
+                    "id": scenario_id,
+                    "di_chain": di_chain,
+                    "serial_trace": trace,
+                    "messages": [r.to_dict() for r in scenario_results],
+                    "failed": sum(1 for r in scenario_results if r.status == "FAIL"),
+                    "passed": sum(1 for r in scenario_results if r.status == "PASS"),
+                })
+
+                if fail_fast and pair_failed:
+                    break
 
             pair_summaries.append({
                 "id": pid,
-                "di_chain": di_chain,
-                "serial_trace": trace,
+                "scenarios": scenario_summaries,
                 "messages": [r.to_dict() for r in pair_results],
                 "failed": sum(1 for r in pair_results if r.status == "FAIL"),
                 "passed": sum(1 for r in pair_results if r.status == "PASS"),

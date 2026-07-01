@@ -1,5 +1,5 @@
-# Generated from payloads/afn03_query_slave_info_resp.h
-# Source: c_struct manifest — do not edit by hand
+﻿# Generated from payloads/afn03_query_slave_info_resp.h
+# Source: checked-in YAML payload definition
 
 variants:
 - kind: variant
@@ -25,3 +25,4 @@ variants:
       item_name: slave_addr
       item_type: node_address
   description: 返回查询从节点信息
+

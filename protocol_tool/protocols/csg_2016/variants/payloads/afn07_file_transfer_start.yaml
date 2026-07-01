@@ -1,5 +1,5 @@
-# Generated from payloads/afn07_file_transfer_start.h
-# Source: c_struct manifest — do not edit by hand
+﻿# Generated from payloads/afn07_file_transfer_start.h
+# Source: checked-in YAML payload definition
 
 variants:
 - kind: variant
@@ -34,3 +34,4 @@ variants:
       type: uint8
       description: 文件传输超时时间(分钟)
   description: 启动文件传输
+

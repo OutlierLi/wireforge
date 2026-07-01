@@ -1,5 +1,5 @@
-# Generated from payloads/afn07_file_transfer_data.h
-# Source: c_struct manifest — do not edit by hand
+﻿# Generated from payloads/afn07_file_transfer_data.h
+# Source: checked-in YAML payload definition
 
 variants:
 - kind: variant
@@ -26,3 +26,4 @@ variants:
       type: uint16_le
       description: 文件段校验
   description: 传输文件内容
+

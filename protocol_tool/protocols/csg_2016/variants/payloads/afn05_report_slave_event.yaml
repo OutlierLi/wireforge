@@ -1,5 +1,5 @@
-# Generated from payloads/afn05_report_slave_event.h
-# Source: c_struct manifest — do not edit by hand
+﻿# Generated from payloads/afn05_report_slave_event.h
+# Source: checked-in YAML payload definition
 
 variants:
 - kind: variant
@@ -20,3 +20,4 @@ variants:
       length_from: payload_length
       description: 状态字原始报文内容
   description: 上报从节点事件
+

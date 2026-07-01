@@ -1,4 +1,4 @@
-"""MCP stdio server for CSG protocol variant extensions."""
+﻿"""MCP stdio server for protocol variant extensions."""
 
 from __future__ import annotations
 
@@ -16,31 +16,32 @@ from mcp_servers.common.stdio import (
 
 
 SERVER_NAME = "wireforge-protocol-extend"
-SERVER_VERSION = "0.2.0"
+SERVER_VERSION = "0.3.0"
 
 TOOLS: list[dict[str, Any]] = [
     {
         "name": "protocol_extend_run",
         "description": (
-            "从 Agent 编写的 C 结构体扩展 CSG 2016 / DLT645-2007 报文变体："
-            "解析 C struct → 生成 YAML → 写盘。任务类型可传 protocol，"
-            "或从 raw_input / di / func|afn 自动识别。"
+            "Extend CSG 2016 / DLT645-2007 variants from Agent-authored "
+            "payload schema fields into YAML. Protocol can be supplied or "
+            "auto-detected from raw_input / di / func|afn."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "run_id": {"type": "string", "description": "已有任务 run_id；新任务可省略。"},
-                "raw_input": {"type": "string", "description": "简短说明（新任务必填）。"},
+                "run_id": {"type": "string", "description": "Existing run id; omit for a new task."},
+                "raw_input": {"type": "string", "description": "Brief task description, required for new runs."},
                 "user_input": {
                     "type": "object",
                     "description": (
-                        "protocol(csg|dlt645), di（必填）, c_struct|c_struct_path（必填）; "
-                        "CSG: afn, add; 645: func(默认0x11), dir; pair, resp_c_struct*, variants[]"
+                        "protocol(csg|dlt645), di, fields|empty_payload; "
+                        "CSG: afn, add; DLT645: func(default 0x11), dir; "
+                        "pair, resp_fields|resp_empty_payload, variants[]."
                     ),
                 },
                 "debug": {
                     "type": "boolean",
-                    "description": "返回完整 state；默认 compact。",
+                    "description": "Return full state instead of compact output.",
                 },
             },
         },
@@ -51,7 +52,7 @@ RESOURCES: list[dict[str, Any]] = [
     {
         "uri": "wireforge://usage/protocol-extend",
         "name": "WireForge protocol extend MCP usage",
-        "description": "扩展报文 MCP 调用说明。",
+        "description": "Protocol extension MCP usage.",
         "mimeType": "text/markdown",
     }
 ]
@@ -128,34 +129,32 @@ def _usage_text() -> str:
 
 Tool: `protocol_extend_run`
 
-**C 结构体流水线**（CSG / DLT645 自动识别）：
+Schema-to-YAML pipeline for CSG / DLT645 extension variants.
 
-1. Agent 阅读协议，编写 DI payload C 结构体（见 `tests/fixtures/c_struct/`）
-2. 传 `user_input.di`, `c_struct` 或 `c_struct_path`
+1. Agent reads the protocol text and writes payload schema fields.
+2. Pass `user_input.di` plus `fields` or `empty_payload`.
    - CSG: `afn`, `add`, `dir`
-   - DLT645: `func`（默认 0x11）, `dir`（默认 uplink 应答载荷）
-   - 或 `protocol: dlt645` / `protocol: csg`
-3. 程序：C struct → YAML → `variants/extensions/*.yaml` → compile/map
-4. 日志：`log/protocol_extend_runs/<run_id>/`
+   - DLT645: `func` default `0x11`, `dir` defaults by func
+   - Pair messages: `pair: true` plus `resp_fields` or `resp_empty_payload`
+3. WireForge writes `variants/extensions/*.yaml`, compiles, and refreshes the protocol map.
+4. Logs are under `log/protocol_extend_runs/<run_id>/`.
 
-645 示例：
+DLT645 example:
 ```json
 {
-  "raw_input": "扩展 DLT645 读数据应答",
+  "raw_input": "extend DLT645 read data response",
   "user_input": {
     "protocol": "dlt645",
     "func": "0x11",
     "di": "00099999",
-    "description": "自定义电能量",
-    "c_struct_path": "tests/fixtures/c_struct/dlt645_custom_energy.h"
+    "description": "custom energy",
+    "fields": [
+      {"name": "rate_index", "type": "uint8", "desc": "rate index"},
+      {"name": "energy_raw", "type": "uint32_le", "desc": "raw energy"}
+    ]
   }
 }
 ```
-
-成对报文：`pair: true` + `resp_c_struct_path`。
-批量：`variants: [{afn, di, c_struct_path, ...}, ...]`。
-
-详见 AGENTS.md Protocol Extend Flow。
 """
 
 

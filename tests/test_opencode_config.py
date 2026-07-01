@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 INIT_REQUEST = json.dumps({
@@ -62,7 +63,7 @@ def test_opencode_mcp_entry_scripts_respond_to_initialize():
     root = Path(__file__).resolve().parent.parent
     for script in MCP_ENTRY_SCRIPTS:
         proc = subprocess.run(
-            ["python3", script],
+            [sys.executable, script],
             input=INIT_REQUEST,
             text=True,
             capture_output=True,

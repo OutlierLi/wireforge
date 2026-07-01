@@ -1,5 +1,5 @@
-# Generated from payloads/afn03_query_slave_register_progress_resp.h
-# Source: c_struct manifest — do not edit by hand
+﻿# Generated from payloads/afn03_query_slave_register_progress_resp.h
+# Source: checked-in YAML payload definition
 
 variants:
 - kind: variant
@@ -16,3 +16,4 @@ variants:
       type: uint8
       description: 从节点主动注册工作标示
   description: 返回查询从节点主动注册进度
+

@@ -1,5 +1,5 @@
-# Generated from payloads/afn03_query_mode_resp.h
-# Source: c_struct manifest — do not edit by hand
+﻿# Generated from payloads/afn03_query_mode_resp.h
+# Source: checked-in YAML payload definition
 
 variants:
 - kind: variant
@@ -74,3 +74,4 @@ variants:
       type: bcd
       length: 2
   description: 返回本地通信模块运行模式信息
+

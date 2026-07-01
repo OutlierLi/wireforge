@@ -1,5 +1,5 @@
-# Generated from payloads/afn03_query_delay_resp.h
-# Source: c_struct manifest — do not edit by hand
+﻿# Generated from payloads/afn03_query_delay_resp.h
+# Source: checked-in YAML payload definition
 
 variants:
 - kind: variant
@@ -22,3 +22,4 @@ variants:
       type: uint8
       description: 报文长度
   description: 返回查询通信延时时长
+

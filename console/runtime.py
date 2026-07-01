@@ -330,7 +330,7 @@ def parse_command_text(text: str) -> tuple[str, dict[str, Any]]:
     Positional tokens are preserved as `_` so clients can still display or
     forward them without pretending they have protocol meaning.
     """
-    parts = shlex.split(text.strip())
+    parts = shlex.split(text.strip(), posix=False)
     if not parts:
         return "", {}
 

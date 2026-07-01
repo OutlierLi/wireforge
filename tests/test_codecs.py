@@ -24,6 +24,20 @@ class TestUIntCodec:
         r = DecodeReader(w.bytes(), 0)
         assert c.decode(f, r, DecodeContext()) == 42
 
+    def test_uint8_encode_decimal_string(self):
+        c = UIntCodec(1)
+        f = FieldNode(id="x", name="x", type_ref="uint8")
+        w = ByteWriter()
+        c.encode(f, "42", w, BuildContext())
+        assert w.bytes() == b'\x2a'
+
+    def test_uint8_encode_hex_string(self):
+        c = UIntCodec(1)
+        f = FieldNode(id="x", name="x", type_ref="uint8")
+        w = ByteWriter()
+        c.encode(f, "0x2A", w, BuildContext())
+        assert w.bytes() == b'\x2a'
+
     def test_uint16_le(self):
         c = UIntCodec(2, "little")
         f = FieldNode(id="x", name="x", type_ref="uint16_le")

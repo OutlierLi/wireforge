@@ -63,7 +63,10 @@ def handle(args: dict[str, Any]) -> dict:
             use_cache = False
 
     if not use_cache or not cache_path.exists():
-        cache = _build_cache(fp.name, file_data, segment_size, file_hash, file_size)
+        try:
+            cache = _build_cache(fp.name, file_data, segment_size, file_hash, file_size)
+        except RuntimeError as exc:
+            return fail(f"failed to build upgrade cache: {exc}")
         cache_path.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
     else:
         cache = json.loads(cache_path.read_text(encoding="utf-8"))
@@ -186,6 +189,7 @@ def _build_cache(name: str, data: bytes, seg_size: int, file_hash: str, file_siz
     file_crc_str = f"0x{file_crc:04X}"
 
     cache: dict[str, str] = {}
+    errors: list[str] = []
     built = 0
     total_frames = total + 1  # file_info + N segments
     last_progress = -1
@@ -194,8 +198,8 @@ def _build_cache(name: str, data: bytes, seg_size: int, file_hash: str, file_siz
     r = exec_cmd("build", {
         "proto": "csg", "afn": "0x07", "di": "E8020701",
         "dir": "downlink",
-        "file_type": "0x02",
-        "file_id": "0x00",
+        "file_type": 0x02,
+        "file_id": 0x00,
         "dest_addr": "999999999999",
         "total_segments": total,
         "file_size": file_size,
@@ -205,6 +209,8 @@ def _build_cache(name: str, data: bytes, seg_size: int, file_hash: str, file_siz
     if r.get("status") == "success" and r.get("data", {}).get("frame"):
         cache["file_info"] = r["data"]["frame"]
         built += 1
+    else:
+        errors.append(f"file_info: {r.get('error') or r}")
 
     # 分段帧
     for i, seg in enumerate(segments):
@@ -220,6 +226,8 @@ def _build_cache(name: str, data: bytes, seg_size: int, file_hash: str, file_siz
         if r.get("status") == "success" and r.get("data", {}).get("frame"):
             cache[str(i + 1)] = r["data"]["frame"]
             built += 1
+        else:
+            errors.append(f"segment {i + 1}: {r.get('error') or r}")
 
         # 进度条
         progress = (built * 100) // total_frames
@@ -229,6 +237,16 @@ def _build_cache(name: str, data: bytes, seg_size: int, file_hash: str, file_siz
             last_progress = progress
 
     print()  # newline after progress bar
+
+    if errors or built != total_frames:
+        missing = ["file_info"] if "file_info" not in cache else []
+        missing.extend(str(i) for i in range(1, total + 1) if str(i) not in cache)
+        message = f"built {built}/{total_frames} frames"
+        if missing:
+            message += f"; missing: {', '.join(missing)}"
+        if errors:
+            message += f"; errors: {'; '.join(errors)}"
+        raise RuntimeError(message)
 
     return {
         "file_name": name, "file_hash": file_hash, "file_size": file_size,

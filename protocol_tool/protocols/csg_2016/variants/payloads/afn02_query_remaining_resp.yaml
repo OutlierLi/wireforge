@@ -1,5 +1,5 @@
-# Generated from payloads/afn02_query_remaining_resp.h
-# Source: c_struct manifest — do not edit by hand
+﻿# Generated from payloads/afn02_query_remaining_resp.h
+# Source: checked-in YAML payload definition
 
 variants:
 - kind: variant
@@ -16,3 +16,4 @@ variants:
       type: uint16_le
       description: 未完成任务数量
   description: 返回查询未完成任务数
+

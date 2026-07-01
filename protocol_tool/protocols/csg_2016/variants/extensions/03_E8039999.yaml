@@ -1,9 +1,9 @@
-# CSG 2016 扩展报文 — 查询从节点信息
+﻿# CSG 2016 扩展报文 — 查询从节点信息
 # AFN=03 DI=E8039999
 # 由 protocol_extend_run 生成
 
 _comment: WireForge extension — created 2026-07-01T08:32:25+08:00
-_raw_input: C struct 扩展
+_raw_input: schema extension
 variants:
 - kind: variant
   id: csg_2016.ext.afn03_e8039999_down
@@ -45,3 +45,4 @@ variants:
       count_ref: response_slave_count
       item_name: slave_addr
       item_type: node_address
+

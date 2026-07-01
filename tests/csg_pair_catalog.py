@@ -58,6 +58,7 @@ PDF_TABLE4_DOWNLINK = [
 @dataclass
 class PairMessage:
     pair_id: str
+    scenario_id: str
     side: str  # "request" | "response"
     slot: str  # e.g. "request", "response#1"
     role: str | None
@@ -105,6 +106,53 @@ def _parse_message(msg: dict[str, Any], ctx: str) -> dict[str, Any]:
     }
 
 
+def _parse_response_list(items: Any, ctx: str) -> list[dict[str, Any]]:
+    if not isinstance(items, list):
+        raise ValueError(f"{ctx} must be a list")
+
+    responses: list[dict[str, Any]] = []
+    for j, resp in enumerate(items):
+        rctx = f"{ctx}[{j}]"
+        if not isinstance(resp, dict):
+            raise ValueError(f"{rctx}: response must be a mapping")
+        parsed = _parse_message(resp, rctx)
+        role = resp.get("role")
+        if role is not None and not isinstance(role, str):
+            raise ValueError(f"{rctx}: role must be a string")
+        repeat = resp.get("repeat", 1)
+        if not isinstance(repeat, int) or repeat < 1:
+            raise ValueError(f"{rctx}: repeat must be a positive integer")
+        parsed["role"] = role
+        parsed["repeat"] = repeat
+        responses.append(parsed)
+    return responses
+
+
+def _parse_response_scenarios(pair: dict[str, Any], ctx: str) -> list[dict[str, Any]]:
+    if "response_scenarios" not in pair:
+        return [{"id": "default", "responses": _parse_response_list(pair.get("responses") or [], f"{ctx}.responses")}]
+
+    scenarios_raw = pair.get("response_scenarios")
+    if not isinstance(scenarios_raw, list) or not scenarios_raw:
+        raise ValueError(f"{ctx}.response_scenarios must be a non-empty list")
+
+    scenarios: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for j, scenario in enumerate(scenarios_raw):
+        sctx = f"{ctx}.response_scenarios[{j}]"
+        if not isinstance(scenario, dict):
+            raise ValueError(f"{sctx}: scenario must be a mapping")
+        scenario_id = scenario.get("id")
+        if not scenario_id or not isinstance(scenario_id, str):
+            raise ValueError(f"{sctx}: missing scenario id")
+        if scenario_id in seen_ids:
+            raise ValueError(f"{sctx}: duplicate scenario id {scenario_id!r}")
+        seen_ids.add(scenario_id)
+        responses = _parse_response_list(scenario.get("responses") or [], f"{sctx}.responses")
+        scenarios.append({"id": scenario_id, "responses": responses})
+    return scenarios
+
+
 def load_csg_pairs(path: Path | None = None) -> dict[str, Any]:
     """加载并校验 csg_message_pairs.yaml。"""
     path = path or PAIRS_PATH
@@ -134,30 +182,14 @@ def load_csg_pairs(path: Path | None = None) -> dict[str, Any]:
         seen_ids.add(pair_id)
 
         request = _parse_message(pair["request"], f"{ctx}.request")
-        responses_raw = pair.get("responses") or []
-        if not isinstance(responses_raw, list):
-            raise ValueError(f"{ctx}.responses must be a list")
-
-        responses: list[dict[str, Any]] = []
-        for j, resp in enumerate(responses_raw):
-            rctx = f"{ctx}.responses[{j}]"
-            if not isinstance(resp, dict):
-                raise ValueError(f"{rctx}: response must be a mapping")
-            parsed = _parse_message(resp, rctx)
-            role = resp.get("role")
-            if role is not None and not isinstance(role, str):
-                raise ValueError(f"{rctx}: role must be a string")
-            repeat = resp.get("repeat", 1)
-            if not isinstance(repeat, int) or repeat < 1:
-                raise ValueError(f"{rctx}: repeat must be a positive integer")
-            parsed["role"] = role
-            parsed["repeat"] = repeat
-            responses.append(parsed)
+        response_scenarios = _parse_response_scenarios(pair, ctx)
+        responses = response_scenarios[0]["responses"] if response_scenarios else []
 
         pairs.append({
             "id": pair_id,
             "request": request,
             "responses": responses,
+            "response_scenarios": response_scenarios,
             "field_defaults": dict(pair.get("field_defaults") or {}),
         })
 
@@ -165,38 +197,57 @@ def load_csg_pairs(path: Path | None = None) -> dict[str, Any]:
 
 
 def iter_pair_messages(pair: dict[str, Any]) -> Iterator[PairMessage]:
-    """展开 request 与 responses（含 repeat）为逐条测试消息。"""
+    """Expand request and every response scenario into test messages."""
     pair_id = pair["id"]
     pair_defaults = pair.get("field_defaults") or {}
-
     req = pair["request"]
-    yield PairMessage(
-        pair_id=pair_id,
-        side="request",
-        slot="request",
-        role=None,
-        afn=req["afn"],
-        di=req["di"],
-        dir=req["dir"],
-        has_address=req["has_address"],
-        field_defaults={**pair_defaults, **req.get("field_defaults", {})},
-    )
 
-    for resp in pair.get("responses") or []:
-        repeat = resp.get("repeat", 1)
-        for n in range(1, repeat + 1):
-            slot = f"response#{n}" if repeat > 1 else "response"
-            yield PairMessage(
-                pair_id=pair_id,
-                side="response",
-                slot=slot,
-                role=resp.get("role"),
-                afn=resp["afn"],
-                di=resp["di"],
-                dir=resp["dir"],
-                has_address=resp["has_address"],
-                field_defaults={**pair_defaults, **resp.get("field_defaults", {})},
-            )
+    for scenario in iter_pair_scenarios(pair):
+        scenario_id = scenario["id"]
+        slot_prefix = "" if scenario_id == "default" else f"{scenario_id}:"
+        yield PairMessage(
+            pair_id=pair_id,
+            scenario_id=scenario_id,
+            side="request",
+            slot=f"{slot_prefix}request",
+            role=None,
+            afn=req["afn"],
+            di=req["di"],
+            dir=req["dir"],
+            has_address=req["has_address"],
+            field_defaults={**pair_defaults, **req.get("field_defaults", {})},
+        )
+
+        for resp in scenario.get("responses") or []:
+            repeat = resp.get("repeat", 1)
+            for n in range(1, repeat + 1):
+                response_slot = f"response#{n}" if repeat > 1 else "response"
+                yield PairMessage(
+                    pair_id=pair_id,
+                    scenario_id=scenario_id,
+                    side="response",
+                    slot=f"{slot_prefix}{response_slot}",
+                    role=resp.get("role"),
+                    afn=resp["afn"],
+                    di=resp["di"],
+                    dir=resp["dir"],
+                    has_address=resp["has_address"],
+                    field_defaults={**pair_defaults, **resp.get("field_defaults", {})},
+                )
+
+
+def iter_pair_scenarios(pair: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    scenarios = pair.get("response_scenarios") or [{"id": "default", "responses": pair.get("responses") or []}]
+    yield from scenarios
+
+
+def iter_pair_scenario_messages(pair: dict[str, Any], scenario_id: str) -> Iterator[PairMessage]:
+    scenario = next((item for item in iter_pair_scenarios(pair) if item["id"] == scenario_id), None)
+    if scenario is None:
+        raise ValueError(f"unknown scenario {scenario_id!r} for pair {pair['id']}")
+    pair_copy = dict(pair)
+    pair_copy["response_scenarios"] = [scenario]
+    yield from iter_pair_messages(pair_copy)
 
 
 def _afn_to_int(afn: str) -> int:
@@ -243,11 +294,13 @@ def di_label(di: str) -> str:
     return str(di).lower()
 
 
-def format_pair_di_chain(pair: dict[str, Any]) -> str:
+def format_pair_di_chain(pair: dict[str, Any], scenario_id: str | None = None) -> str:
     """生成测试项目链，如 e8020201 ---> [e8010001, e8050501, e8050501]。"""
     req_di = di_label(pair["request"]["di"])
+    scenarios = list(iter_pair_scenarios(pair))
+    scenario = next((item for item in scenarios if item["id"] == scenario_id), scenarios[0])
     resp_tokens: list[str] = []
-    for resp in pair.get("responses") or []:
+    for resp in scenario.get("responses") or []:
         token = di_label(resp["di"])
         repeat = int(resp.get("repeat", 1))
         resp_tokens.extend([token] * repeat)

@@ -13,7 +13,6 @@ from protocol_extend.profiles import detect_protocol, DLT645_PROFILE
 from protocol_extend.schema import ExtensionSpec
 
 ROOT = Path(__file__).resolve().parent.parent
-C_STRUCT_DIR = ROOT / "tests" / "fixtures" / "c_struct"
 TEST_DI = "00099999"
 
 
@@ -117,7 +116,15 @@ def test_dlt645_extend_run(ext_dir_isolated):
             "func": "0x11",
             "di": TEST_DI,
             "description": "自定义扩展电能量",
-            "c_struct_path": str(C_STRUCT_DIR / "dlt645_custom_energy.h"),
+            "fields": [
+                {
+                    "name": "rate_index",
+                    "type": "uint8",
+                    "desc": "rate index",
+                    "evidence": ["0x00: total", "0x01: rate 1"],
+                },
+                {"name": "energy_raw", "type": "uint32_le", "desc": "raw energy"},
+            ],
         },
     )
     assert result["state"] == "SUCCEEDED"
@@ -130,6 +137,6 @@ def test_dlt645_extend_run(ext_dir_isolated):
 
 
 def test_build_spec_auto_detect_645():
-    spec = build_spec("扩展645读数据 DI 00088888", {"c_struct": "typedef struct { uint8_t x; } t;"})
+    spec = build_spec("扩展645读数据 DI 00088888", {"fields": [{"name": "x", "type": "uint8", "desc": "x"}]})
     assert spec.protocol == "dlt645_2007"
     assert spec.di == "00088888"

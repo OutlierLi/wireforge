@@ -1,5 +1,5 @@
-# Generated from payloads/afn07_query_failed_nodes_resp_v2.h
-# Source: c_struct manifest — do not edit by hand
+﻿# Generated from payloads/afn07_query_failed_nodes_resp_v2.h
+# Source: checked-in YAML payload definition
 
 variants:
 - kind: variant
@@ -25,3 +25,4 @@ variants:
       item_name: node_addr
       item_type: node_address
   description: 返回查询文件传输失败节点
+

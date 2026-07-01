@@ -1,5 +1,5 @@
-# Generated from payloads/afn01_reset_hardware.h
-# Source: c_struct manifest — do not edit by hand
+﻿# Generated from payloads/afn01_reset_hardware.h
+# Source: checked-in YAML payload definition
 
 variants:
 - kind: variant
@@ -13,3 +13,4 @@ variants:
     type: struct
     fields: []
   description: 复位硬件
+

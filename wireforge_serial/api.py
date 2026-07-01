@@ -79,6 +79,8 @@ def serial_open(args: dict[str, Any]) -> SerialResult:
             _connection_meta.pop(cid, None)
         t = SerialTransport(settings)
         t.open()
+        t.on_rx_chunk = lambda d: (_log_and_display_rx(cid, d))
+        t.start_rx_monitor()
         _connections[cid] = t
         _connection_meta[cid] = {
             "id": cid,
@@ -141,14 +143,13 @@ def serial_send(args: dict[str, Any]) -> SerialResult:
 
         # 设置实时显示回调
         t.on_tx = lambda d: (_log_and_display_tx(cid, d))
-        t.on_rx_chunk = lambda d: (_log_and_display_rx(cid, d))
+        t.clear_rx_buffer()
 
         written = t.write(data)
         response = t.read_response(timeout)
 
         # 清理回调
         t.on_tx = None
-        t.on_rx_chunk = None
 
         # 超时提示
         if not response:
@@ -179,7 +180,6 @@ def serial_send(args: dict[str, Any]) -> SerialResult:
     except Exception as e:
         # 清理回调
         t.on_tx = None
-        t.on_rx_chunk = None
         log_rx_error(cid, str(e))
         _set_last_error(cid, str(e))
         return SerialResult(False, "send", error=str(e))

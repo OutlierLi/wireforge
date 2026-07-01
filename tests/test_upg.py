@@ -111,6 +111,28 @@ class TestUpgParams:
         assert "name=cco" in r.get("error", "")
         Path(tmp).unlink()
 
+    def test_build_only_writes_complete_cache(self):
+        with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+            f.write(bytes(range(256)))
+            tmp = f.name
+
+        cache_path = Path(tmp + ".upg_cache")
+        try:
+            r = exec_cmd("upg", {
+                "file": tmp,
+                "segment-size": "128",
+                "build-only": True,
+                "no-cache": True,
+            })
+            _ok(r)
+            assert r["data"]["total_segments"] == 2
+            assert r["data"]["frames_built"] == 3
+            cache = json.loads(cache_path.read_text(encoding="utf-8"))
+            assert set(cache["frames"]) == {"file_info", "1", "2"}
+        finally:
+            Path(tmp).unlink(missing_ok=True)
+            cache_path.unlink(missing_ok=True)
+
 
 # ═══════════════════════════════════════════════════════════════
 # 3. 帧构造 (通过 build API 验证)

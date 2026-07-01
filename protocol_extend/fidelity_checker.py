@@ -1,4 +1,4 @@
-"""Compare final extension spec/YAML against frozen source snapshot."""
+﻿"""Compare final extension spec/YAML against frozen source snapshot."""
 
 from __future__ import annotations
 
@@ -336,7 +336,7 @@ def _yaml_field_issues(fields: list[dict[str, Any]], *, prefix: str = "fields") 
 
 
 def check_layout_fidelity(spec: ExtensionSpec) -> dict[str, Any]:
-    """Layout-only fidelity for C struct pipeline (no DOCX snapshot)."""
+    """Layout-only fidelity for schema pipeline (no DOCX snapshot)."""
     checks: list[dict[str, Any]] = []
     earned = 0
     total_weight = 0
@@ -373,5 +373,6 @@ def check_layout_fidelity(spec: ExtensionSpec) -> dict[str, Any]:
         "score": score,
         "checks": checks,
         "summary": summary,
-        "source": "c_struct_layout",
+        "source": "schema_layout",
     }
+

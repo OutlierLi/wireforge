@@ -85,25 +85,6 @@ class ExtendRunLog:
         extract_path = self.run_dir / "extracted_drafts.json"
         extract_path.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    def log_c_struct_parse(
-        self,
-        draft_index: int,
-        draft: ExtensionDraft,
-        *,
-        parse_report: dict[str, Any],
-        yaml_fields: list[dict[str, Any]],
-    ) -> None:
-        self.log_stage(
-            "c_struct_parse",
-            {
-                "summary": f"DI={draft.di} parsed {len(yaml_fields)} field(s)",
-                "draft_index": draft_index,
-                "di": draft.di,
-                "parse_report": parse_report,
-                "yaml_fields": yaml_fields,
-            },
-        )
-
     def log_draft_inference(
         self,
         draft_index: int,

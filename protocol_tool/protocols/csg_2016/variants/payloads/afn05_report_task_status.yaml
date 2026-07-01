@@ -1,5 +1,5 @@
-# Generated from payloads/afn05_report_task_status.h
-# Source: c_struct manifest — do not edit by hand
+﻿# Generated from payloads/afn05_report_task_status.h
+# Source: checked-in YAML payload definition
 
 variants:
 - kind: variant
@@ -22,3 +22,4 @@ variants:
       type: uint8
       description: 任务状态
   description: 上报任务状态
+

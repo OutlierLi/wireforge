@@ -1,5 +1,5 @@
-# Generated from payloads/afn00_ack.h
-# Source: c_struct manifest — do not edit by hand
+﻿# Generated from payloads/afn00_ack.h
+# Source: checked-in YAML payload definition
 
 variants:
 - kind: variant
@@ -15,3 +15,4 @@ variants:
       type: uint16_le
       default: 0
   description: 确认
+

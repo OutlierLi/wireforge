@@ -1,5 +1,5 @@
-# Generated from payloads/afn05_report_register_end.h
-# Source: c_struct manifest — do not edit by hand
+﻿# Generated from payloads/afn05_report_register_end.h
+# Source: checked-in YAML payload definition
 
 variants:
 - kind: variant
@@ -13,3 +13,4 @@ variants:
     type: struct
     fields: []
   description: 上报从节点注册结束
+

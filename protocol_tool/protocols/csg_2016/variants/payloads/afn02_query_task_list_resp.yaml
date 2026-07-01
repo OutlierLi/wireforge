@@ -1,5 +1,5 @@
-# Generated from payloads/afn02_query_task_list_resp.h
-# Source: c_struct manifest — do not edit by hand
+﻿# Generated from payloads/afn02_query_task_list_resp.h
+# Source: checked-in YAML payload definition
 
 variants:
 - kind: variant
@@ -22,3 +22,4 @@ variants:
       item_name: task_id
       item_type: uint16_le
   description: 返回查询未完成任务列表
+

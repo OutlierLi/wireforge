@@ -1,5 +1,5 @@
-# Generated from payloads/afn01_init_task.h
-# Source: c_struct manifest — do not edit by hand
+﻿# Generated from payloads/afn01_init_task.h
+# Source: checked-in YAML payload definition
 
 variants:
 - kind: variant
@@ -13,3 +13,4 @@ variants:
     type: struct
     fields: []
   description: 初始化任务,清除模块保存的任务信息,初始化成功后处于暂停任务状态
+

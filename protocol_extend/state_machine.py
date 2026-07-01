@@ -1,4 +1,4 @@
-"""Stateful MCP workflow for protocol variant extensions (C struct pipeline)."""
+"""Stateful MCP workflow for protocol variant extensions (schema-to-YAML pipeline)."""
 
 from __future__ import annotations
 
@@ -11,12 +11,11 @@ from typing import Any, Literal
 
 from extractor.extension_draft import ExtensionDraft
 
-from protocol_extend.c_struct.builder import build_spec_from_c_struct, load_c_struct_source, _empty_struct_source
-from protocol_extend.c_struct.parser import parse_c_struct
-from protocol_extend.c_struct.validator import validate_c_struct
+from protocol_extend.fields import process_agent_fields
+from protocol_extend.parser import build_spec
 from protocol_extend.schema import (
     ExtensionSpec,
-    missing_c_struct_input,
+    missing_schema_input,
     missing_fields,
 )
 from protocol_extend.validator import find_conflicts
@@ -105,16 +104,16 @@ def run_protocol_extend(
 
 def _advance(record: ExtendRecord, user_input: dict[str, Any]) -> None:
     _merge_run_meta(record, user_input)
-    _run_c_struct_pipeline(record, user_input)
+    _run_schema_pipeline(record, user_input)
 
 
-def _run_c_struct_pipeline(record: ExtendRecord, user_input: dict[str, Any]) -> None:
+def _run_schema_pipeline(record: ExtendRecord, user_input: dict[str, Any]) -> None:
     run_dir = RUNS_DIR / record.run_id
     log = ExtendRunLog(run_dir)
     record.results["log_dir"] = str(run_dir)
     record.results["log_path"] = str(log.log_path)
 
-    missing_input = missing_c_struct_input(user_input)
+    missing_input = missing_schema_input(user_input)
     if missing_input:
         record.state = "FAILED"
         record.error = f"missing user_input: {', '.join(missing_input)}"
@@ -127,41 +126,41 @@ def _run_c_struct_pipeline(record: ExtendRecord, user_input: dict[str, Any]) -> 
 
     entries = _variant_entries(user_input)
     drafts: list[ExtensionDraft] = []
-    parse_reports: list[dict[str, Any]] = []
+    inference_reports: list[dict[str, Any]] = []
 
     for index, entry in enumerate(entries):
         merged = {**user_input, **entry}
         try:
-            spec = build_spec_from_c_struct(record.raw_input, merged)
-            report = _c_struct_parse_report(merged)
-            parse_reports.append(report)
+            spec, report, warnings = _build_spec_from_schema(record.raw_input, merged)
+            inference_reports.append({
+                "index": index,
+                "di": spec.di,
+                "fields": report.get("fields", []),
+                "resp_fields": report.get("resp_fields", []),
+                "warnings": warnings,
+            })
         except Exception as exc:
             draft = ExtensionDraft(
                 di=str(entry.get("di") or ""),
                 afn=entry.get("afn"),
                 status="failed",
                 last_error=str(exc),
-                candidate_id=f"c_struct_{index}",
+                candidate_id=f"schema_{index}",
             )
             drafts.append(draft)
-            log.log_c_struct_parse(
-                index,
-                draft,
-                parse_report={"error": str(exc)},
-                yaml_fields=[],
-            )
+            log.log_draft_inference(index, draft, inference_report=[], field_type_warnings=[str(exc)])
             continue
 
         draft = _draft_from_spec(spec, index=index)
         drafts.append(draft)
-        log.log_c_struct_parse(
+        log.log_draft_inference(
             index,
             draft,
-            parse_report=report,
-            yaml_fields=list(spec.fields),
+            inference_report=report.get("fields", []) + report.get("resp_fields", []),
+            field_type_warnings=warnings,
         )
 
-    record.results["c_struct_parse"] = parse_reports
+    record.results["schema_inference"] = inference_reports
     record.results["message_drafts"] = [d.to_dict() for d in drafts]
 
     compile_ok = True
@@ -171,7 +170,7 @@ def _run_c_struct_pipeline(record: ExtendRecord, user_input: dict[str, Any]) -> 
     for draft_index, draft in enumerate(drafts):
         if draft.status == "failed":
             continue
-        accepted, draft_compile_ok, draft_map_ok, draft_template_only = _process_draft_c_struct(
+        accepted, draft_compile_ok, draft_map_ok, draft_template_only = _process_draft_schema(
             record, draft, draft_index, log,
         )
         if draft_template_only:
@@ -216,18 +215,75 @@ def _variant_entries(user_input: dict[str, Any]) -> list[dict[str, Any]]:
     return [dict(user_input)]
 
 
-def _c_struct_parse_report(user_input: dict[str, Any]) -> dict[str, Any]:
+def _build_spec_from_schema(raw_input: str, user_input: dict[str, Any]) -> tuple[ExtensionSpec, dict[str, Any], list[str]]:
+    spec = build_spec(raw_input, user_input)
+    warnings: list[str] = []
+    report: dict[str, Any] = {"fields": [], "resp_fields": []}
+
     if user_input.get("empty_payload"):
-        source = _empty_struct_source()
-        path = None
+        spec.fields = []
     else:
-        source, path = load_c_struct_source(user_input, "c_struct", "c_struct_path")
-    defn = parse_c_struct(source, path=path)
-    warnings = validate_c_struct(defn)
-    report = defn.summary()
-    if warnings:
-        report["warnings"] = warnings
-    return report
+        spec.fields, field_report, field_warnings = _normalize_schema_fields(user_input.get("fields"))
+        report["fields"] = field_report
+        warnings.extend(field_warnings)
+
+    if spec.pair:
+        if user_input.get("resp_empty_payload"):
+            spec.resp_fields = []
+        elif isinstance(user_input.get("resp_fields"), list):
+            spec.resp_fields, resp_report, resp_warnings = _normalize_schema_fields(user_input.get("resp_fields"))
+            report["resp_fields"] = resp_report
+            warnings.extend(resp_warnings)
+
+    return spec, report, warnings
+
+
+def _normalize_schema_fields(raw_fields: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str]]:
+    if not isinstance(raw_fields, list):
+        raise ValueError("fields must be a list of Agent schema field descriptions")
+
+    yaml_fields: list[dict[str, Any]] = []
+    report: list[dict[str, Any]] = []
+    warnings: list[str] = []
+
+    from protocol_extend.yaml_writer import _is_yaml_ready_field
+
+    pending_agent_fields: list[dict[str, Any]] = []
+    pending_indexes: list[int] = []
+
+    def flush_pending() -> None:
+        if not pending_agent_fields:
+            return
+        inferred_fields, inferred_report, inferred_warnings = process_agent_fields(pending_agent_fields)
+        for idx, yaml_field, item_report in zip(pending_indexes, inferred_fields, inferred_report):
+            yaml_fields.insert(idx, yaml_field)
+            report.insert(idx, item_report)
+        warnings.extend(inferred_warnings)
+        pending_agent_fields.clear()
+        pending_indexes.clear()
+
+    for field in raw_fields:
+        if not isinstance(field, dict):
+            raise ValueError(f"field descriptions must be objects, got {type(field).__name__}")
+        index = len(yaml_fields) + len(pending_agent_fields)
+        if _is_yaml_ready_field(field):
+            flush_pending()
+            yaml_fields.append(dict(field))
+            report.append({
+                "name": field.get("name"),
+                "semantic_type": "explicit_yaml",
+                "codec": {"type": field.get("type")},
+                "confidence": "high",
+                "reasons": ["yaml_ready_schema"],
+                "warnings": [],
+                "overridden": False,
+            })
+        else:
+            pending_agent_fields.append(dict(field))
+            pending_indexes.append(index)
+
+    flush_pending()
+    return yaml_fields, report, warnings
 
 
 def _draft_from_spec(spec: ExtensionSpec, *, index: int = 0) -> ExtensionDraft:
@@ -244,11 +300,11 @@ def _draft_from_spec(spec: ExtensionSpec, *, index: int = 0) -> ExtensionDraft:
         pair=spec.pair,
         resp_description=spec.resp_description,
         status="pending",
-        candidate_id=f"c_struct_{index}",
+        candidate_id=f"schema_{index}",
     )
 
 
-def _process_draft_c_struct(
+def _process_draft_schema(
     record: ExtendRecord,
     draft: ExtensionDraft,
     draft_index: int,
@@ -452,7 +508,7 @@ def _batch_summary(drafts: list[ExtensionDraft]) -> dict[str, Any]:
 def _merge_run_meta(record: ExtendRecord, user_input: dict[str, Any]) -> None:
     for key in (
         "protocol", "afn", "func", "di", "dir", "add", "description", "pair",
-        "c_struct", "c_struct_path", "resp_c_struct", "resp_c_struct_path",
+        "fields", "resp_fields", "empty_payload", "resp_empty_payload",
         "resp_description", "variants",
     ):
         if key in user_input and user_input[key] not in (None, ""):

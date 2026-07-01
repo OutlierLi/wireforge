@@ -1,5 +1,5 @@
-# Generated from payloads/afn02_query_task_detail_resp.h
-# Source: c_struct manifest — do not edit by hand
+﻿# Generated from payloads/afn02_query_task_detail_resp.h
+# Source: checked-in YAML payload definition
 
 variants:
 - kind: variant
@@ -35,3 +35,4 @@ variants:
       length_from: payload_length
       description: 原始报文内容
   description: 返回查询未完成任务详细信息
+
