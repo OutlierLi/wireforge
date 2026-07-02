@@ -8,7 +8,7 @@
 - 参数赋值阶段（``--port `` / ``--port=`` / ``--port mo``）联想 default + examples
 - ``--then`` 等脚本参数内嵌 ``/command`` 时，按嵌套命令继续联想（如 ``/print --text``）
 - ``/help`` 的 ``target`` 为嵌套命令路径（``--target /serial connect`` 或 ``/help /serial``）逐级联想
-- ``/build`` / ``/route`` 在 ``--proto`` 之后按路由键 → protocol_map 全量取值 → resolve schema 动态联想
+- ``/build`` / ``/route`` / ``/find`` 在 ``--proto`` 之后按路由键 → protocol_map 全量取值 → resolve schema 动态联想
 - ``/auto_rule add --match`` 后可选正则或 ``--proto`` 协议 decode 匹配，路由/schema 联想同 ``/build``
 - ``/serial send --build`` 后 ``--proto`` 起路由/schema 联想同 ``/build``
 - 输入 --prefix 时跨层级前缀匹配
@@ -37,12 +37,16 @@ from console.build_completion import (
     auto_rule_match_value_completions,
     build_argument_completions,
     build_argument_value_completions,
+    find_argument_completions,
+    find_argument_value_completions,
     route_argument_completions,
     route_argument_value_completions,
     schema_field_meta,
     serial_send_build_argument_completions,
     serial_send_build_value_completions,
 )
+
+_PROTOCOL_ROUTE_COMPLETION_COMMANDS = frozenset({"build", "route", "find"})
 
 # 终端内置命令（不在 commands.json，由 terminal 直接处理）
 _BUILTIN_TERMINAL_COMMANDS: tuple[tuple[str, str], ...] = (
@@ -1111,15 +1115,12 @@ def _completions_for_state(state: CompletionState) -> list[dict[str, Any]]:
 
     sub = state.sub or DEFAULT_SUB.get(state.command, "")
     if state.stage == "argument_value" and state.value_param:
-        if state.command == "build":
-            dynamic = build_argument_value_completions(
-                state.used_args, state.value_param, state.value_prefix,
-            )
-            if dynamic is not None:
-                return dynamic
-        elif state.command == "route":
-            dynamic = route_argument_value_completions(
-                state.used_args, state.value_param, state.value_prefix,
+        if state.command in _PROTOCOL_ROUTE_COMPLETION_COMMANDS:
+            dynamic = _protocol_route_value_completions(
+                state.command,
+                state.used_args,
+                state.value_param,
+                state.value_prefix,
             )
             if dynamic is not None:
                 return dynamic
@@ -1130,12 +1131,12 @@ def _completions_for_state(state: CompletionState) -> list[dict[str, Any]]:
             state.value_prefix,
         )
     if state.stage == "argument":
-        if state.command == "build":
-            dynamic = build_argument_completions(state.used_args, state.flag_prefix)
-            if dynamic is not None:
-                return dynamic
-        elif state.command == "route":
-            dynamic = route_argument_completions(state.used_args, state.flag_prefix)
+        if state.command in _PROTOCOL_ROUTE_COMPLETION_COMMANDS:
+            dynamic = _protocol_route_argument_completions(
+                state.command,
+                state.used_args,
+                state.flag_prefix,
+            )
             if dynamic is not None:
                 return dynamic
         return _argument_completions(
@@ -1145,6 +1146,35 @@ def _completions_for_state(state: CompletionState) -> list[dict[str, Any]]:
             state.flag_prefix,
         )
     return completions
+
+
+def _protocol_route_argument_completions(
+    command: str,
+    used_args: dict[str, Any],
+    flag_prefix: str,
+) -> list[dict[str, Any]] | None:
+    if command == "build":
+        return build_argument_completions(used_args, flag_prefix)
+    if command == "route":
+        return route_argument_completions(used_args, flag_prefix)
+    if command == "find":
+        return find_argument_completions(used_args, flag_prefix)
+    return None
+
+
+def _protocol_route_value_completions(
+    command: str,
+    used_args: dict[str, Any],
+    param_key: str,
+    value_prefix: str,
+) -> list[dict[str, Any]] | None:
+    if command == "build":
+        return build_argument_value_completions(used_args, param_key, value_prefix)
+    if command == "route":
+        return route_argument_value_completions(used_args, param_key, value_prefix)
+    if command == "find":
+        return find_argument_value_completions(used_args, param_key, value_prefix)
+    return None
 
 
 def complete_text(text: str) -> dict[str, Any]:

@@ -47,6 +47,24 @@ def build_protocol_map_from_ir(compiled_dir: str | Path | None = None) -> dict[s
     return {"version": 1, "protocols": protocols}
 
 
+def _compact_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    compact = {
+        "id": entry["id"],
+        "entry_id": entry["entry_id"],
+        "leaf_id": entry["leaf_id"],
+        "name": entry["name"],
+        "description": entry["description"],
+        "route_params": entry["route_params"],
+        "path": entry["path"],
+        "route_nodes": entry["route_nodes"],
+        "fields": entry["fields"],
+    }
+    for key in ("build_example", "frame_example", "build_args"):
+        if entry.get(key) is not None:
+            compact[key] = entry[key]
+    return compact
+
+
 def compact_protocol_map(protocol_map: dict[str, Any]) -> dict[str, Any]:
     """Return the Agent-facing map with only matching-critical fields."""
 
@@ -55,17 +73,7 @@ def compact_protocol_map(protocol_map: dict[str, Any]) -> dict[str, Any]:
         protocols[proto] = {
             "name": info.get("name") or proto,
             "entries": [
-                {
-                    "id": entry["id"],
-                    "entry_id": entry["entry_id"],
-                    "leaf_id": entry["leaf_id"],
-                    "name": entry["name"],
-                    "description": entry["description"],
-                    "route_params": entry["route_params"],
-                    "path": entry["path"],
-                    "route_nodes": entry["route_nodes"],
-                    "fields": entry["fields"],
-                }
+                _compact_entry(entry)
                 for entry in info.get("entries") or []
             ],
         }
@@ -92,6 +100,17 @@ def protocol_map_to_yaml(protocol_map: dict[str, Any]) -> str:
             lines.append(f"        route_params: {route_params}")
             if fields:
                 lines.append(f"        fields: [{fields}]")
+            build_example = entry.get("build_example")
+            if build_example:
+                lines.append(f'        build_example: "{build_example}"')
+            frame_example = entry.get("frame_example")
+            if frame_example:
+                lines.append(f'        frame_example: "{frame_example}"')
+            build_args = entry.get("build_args")
+            if build_args:
+                lines.append(
+                    f"        build_args: {json.dumps(build_args, ensure_ascii=False, sort_keys=True)}"
+                )
     return "\n".join(lines) + "\n"
 
 
@@ -116,6 +135,13 @@ def refresh_protocol_map_cache(compiled_dir: str | Path | None = None) -> dict[s
     """Rebuild map from compiled IR and persist json+yaml caches."""
     base = Path(compiled_dir) if compiled_dir else COMPILED_DIR
     protocol_map = compact_protocol_map(build_protocol_map_from_ir(base))
+    from agent_protocol.message_examples import enrich_csg_protocol_map
+
+    protocol_map, example_errors = enrich_csg_protocol_map(protocol_map, compiled_dir=base)
+    if example_errors:
+        raise RuntimeError(
+            "CSG message example generation failed:\n" + "\n".join(example_errors)
+        )
     write_protocol_map_cache(protocol_map, base)
     return protocol_map
 

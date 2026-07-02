@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from agent_protocol.message_examples import enrich_csg_protocol_map
 from agent_protocol.protocol_map import build_protocol_map_from_ir, compact_protocol_map, write_protocol_map_cache
 from protocol_tool.compiler.pipeline import compile_protocol
 from protocol_tool.utils.graph import generate_svg
@@ -45,6 +46,12 @@ def main(argv: list[str] | None = None) -> int:
         ir_by_protocol[protocol] = compile_protocol(str(REGISTRY), protocol, output_dir=str(COMPILED_DIR))
 
     protocol_map = compact_protocol_map(build_protocol_map_from_ir(COMPILED_DIR))
+    protocol_map, example_errors = enrich_csg_protocol_map(protocol_map, compiled_dir=COMPILED_DIR)
+    if example_errors:
+        print("CSG example generation errors:", file=sys.stderr)
+        for err in example_errors:
+            print(f"  - {err}", file=sys.stderr)
+        return 1
     json_path, yaml_path = write_protocol_map_cache(protocol_map, COMPILED_DIR)
     for protocol, ir in ir_by_protocol.items():
         svg_path = COMPILED_DIR / f"{protocol}_routes.svg"

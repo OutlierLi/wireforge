@@ -28,6 +28,19 @@ _ROUTE_KEYS: dict[str, tuple[str, ...]] = {
     "csg": ("dir", "afn", "di", "addr"),
     "dlt645": ("dir", "func", "di", "addr"),
 }
+# 使用 protocol_map 路由键补全/提示的命令（dir → afn/func → di → addr）
+PROTOCOL_ROUTE_KEY_COMMANDS = frozenset({
+    "build", "route", "find", "serial_send_build", "auto_rule_match",
+})
+# 路由确定后继续联想 input_schema 业务字段的命令
+PROTOCOL_ROUTE_SCHEMA_COMMANDS = frozenset({"build", "serial_send_build"})
+_ROUTE_PARAM_DESCRIPTIONS: dict[str, str] = {
+    "dir": "传输方向（downlink/uplink）",
+    "addr": "地址域（false=无地址域，true=带地址域）",
+    "afn": "应用功能码 AFN（类别：初始化/读参数/…，具体功能看 DI）",
+    "func": "功能码 func（类别，具体功能看 DI）",
+    "di": "数据标识 DI（决定具体功能）",
+}
 _ROUTE_META = frozenset({
     "proto", "func", "afn", "di", "dir", "direction", "addr", "has_address",
     "resolve", "schema", "describe", "from_frame", "from-frame", "set", "sub",
@@ -48,6 +61,8 @@ def _proto_family(raw: Any) -> str:
 
 def _is_protocol_route_mode(used_args: dict[str, Any], *, command: str = "build") -> bool:
     if command == "build" and (used_args.get("from_frame") or used_args.get("from-frame")):
+        return False
+    if command not in PROTOCOL_ROUTE_KEY_COMMANDS:
         return False
     return bool(_proto_family(used_args.get("proto")))
 
@@ -497,6 +512,81 @@ def _try_resolve_error(used_args: dict[str, Any]) -> str | None:
         return str(exc)
 
 
+def route_parameter_hints(used_args: dict[str, Any], *, limit: int = 20) -> dict[str, Any] | None:
+    """通用路由参数提示：待填路由键 + 候选取值（供 /find、/route 等复用）。"""
+    if not _proto_family(used_args.get("proto")):
+        return None
+    effective = _effective_used_args(used_args)
+    pending = _collect_pending_route_keys(effective)
+    if not pending:
+        return None
+
+    proto = _proto_family(effective.get("proto"))
+    suggestions: dict[str, list[dict[str, str]]] = {}
+    for key in pending:
+        entries = _entries_for_route_value(effective, key)
+        if key == "addr":
+            labeled = _distinct_addr_values(entries)
+        else:
+            labeled = _distinct_values_labeled(entries, key, proto_family=proto or "")
+        suggestions[key] = [
+            {"value": val, "description": desc}
+            for val, desc in labeled[:limit]
+        ]
+
+    next_key = pending[0]
+    return {
+        "pending_keys": pending,
+        "next_key": next_key,
+        "suggestions": suggestions,
+        "hint": f"可继续指定 --{next_key} 收窄范围",
+    }
+
+
+def route_command_argument_completions(
+    command: str,
+    used_args: dict[str, Any],
+    flag_prefix: str,
+) -> list[dict[str, Any]] | None:
+    """按命令名分发协议路由参数补全（build/route/find/…）。"""
+    if command == "build":
+        dynamic = from_frame_argument_completions(used_args, flag_prefix)
+        if dynamic is not None:
+            return dynamic
+    return protocol_route_argument_completions(used_args, flag_prefix, command=command)
+
+
+def route_command_value_completions(
+    command: str,
+    used_args: dict[str, Any],
+    param_key: str,
+    value_prefix: str,
+) -> list[dict[str, Any]] | None:
+    """按命令名分发协议路由参数取值补全。"""
+    if command == "build":
+        dynamic = from_frame_argument_value_completions(used_args, param_key, value_prefix)
+        if dynamic is not None:
+            return dynamic
+    return protocol_route_value_completions(
+        used_args, param_key, value_prefix, command=command,
+    )
+
+
+def find_argument_completions(
+    used_args: dict[str, Any],
+    flag_prefix: str,
+) -> list[dict[str, Any]] | None:
+    return route_command_argument_completions("find", used_args, flag_prefix)
+
+
+def find_argument_value_completions(
+    used_args: dict[str, Any],
+    param_key: str,
+    value_prefix: str,
+) -> list[dict[str, Any]] | None:
+    return route_command_value_completions("find", used_args, param_key, value_prefix)
+
+
 def _next_route_keys(used_args: dict[str, Any]) -> list[str]:
     return _collect_pending_route_keys(used_args)
 
@@ -542,13 +632,7 @@ def protocol_route_argument_completions(
         flag = f"--{key}"
         if typing_flag and not _flag_matches(flag, flag_prefix):
             continue
-        desc = {
-            "dir": "传输方向（downlink/uplink）",
-            "addr": "地址域（false=无地址域，true=带地址域）",
-            "afn": "应用功能码 AFN（类别：初始化/读参数/…，具体功能看 DI）",
-            "func": "功能码 func（类别，具体功能看 DI）",
-            "di": "数据标识 DI（决定具体功能）",
-        }.get(key, "")
+        desc = _ROUTE_PARAM_DESCRIPTIONS.get(key, "")
         completions.append(_make_flag_item(key, desc=desc, dynamic=True))
         if not typing_flag:
             return completions
@@ -556,7 +640,7 @@ def protocol_route_argument_completions(
     if typing_flag and completions:
         return completions
 
-    if command in ("build", "serial_send_build"):
+    if command in PROTOCOL_ROUTE_SCHEMA_COMMANDS:
         schema = _schema_fields(used_args)
         if schema:
             for name, required, desc, _default in schema:
@@ -571,7 +655,7 @@ def protocol_route_argument_completions(
             if completions:
                 return completions
 
-    return completions if completions else []
+    return None if not completions else completions
 
 
 # ── from-frame: decode → 可替换字段联想 ─────────────────────────────
@@ -843,17 +927,14 @@ def build_argument_completions(
     used_args: dict[str, Any],
     flag_prefix: str,
 ) -> list[dict[str, Any]] | None:
-    dynamic = from_frame_argument_completions(used_args, flag_prefix)
-    if dynamic is not None:
-        return dynamic
-    return protocol_route_argument_completions(used_args, flag_prefix, command="build")
+    return route_command_argument_completions("build", used_args, flag_prefix)
 
 
 def route_argument_completions(
     used_args: dict[str, Any],
     flag_prefix: str,
 ) -> list[dict[str, Any]] | None:
-    return protocol_route_argument_completions(used_args, flag_prefix, command="route")
+    return route_command_argument_completions("route", used_args, flag_prefix)
 
 
 def protocol_route_value_completions(
@@ -921,12 +1002,7 @@ def build_argument_value_completions(
     param_key: str,
     value_prefix: str,
 ) -> list[dict[str, Any]] | None:
-    dynamic = from_frame_argument_value_completions(used_args, param_key, value_prefix)
-    if dynamic is not None:
-        return dynamic
-    return protocol_route_value_completions(
-        used_args, param_key, value_prefix, command="build",
-    )
+    return route_command_value_completions("build", used_args, param_key, value_prefix)
 
 
 def route_argument_value_completions(
@@ -934,9 +1010,7 @@ def route_argument_value_completions(
     param_key: str,
     value_prefix: str,
 ) -> list[dict[str, Any]] | None:
-    return protocol_route_value_completions(
-        used_args, param_key, value_prefix, command="route",
-    )
+    return route_command_value_completions("route", used_args, param_key, value_prefix)
 
 
 _AUTO_RULE_MATCH_ENTRY_FLAGS: tuple[tuple[str, str], ...] = (

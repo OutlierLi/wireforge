@@ -528,6 +528,46 @@ class TestFromFrameCompletion:
         assert "3" in vals
 
 
+class TestFindRouteCompletion:
+    def setup_method(self):
+        from console.build_completion import (
+            _load_ir_routers, _load_protocol_map, _resolve_schema_cached,
+        )
+        _load_protocol_map.cache_clear()
+        _load_ir_routers.cache_clear()
+        _resolve_schema_cached.cache_clear()
+
+    def test_proto_csg_suggests_dir_first(self):
+        vals = _values("/find --proto=csg ")
+        assert "--dir" in vals
+
+    def test_dir_then_afn(self):
+        vals = _values("/find --proto=csg --dir=downlink ")
+        assert "--afn" in vals
+        assert "--addr" not in vals
+
+    def test_afn_value_shows_category_label(self):
+        r = complete_text("/find --proto=csg --dir=downlink --afn=")
+        labels = [c.get("label") or c["value"] for c in r["data"]["completions"]]
+        afn01 = next((label for label in labels if label.startswith("0x01")), "")
+        assert "初始化" in afn01
+        assert "复位硬件" not in afn01
+
+    def test_di_value_shows_function_description(self):
+        r = complete_text("/find --proto=csg --dir=downlink --afn=0x01 --di=")
+        labels = [c.get("label") or c["value"] for c in r["data"]["completions"]]
+        assert any("档案" in label or "E8020102" in label for label in labels)
+
+    def test_route_complete_falls_back_to_search_params(self):
+        vals = _values("/find --proto=csg --dir=downlink --afn=0x00 --di=E8010001 ")
+        assert "--meaning" in vals or "--filter" in vals
+
+    def test_afn_prefix_filters_values(self):
+        vals = _values("/find --proto=csg --dir=downlink --afn=0x0")
+        assert vals
+        assert all(v.startswith("0x0") for v in vals)
+
+
 class TestRobustTokenize:
     def test_unclosed_quote_with_trailing_space(self):
         r = complete_text('/decode --hex="68 0C ')

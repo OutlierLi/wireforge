@@ -1,11 +1,13 @@
-"""/find 命令处理器 — 搜索协议消息定义。
+""" /find 命令处理器 — 搜索协议消息定义。
 
-数据源: compiled/protocol_map.yaml（预编译索引，含所有 entry 的 name、description、route_params、fields）
+数据源: compiled/protocol_map.yaml（预编译索引，含 name、description、route_params、fields、build/frame 示例）
 
 用法:
   /find 初始化档案           → 关键字搜索（匹配 name + description + DI）
   /find E8020102             → DI 精确匹配（也支持关键字回退）
   /find --proto=csg --afn=0x01 初始化 → 组合过滤
+
+返回字段（CSG 条目）含 build_example（/build CLI）、frame_example（完整 hex）、build_args。
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from typing import Any
 import yaml
 
 from console.response import ok, fail
+from console.build_completion import route_parameter_hints
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 MAP_PATH = ROOT / "compiled" / "protocol_map.yaml"
@@ -129,7 +132,7 @@ def _match_entry(entry: dict, args: dict) -> bool:
 def _format_entry(entry: dict) -> dict:
     """格式化单条 entry 为统一输出结构。"""
     rp = entry.get("route_params", {}) or {}
-    return {
+    formatted = {
         "name": entry.get("name", ""),
         "description": entry.get("description", ""),
         "leaf_id": entry.get("leaf_id", ""),
@@ -139,10 +142,18 @@ def _format_entry(entry: dict) -> dict:
             "di": rp.get("di", ""),
             "func": rp.get("func", ""),
             "dir": rp.get("dir", ""),
+            "has_address": rp.get("has_address", False),
         },
         "fields": entry.get("fields") or [],
         "path": entry.get("path") or [],
     }
+    if entry.get("build_example"):
+        formatted["build_example"] = entry["build_example"]
+    if entry.get("frame_example"):
+        formatted["frame_example"] = entry["frame_example"]
+    if entry.get("build_args") is not None:
+        formatted["build_args"] = entry["build_args"]
+    return formatted
 
 
 def handle(args: dict[str, Any]) -> dict:
@@ -194,4 +205,19 @@ def handle(args: dict[str, Any]) -> dict:
             "func": args.get("func"),
             "dir": args.get("dir"),
         },
+        "route_hints": _route_hints_from_args(args),
     })
+
+
+def _route_hints_from_args(args: dict[str, Any]) -> dict[str, Any] | None:
+    if not args.get("proto"):
+        return None
+    route_args = {
+        "proto": args.get("proto"),
+        "afn": args.get("afn"),
+        "func": args.get("func"),
+        "di": args.get("di"),
+        "dir": args.get("dir"),
+        "has_address": args.get("has_address", args.get("addr")),
+    }
+    return route_parameter_hints(route_args)
