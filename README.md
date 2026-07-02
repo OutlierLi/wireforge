@@ -65,6 +65,79 @@ wireforge-terminal
 /exit
 ```
 
+### 常驻 Lab RPC 服务
+
+默认情况下，CLI 会在当前进程内使用 Lab Service。真实硬件实验推荐启动常驻 `labd`，让串口生命周期、TX/RX、`/serial`、`/run`、`/request`、`/wait-frame` 和 `exec_test` 都通过同一个 Lab RPC 服务访问硬件。
+
+启动 labd：
+
+```bash
+python3 scripts/python/wireforge_labd.py
+```
+
+或安装后：
+
+```bash
+wireforge-labd
+```
+
+默认监听：
+
+```text
+127.0.0.1:8765
+```
+
+在另一个终端让 CLI 使用 labd：
+
+```bash
+export WIREFORGE_LABD_RPC=1
+python3 -m console.terminal
+```
+
+也可以显式指定地址：
+
+```bash
+export WIREFORGE_LABD_URL=tcp://127.0.0.1:8765
+python3 -m console.terminal
+```
+
+Windows PowerShell：
+
+```powershell
+$env:WIREFORGE_LABD_RPC="1"
+py -m console.terminal
+```
+
+使用方式不变：
+
+```text
+/serial connect --name cco --port COM9 --baudrate 9600
+/serial send --to cco --hex "68 00 16"
+/serial close --name cco       # 关闭串口但保留连接参数，可 /serial open 恢复
+/serial disconnect --name cco  # 关闭并删除连接记录
+/serial ports
+/run --file=database/runs/your_plan.yaml
+```
+
+交互式 CLI 在 Lab RPC 模式下会默认订阅 labd 事件流。一个终端发出的 TX、另一个连接收到的 RX 会显示在各自 CLI 中；多个终端连接同一个 `virtual://...` 总线时，必须使用不同的连接名。
+
+Lab RPC 事件日志：
+
+```text
+log/labd/events.log
+```
+
+事件包含：
+
+- `serial_open`
+- `serial_tx`
+- `serial_rx`
+- `serial_close`
+- `serial_disconnect`
+- `serial_*_failed`
+
+如果未设置 `WIREFORGE_LABD_RPC` / `WIREFORGE_LABD_URL`，WireForge 会回退到进程内 Lab Service，适合单进程开发和单元测试。
+
 ### TestPlan 编排运行
 
 `/run` 用于执行一份 YAML TestPlan，适合把串口连接、构造、发送、等待报文、断言和清理步骤串成一次可追踪测试。

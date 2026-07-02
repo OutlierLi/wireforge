@@ -36,16 +36,16 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def handle(args: dict[str, Any]) -> dict:
-    from wireforge_serial.api import _connection_id, _normalize_args
+    from lab_service import get_lab_service
 
-    args = _normalize_args(args)
-    target = _connection_id(args) or "default"
+    lab = get_lab_service()
+    args = lab.normalize_args(args)
+    target = lab.connection_id(args) or "default"
     timeout_ms = parse_timeout_ms(args.get("timeout"), default=5000)
     protocol = str(args.get("proto") or args.get("protocol", ""))
 
     # 检查串口
-    from wireforge_serial.api import get_connection
-    transport = get_connection(target)
+    transport = lab.get_connection(target)
     if not transport:
         return fail(
             f"serial not connected (to={target}). "
@@ -69,11 +69,9 @@ def handle(args: dict[str, Any]) -> dict:
         return fail("no --wait conditions. Use --wait.afn, --wait.di, --wait.dir etc.")
 
     # ── 发送 ──
-    from wireforge_serial.api import bind_rx_display, write_with_tx_display
-
-    bind_rx_display(transport, target)
+    lab.bind_rx_display(transport, target)
     try:
-        write_with_tx_display(transport, target, send_frame)
+        lab.write_with_tx_display(transport, target, send_frame)
     except Exception as e:
         return fail(f"send failed: {e}")
 

@@ -771,7 +771,7 @@
         }
       },
       "disconnect": {
-        "desc": "Alias for close",
+        "desc": "Disconnect and remove a serial connection record",
         "params": {
           "name": {
             "type": "str",

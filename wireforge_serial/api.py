@@ -186,6 +186,25 @@ def serial_close(args: dict[str, Any]) -> SerialResult:
         return SerialResult(False, "close", error=str(e))
 
 
+def serial_disconnect(args: dict[str, Any]) -> SerialResult:
+    """关闭串口并删除连接记录。"""
+    args = _normalize_args(args)
+    cid = _connection_id(args)
+    t = _connections.pop(cid, None)
+    meta = _connection_meta.pop(cid, None)
+    if not t and not meta:
+        return SerialResult(False, "disconnect", error=f"not connected (to={cid})")
+    try:
+        if t:
+            t.close()
+        result = SerialResult(True, "disconnect", data={"id": cid, "to": cid, "status": "disconnected"})
+        log_disconnect(cid)
+        display_disconnect(cid)
+        return result
+    except Exception as e:
+        return SerialResult(False, "disconnect", error=str(e))
+
+
 def serial_ports(args: dict[str, Any] | None = None) -> SerialResult:
     """列出可用串口。"""
     try:

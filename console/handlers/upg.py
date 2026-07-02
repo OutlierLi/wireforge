@@ -56,8 +56,8 @@ from console.handlers.file_transfer import (
 )
 from console.handlers.frame_splitter import split_frames
 from console.response import fail, missing_param, ok
+from lab_service import get_lab_service
 from protocol_tool.utils.logger import log_serial
-from wireforge_serial.api import get_connection, list_connected_names
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -66,6 +66,16 @@ _PROTO_ALIASES = {
     "csg2016": "csg",
     "csg_2016": "csg",
 }
+
+
+def get_connection(name: str | None = None) -> Any:
+    """Compatibility hook for tests; production path still goes through Lab."""
+    return get_lab_service().get_connection(name)
+
+
+def list_connected_names() -> list[str]:
+    """Compatibility hook for tests; production path still goes through Lab."""
+    return get_lab_service().list_connected_names()
 
 
 def _normalize_proto(raw: str | None) -> str:
@@ -80,6 +90,7 @@ def _normalize_proto(raw: str | None) -> str:
 
 def _resolve_connection(args: dict[str, Any]) -> tuple[str, Any]:
     """Resolve serial connection by --to, or auto-select when exactly one is connected."""
+    lab = get_lab_service()
     explicit = args.get("to")
     if explicit:
         name = str(explicit)
@@ -185,9 +196,8 @@ def handle(args: dict[str, Any]) -> dict:
     except FileTransferError as exc:
         return fail(str(exc))
 
-    from wireforge_serial.api import bind_rx_quiet, write_quiet
-
-    bind_rx_quiet(transport, conn_name)
+    lab = get_lab_service()
+    lab.bind_rx_quiet(transport, conn_name)
 
     results["to"] = conn_name
     transfer_diag: dict[str, Any] = {}
@@ -250,7 +260,7 @@ def handle(args: dict[str, Any]) -> dict:
             try:
                 trace["last_label"] = label
                 trace["last_tx_hex"] = frame.hex(" ").upper()
-                write_quiet(transport, conn_name, frame)
+                lab.write_quiet(transport, conn_name, frame)
                 deadline = time.monotonic() + max(timeout, 0.0)
                 while time.monotonic() < deadline:
                     remaining = max(0.0, deadline - time.monotonic())
@@ -438,9 +448,7 @@ def handle(args: dict[str, Any]) -> dict:
         log_serial("upg_complete", port="", data=results)
         return ok(results)
     finally:
-        from wireforge_serial.api import bind_rx_display
-
-        bind_rx_display(transport, conn_name)
+        get_lab_service().bind_rx_display(transport, conn_name)
 
 
 def _parse_transfer_params(args: dict[str, Any]) -> dict[str, Any]:

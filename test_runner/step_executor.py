@@ -237,16 +237,17 @@ class StepExecutor:
         return lab.translate_args(action, args)
 
     def _wait_log(self, args: dict[str, Any]) -> dict[str, Any]:
-        from wireforge_serial.api import get_connection, _connection_id, _normalize_args
+        from lab_service import get_lab_service
 
-        args = _normalize_args(args)
-        target = _connection_id(args) or "default"
+        lab = get_lab_service()
+        args = lab.normalize_args(args)
+        target = lab.connection_id(args) or "default"
         timeout_ms = int(args.get("timeout") or args.get("timeout_ms") or 5000)
         expect = args.get("expect") if isinstance(args.get("expect"), dict) else {}
         contains = str(expect.get("contains") or args.get("contains") or "")
         if not contains:
             return self._failure("wait_log requires expect.contains")
-        transport = get_connection(target)
+        transport = lab.get_connection(target)
         if not transport:
             return self._failure(
                 f"serial not connected (to={target}). use /serial connect --name {target} --port <port> first"

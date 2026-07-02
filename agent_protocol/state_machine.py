@@ -15,7 +15,7 @@ from agent_protocol.protocol_map import BOOTSTRAP_COMMAND, ProtocolMapMissingErr
 from console.handlers import build as build_handler
 from console.handlers import decode as decode_handler
 from console.handlers.route import handle as route_handle
-from wireforge_serial.api import get_connection, serial_open, serial_send
+from lab_service import get_lab_service
 
 ROOT = Path(__file__).resolve().parent.parent
 RUNS_DIR = ROOT / "log" / "agent_protocol_runs"
@@ -558,7 +558,7 @@ def _execute_send(record: RunRecord) -> bool:
         args["to"] = record.facts["name"]
     elif record.facts.get("port"):
         generated_name = f"run_{record.run_id[:8]}"
-        open_result = serial_open({"to": generated_name, "port": record.facts["port"]})
+        open_result = get_lab_service().open_serial({"to": generated_name, "port": record.facts["port"]})
         _append_event(record, "send_open_result", {"summary": _handler_summary(open_result.to_dict()), "result": open_result.to_dict()})
         if not open_result.success:
             record.state = "FAILED"
@@ -566,7 +566,7 @@ def _execute_send(record: RunRecord) -> bool:
             return False
         args["to"] = generated_name
     _append_event(record, "send_request", args)
-    response = serial_send(args).to_dict()
+    response = get_lab_service().send_serial(args).to_dict()
     _append_event(record, "send_result", {"summary": _handler_summary(response), "result": response})
     if not response.get("success"):
         record.state = "FAILED"
@@ -656,7 +656,7 @@ def _ensure_send_ready(record: RunRecord) -> bool:
     if not record.facts.get("port") and not conn_to:
         _wait(record, "to", "发送需要明确连接目标或串口号。", examples=["cco", "COM9", "mock://loop"])
         return False
-    if conn_to and not get_connection(str(conn_to)):
+    if conn_to and not get_lab_service().get_connection(str(conn_to)):
         _wait(record, "to", f"串口连接不存在: {conn_to}", examples=["/serial connect --name cco --port COM9"])
         return False
     return True
@@ -1575,4 +1575,3 @@ def _mapping_lines(data: dict[str, Any]) -> list[str]:
 def _inline(value: Any) -> str:
     text = json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
     return text[:700] + "..." if len(text) > 700 else text
-

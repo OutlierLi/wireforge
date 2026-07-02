@@ -4,15 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from wireforge_serial.api import (
-    _auto_detect_name,
-    _connection_id,
-    get_connection_settings,
-    serial_close,
-    serial_open,
-    serial_ports,
-    serial_send,
-)
+from lab_service import get_lab_service
 from wireforge_serial.logger import log_config_change
 from console.response import ok, fail, missing_param
 
@@ -45,7 +37,8 @@ def _connect(args: dict) -> dict:
         return missing_param("port", "str",
                              examples=["/dev/ttyUSB0", "COM3", "mock://loop"],
                              note="首次连接需指定完整参数")
-    r = serial_open(args)
+    lab = get_lab_service()
+    r = lab.open_serial(args)
     if r.success:
         _last_settings[_connection_name(args)] = _settings_from_args(args, r.data)
     return r.to_dict()
@@ -55,25 +48,26 @@ def _open(args: dict) -> dict:
     """重新打开指定连接的上次参数。"""
     args = _with_connection_name(args)
     target = _connection_name(args)
-    settings = _last_settings.get(target) or get_connection_settings(target)
+    lab = get_lab_service()
+    settings = _last_settings.get(target) or lab.get_connection_settings(target)
     if not settings:
         settings = {"port": "mock://loop", "baudrate": 9600}
-    serial_close(args)
+    lab.close_serial(args)
     open_args = {**settings, "to": target}
-    r = serial_open(open_args)
+    r = lab.open_serial(open_args)
     if r.success:
         _last_settings[target] = _settings_from_args(open_args, r.data)
     return r.to_dict()
 
 
 def _close(args: dict) -> dict:
-    r = serial_close(_with_connection_name(args))
+    r = get_lab_service().close_serial(_with_connection_name(args))
     return r.to_dict()
 
 
 def _send(args: dict) -> dict:
     args = _with_connection_target(args, auto_detect=True)
-    if not args.get("to") and not _connection_id(args):
+    if not args.get("to") and not get_lab_service().connection_id(args):
         return fail("multiple serial connections active — specify --to",
                     detail={"hint": "use /serial ports to list connections"})
 
@@ -99,7 +93,7 @@ def _send(args: dict) -> dict:
             note="或使用 --build --proto csg --afn ... 由路由构造报文",
         )
 
-    r = serial_send(args)
+    r = get_lab_service().send_serial(args)
     out = r.to_dict()
     if build_info and out.get("success"):
         data = dict(out.get("data") or {})
@@ -116,7 +110,7 @@ def _set(args: dict) -> dict:
     """修改串口参数（需重连生效）。"""
     args = _with_connection_name(args)
     target = _connection_name(args)
-    current = _last_settings.get(target) or get_connection_settings(target)
+    current = _last_settings.get(target) or get_lab_service().get_connection_settings(target)
     if not current:
         current = {"port": "mock://loop", "baudrate": 9600, "bytesize": 8, "parity": "N"}
 
@@ -145,12 +139,12 @@ def _set(args: dict) -> dict:
 
 
 def _disconnect(args: dict) -> dict:
-    r = serial_close(_with_connection_name(args))
+    r = get_lab_service().disconnect_serial(_with_connection_name(args))
     return r.to_dict()
 
 
 def _ports(args: dict) -> dict:
-    r = serial_ports(args)
+    r = get_lab_service().serial_ports(args)
     return r.to_dict()
 
 
@@ -160,7 +154,7 @@ def _with_connection_name(args: dict, auto_detect: bool = False) -> dict:
     target = _pick_connection_key(normalized, ("name", "conn", "to", "id"))
     if not target:
         if auto_detect:
-            target = _auto_detect_name()
+            target = get_lab_service().auto_detect_name()
         if not target:
             target = "default"
     normalized["to"] = target
@@ -174,7 +168,7 @@ def _with_connection_target(args: dict, auto_detect: bool = False) -> dict:
     normalized = dict(args)
     target = _pick_connection_key(normalized, ("to", "conn", "id"))
     if not target and auto_detect:
-        target = _auto_detect_name()
+        target = get_lab_service().auto_detect_name()
     if target:
         normalized["to"] = target
         normalized["id"] = target
@@ -191,13 +185,13 @@ def _pick_connection_key(args: dict, keys: tuple[str, ...]) -> str:
 
 def _connection_name(args: dict) -> str:
     normalized = _with_connection_name(dict(args))
-    return _connection_id(normalized) or "default"
+    return get_lab_service().connection_id(normalized) or "default"
 
 
 def _to(args: dict) -> str:
     """send 等操作解析连接目标。"""
     normalized = _with_connection_target(dict(args))
-    return _connection_id(normalized) or "default"
+    return get_lab_service().connection_id(normalized) or "default"
 
 
 def _settings_from_args(args: dict, data: dict[str, Any] | None = None) -> dict[str, Any]:
