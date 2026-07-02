@@ -92,6 +92,8 @@ def _execute_line(line: str, stdout: TextIO, stderr: TextIO) -> None:
     try:
         response = exec_text(text if text.startswith("/") else f"/{text}")
         render_response(text, response, stdout)
+    except KeyboardInterrupt:
+        stdout.write("\n^C — interrupted\n")
     except Exception as exc:
         stderr.write(f"error: {exc}\n")
 

@@ -220,9 +220,18 @@ def _render_upg_response(response: dict[str, Any], stdout: TextIO) -> None:
 
     status = response.get("status", "error")
     error = response.get("error") or status
-    stdout.write(f"[{tag}]: {error}\n")
     detail = response.get("detail") or {}
-    reason = detail.get("failure_reason") or error
+    if detail.get("cancelled"):
+        sent = detail.get("sent_segments", 0)
+        total = detail.get("total_segments")
+        duration = detail.get("duration_seconds")
+        if total is not None:
+            stdout.write(f"[{tag}]: cancelled {sent}/{total} segments, {duration}s\n")
+        else:
+            stdout.write(f"[{tag}]: cancelled\n")
+    else:
+        stdout.write(f"[{tag}]: {error}\n")
+    reason = detail.get("failure_reason") or (error if not detail.get("cancelled") else "")
     if reason:
         stdout.write(f"  reason: {reason}\n")
     label = detail.get("last_label")

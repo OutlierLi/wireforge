@@ -523,6 +523,73 @@ class TestUpgDisplay(unittest.TestCase):
         self.assertIn("last_rx: 68 BB", text)
         self.assertNotIn("file_size", text)
 
+    def test_upg_cancelled_compact_display(self) -> None:
+        from io import StringIO
+        from console.display import render_response
+
+        out = StringIO()
+        render_response("/upg --file fw.bin", {
+            "status": "execution_error",
+            "error": "upgrade cancelled (Ctrl+C)",
+            "detail": {
+                "cancelled": True,
+                "sent_segments": 1,
+                "total_segments": 3,
+                "duration_seconds": 0.5,
+            },
+        }, out)
+        text = out.getvalue()
+        self.assertIn("[upg]: cancelled 1/3 segments", text)
+        self.assertNotIn("reason:", text)
+
+
+class TestUpgInterrupt(unittest.TestCase):
+    def test_upg_ctrl_c_returns_cancelled_with_progress(self) -> None:
+        class InterruptMidTransfer(UpgradeResponderTransport):
+            def read_response(self, timeout: float, *, idle_timeout: float = 0.05) -> bytes:
+                if self.segment_count >= 2 and self._queue:
+                    self._queue.clear()
+                if self.segment_count >= 2 and not self._queue:
+                    raise KeyboardInterrupt()
+                return super().read_response(timeout, idle_timeout=idle_timeout)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fw = Path(temp_dir) / "fw.bin"
+            fw.write_bytes(bytes(range(256)))
+            package = segment_file(fw, 128)
+            transport = InterruptMidTransfer(
+                expected_segments=package.total_segments,
+                file_size=package.size,
+                file_crc=package.crc16,
+            )
+            with patch("console.handlers.upg.get_connection", return_value=transport):
+                r = exec_cmd("upg", {
+                    "file": str(fw),
+                    "to": "dev1",
+                    "segment-size": 128,
+                    "no-cache": True,
+                    "no-resume": True,
+                    "ack-timeout": "5s",
+                    "retries": 0,
+                })
+            _fail(r)
+            detail = r.get("detail") or {}
+            self.assertTrue(detail.get("cancelled"))
+            self.assertEqual(detail.get("sent_segments"), 1)
+            self.assertEqual(detail.get("total_segments"), 2)
+
+    def test_terminal_survives_keyboard_interrupt_during_command(self) -> None:
+        from io import StringIO
+        from unittest.mock import patch
+
+        from console.terminal import _execute_line
+
+        stdout = StringIO()
+        stderr = StringIO()
+        with patch("console.terminal.exec_text", side_effect=KeyboardInterrupt):
+            _execute_line("/upg --file fw.bin", stdout, stderr)
+        self.assertIn("interrupted", stdout.getvalue())
+
 
 class TestUpgRegistry(unittest.TestCase):
     def test_upg_registered(self) -> None:

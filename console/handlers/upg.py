@@ -339,6 +339,7 @@ def handle(args: dict[str, Any]) -> dict:
 
     start_time = time.monotonic()
     start_segment = 0
+    sent = 0
 
     try:
         try:
@@ -390,7 +391,6 @@ def handle(args: dict[str, Any]) -> dict:
 
             segments_to_send = package.segments[start_segment:]
             last_segment_number = segments_to_send[-1].number if segments_to_send else None
-            sent = 0
 
             for segment in segments_to_send:
                 seg_frame = build_frame("E8020702", segment_payload(segment))
@@ -414,6 +414,13 @@ def handle(args: dict[str, Any]) -> dict:
             elif params["finish_mode"] != "none":
                 return fail(f"unsupported finish mode: {params['finish_mode']}")
 
+        except KeyboardInterrupt:
+            results["duration_seconds"] = round(time.monotonic() - start_time, 1)
+            results["sent_segments"] = sent
+            results["cancelled"] = True
+            _finish_progress_bar()
+            _apply_transfer_diag(results, transfer_diag)
+            return fail("upgrade cancelled (Ctrl+C)", detail=results)
         except RuntimeError as exc:
             results["duration_seconds"] = round(time.monotonic() - start_time, 1)
             _finish_progress_bar()
