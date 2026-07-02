@@ -102,3 +102,28 @@ def test_build_add_slave_bracket_list_count_mismatch():
     })
     assert result["success"] is False
     assert "不一致" in result.get("error", "")
+
+
+def test_from_frame_set_bracket_list_with_spaces():
+    import protocol_tool.utils.logger as lg
+
+    lg.log_build = lg.log_decode = lambda *a, **k: None
+
+    frame = (
+        "68 1F 00 40 04 01 02 04 02 E8 03 13 88 03 00 24 01 24 "
+        "88 03 00 24 01 25 88 03 00 24 01 A4 16"
+    )
+    text = (
+        f"/build from-frame --from_frame {frame} "
+        "--set slave_count=2 "
+        "--set slave_addrs=[012400038813, 012400038824]"
+    )
+    _, args = parse_command_text(text)
+    from console.handlers.build import _parse_set_args
+
+    parsed = _parse_set_args(args.get("set"))
+    assert parsed["slave_count"] == 2
+    assert parsed["slave_addrs"] == ["012400038813", "012400038824"]
+
+    result = build_frame_from_args(args)
+    assert result["success"] is True, result.get("error")

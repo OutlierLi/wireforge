@@ -512,6 +512,10 @@ def _field_used(name: str, used_args: dict[str, Any]) -> bool:
 
 
 def schema_field_meta(used_args: dict[str, Any], key: str) -> dict[str, Any] | None:
+    if _is_from_frame_mode(used_args):
+        for name, required, desc, ftype, _current in _from_frame_schema_rows(used_args):
+            if name == key:
+                return {"type": "str", "required": required, "desc": desc or ftype}
     for name, required, desc, default in _schema_fields(used_args):
         if name == key:
             meta: dict[str, Any] = {"type": "str", "required": required, "desc": desc}
@@ -570,10 +574,278 @@ def protocol_route_argument_completions(
     return completions if completions else []
 
 
+# ── from-frame: decode → 可替换字段联想 ─────────────────────────────
+
+def _is_from_frame_mode(used_args: dict[str, Any]) -> bool:
+    return bool(used_args.get("from_frame") or used_args.get("from-frame"))
+
+
+def _compact_hex(text: str) -> str:
+    return text.replace(" ", "").replace("\n", "").replace("\t", "").upper()
+
+
+def _extract_from_frame_hex(used_args: dict[str, Any]) -> str:
+    chunks: list[str] = []
+    raw = used_args.get("from_frame", used_args.get("from-frame"))
+    if raw not in (None, "", True, False):
+        if isinstance(raw, list):
+            chunks.extend(str(x) for x in raw)
+        else:
+            chunks.append(str(raw))
+    for token in used_args.get("_") or []:
+        chunks.append(str(token))
+    return " ".join(chunks).strip()
+
+
+def _looks_like_complete_frame_hex(hex_text: str) -> bool:
+    compact = _compact_hex(hex_text)
+    if len(compact) < 4 or len(compact) % 2:
+        return False
+    try:
+        bytes.fromhex(compact)
+    except ValueError:
+        return False
+    return True
+
+
+def _format_cli_field_value(value: Any) -> str:
+    if isinstance(value, list):
+        inner = ", ".join(_format_cli_field_value(item) for item in value)
+        return f"[{inner}]"
+    if isinstance(value, dict):
+        return str(value.get("raw", value))
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value).strip()
+
+
+def _format_set_assignment(name: str, value: Any) -> str:
+    return f"{name}={_format_cli_field_value(value)}"
+
+
+def _pick_decoded_value(field_name: str, flat: dict[str, Any]) -> Any:
+    if field_name in flat:
+        return flat[field_name]
+    matches = [(key, val) for key, val in flat.items() if key == field_name or key.endswith(f".{field_name}")]
+    if not matches:
+        return None
+    matches.sort(key=lambda item: (item[0].count("."), len(item[0])))
+    return matches[0][1]
+
+
+def _parse_set_overrides(used_args: dict[str, Any]) -> dict[str, Any]:
+    from console.handlers.build import _parse_set_args
+
+    return _parse_set_args(used_args.get("set"))
+
+
+def _from_frame_fields_used(used_args: dict[str, Any]) -> set[str]:
+    used = set(_parse_set_overrides(used_args))
+    for key, val in used_args.items():
+        if key in _ROUTE_META or val in (None, "", True):
+            continue
+        if key.startswith("_"):
+            continue
+        used.add(key)
+    return used
+
+
+@lru_cache(maxsize=64)
+def _from_frame_schema_cached(
+    compact_hex: str,
+    proto_hint: str,
+) -> tuple[tuple[str, bool, str, str, str], ...] | None:
+    if not _looks_like_complete_frame_hex(compact_hex):
+        return None
+    from console.build_resolver import decode_frame, resolve
+    from console.handlers.build import _flatten_values
+
+    proto = proto_hint.strip() if proto_hint else ""
+    try:
+        decoded = decode_frame(compact_hex, proto=proto or None)
+    except Exception:
+        return None
+
+    target_info = dict(decoded["target_info"])
+    if proto:
+        target_info["proto"] = proto
+    try:
+        target = resolve(target_info)
+    except Exception:
+        return None
+
+    flat = _flatten_values(decoded["values"])
+    rows: list[tuple[str, bool, str, str, str]] = []
+    for field in target.input_schema:
+        if field.name in _ROUTE_META or field.derived:
+            continue
+        current = _pick_decoded_value(field.name, flat)
+        if current is None:
+            continue
+        rows.append((
+            field.name,
+            bool(field.required),
+            field.desc or "",
+            field.type,
+            _format_cli_field_value(current),
+        ))
+    return tuple(rows) if rows else None
+
+
+def _from_frame_schema_rows(used_args: dict[str, Any]) -> list[tuple[str, bool, str, str, str]]:
+    hex_text = _extract_from_frame_hex(used_args)
+    if not hex_text:
+        return []
+    proto = str(used_args.get("proto") or "")
+    cached = _from_frame_schema_cached(_compact_hex(hex_text), proto)
+    return list(cached or [])
+
+
+def from_frame_argument_completions(
+    used_args: dict[str, Any],
+    flag_prefix: str,
+) -> list[dict[str, Any]] | None:
+    if not _is_from_frame_mode(used_args):
+        return None
+
+    rows = _from_frame_schema_rows(used_args)
+    if not rows:
+        return None
+
+    used_fields = _from_frame_fields_used(used_args)
+    typing_flag = bool(flag_prefix)
+    completions: list[dict[str, Any]] = []
+    pending = [
+        (name, required, desc, ftype, current)
+        for name, required, desc, ftype, current in rows
+        if name not in used_fields
+    ]
+
+    def _append_set_suggestion(name: str, required: bool, desc: str, current: str) -> None:
+        assignment = _format_set_assignment(name, current)
+        completions.append({
+            "kind": "argument",
+            "value": f"--set {assignment}",
+            "label": f"--set {assignment}",
+            "type": "str",
+            "required": False,
+            "description": desc or f"当前 {current}",
+            "dynamic": True,
+            "recommended": True,
+        })
+        completions.append({
+            "kind": "argument",
+            "value": f"--{name}={current}",
+            "label": f"--{name}={current}",
+            "type": "str",
+            "required": False,
+            "description": desc or f"直接覆盖 {name}",
+            "dynamic": True,
+        })
+
+    if typing_flag:
+        if _flag_matches("--resolve", flag_prefix):
+            completions.append(_make_flag_item("resolve", desc="查看 input_schema 与解码值", dynamic=True))
+        if _flag_matches("--set", flag_prefix):
+            completions.append(_make_flag_item("set", desc="覆盖解码字段（field=value）", dynamic=True))
+        if _flag_matches("--proto", flag_prefix) and used_args.get("proto") in (None, "", True):
+            completions.append(_make_flag_item("proto", desc="协议类型（省略则自动检测）", dynamic=True))
+
+        set_tail = flag_prefix.lstrip("-")
+        if set_tail.startswith("set"):
+            set_tail = set_tail[3:].lstrip(" =")
+
+        for name, required, desc, _ftype, current in pending:
+            assignment = _format_set_assignment(name, current)
+            direct_flag = f"--{name}"
+            if set_tail and not (
+                name.startswith(set_tail)
+                or assignment.startswith(set_tail)
+            ):
+                continue
+            if _flag_matches(direct_flag, flag_prefix):
+                completions.append(_make_flag_item(name, required=required, desc=desc, dynamic=True))
+                continue
+            if _flag_matches("--set", flag_prefix) or set_tail:
+                _append_set_suggestion(name, required, desc, current)
+        return completions if completions else []
+
+    if pending:
+        name, required, desc, _ftype, current = pending[0]
+        _append_set_suggestion(name, required, desc, current)
+        return completions
+
+    completions.append(_make_flag_item("resolve", desc="查看 input_schema 与解码值", dynamic=True))
+    if used_args.get("proto") in (None, "", True):
+        completions.append(_make_flag_item("proto", desc="协议类型（省略则自动检测）", dynamic=True))
+    return completions
+
+
+def from_frame_argument_value_completions(
+    used_args: dict[str, Any],
+    param_key: str,
+    value_prefix: str,
+) -> list[dict[str, Any]] | None:
+    if not _is_from_frame_mode(used_args):
+        return None
+
+    rows = _from_frame_schema_rows(used_args)
+    if not rows:
+        return None
+
+    by_name = {name: (required, desc, ftype, current) for name, required, desc, ftype, current in rows}
+
+    if param_key == "set":
+        out: list[dict[str, Any]] = []
+        prefix = value_prefix.strip()
+        if "=" in prefix:
+            field_part, val_part = prefix.split("=", 1)
+            field_part = field_part.strip()
+            for name, (_req, desc, _ftype, current) in by_name.items():
+                if field_part and not name.startswith(field_part):
+                    continue
+                if val_part == "" or str(current).lower().startswith(val_part.lower()):
+                    out.append(_make_value_item(
+                        str(current),
+                        "set",
+                        description=desc or name,
+                    ))
+            return out
+
+        for name, (_req, desc, _ftype, current) in by_name.items():
+            assignment = _format_set_assignment(name, current)
+            if prefix and not (name.startswith(prefix) or assignment.startswith(prefix)):
+                continue
+            out.append(_make_value_item(
+                assignment,
+                "set",
+                description=desc or f"当前 {current}",
+            ))
+        return out
+
+    matched = by_name.get(param_key)
+    if matched is None:
+        return None
+    _req, desc, _ftype, current = matched
+    return [
+        _make_value_item(
+            current,
+            param_key,
+            default=(not value_prefix),
+            description=desc or f"解码值 {current}",
+        )
+        for current in [current]
+        if _value_prefix_matches(current, value_prefix)
+    ]
+
+
 def build_argument_completions(
     used_args: dict[str, Any],
     flag_prefix: str,
 ) -> list[dict[str, Any]] | None:
+    dynamic = from_frame_argument_completions(used_args, flag_prefix)
+    if dynamic is not None:
+        return dynamic
     return protocol_route_argument_completions(used_args, flag_prefix, command="build")
 
 
@@ -649,6 +921,9 @@ def build_argument_value_completions(
     param_key: str,
     value_prefix: str,
 ) -> list[dict[str, Any]] | None:
+    dynamic = from_frame_argument_value_completions(used_args, param_key, value_prefix)
+    if dynamic is not None:
+        return dynamic
     return protocol_route_value_completions(
         used_args, param_key, value_prefix, command="build",
     )

@@ -498,6 +498,36 @@ class TestAnalyzeState:
         assert analyze_completion_line("/serial connect --po").stage == "argument"
 
 
+class TestFromFrameCompletion:
+    _ADD_SLAVE_FRAME = (
+        "68 1F 00 40 04 01 02 04 02 E8 03 13 88 03 00 24 01 24 "
+        "88 03 00 24 01 25 88 03 00 24 01 A4 16"
+    )
+
+    def test_from_frame_hex_merged_for_completion(self):
+        state = analyze_completion_line(
+            f"/build from-frame --from_frame {self._ADD_SLAVE_FRAME} "
+        )
+        assert "68 1F" in str(state.used_args.get("from_frame", ""))
+        assert "A4 16" in str(state.used_args.get("from_frame", ""))
+
+    def test_from_frame_suggests_editable_fields(self):
+        vals = _values(f"/build from-frame --from_frame {self._ADD_SLAVE_FRAME} ")
+        assert any(v.startswith("--set slave_count=") for v in vals)
+        assert any(v.startswith("--slave_count=") for v in vals)
+
+    def test_from_frame_set_value_completions(self):
+        vals = _values(f"/build from-frame --from_frame {self._ADD_SLAVE_FRAME} --set ")
+        assert "slave_count=3" in vals
+        assert any("slave_addrs=" in v for v in vals)
+
+    def test_from_frame_direct_field_value(self):
+        vals = _values(
+            f"/build from-frame --from_frame {self._ADD_SLAVE_FRAME} --slave_count="
+        )
+        assert "3" in vals
+
+
 class TestRobustTokenize:
     def test_unclosed_quote_with_trailing_space(self):
         r = complete_text('/decode --hex="68 0C ')

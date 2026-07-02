@@ -20,6 +20,7 @@ import shlex
 from dataclasses import dataclass, field
 from typing import Any
 
+from console.arg_utils import HEX_MERGE_KEYS, merge_hex_value_tail, merge_split_value_tail
 from console.command import registry
 from console.command_schema import (
     DEFAULT_SUB,
@@ -159,10 +160,17 @@ def _parse_used_args(tokens: list[str], start: int) -> dict[str, Any]:
             raw = token[2:]
             if "=" in raw:
                 key, value = raw.split("=", 1)
+                value, i = merge_split_value_tail(value, tokens, i)
                 _merge_arg(args, key, value)
             elif i + 1 < len(tokens) and not tokens[i + 1].startswith("--"):
-                _merge_arg(args, raw, tokens[i + 1])
+                key = raw
+                value = tokens[i + 1]
                 i += 1
+                if key in HEX_MERGE_KEYS:
+                    value, i = merge_hex_value_tail(value, tokens, i)
+                else:
+                    value, i = merge_split_value_tail(value, tokens, i)
+                _merge_arg(args, key, value)
             else:
                 _merge_arg(args, raw, True)
         i += 1

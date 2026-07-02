@@ -66,6 +66,50 @@ def merge_bracket_list_value_tail(
     return " ".join(merged), j
 
 
+def looks_like_open_bracket_assignment(value: str) -> bool:
+    """``--set slave_addrs=[a,`` 等 ``field=[...`` 未闭合赋值。"""
+    raw = strip_nested_quotes(str(value).strip())
+    if "=" not in raw or raw.endswith("]"):
+        return False
+    _, rhs = raw.split("=", 1)
+    rhs = rhs.strip()
+    return rhs.startswith("[") and not rhs.endswith("]")
+
+
+def merge_bracket_assignment_value_tail(
+    value: str,
+    parts: list[str],
+    index: int,
+) -> tuple[str, int]:
+    """``--set slave_addrs=[a, b]`` 被 shlex 在逗号处拆段时，向后合并至 ``]``。"""
+    if not looks_like_open_bracket_assignment(value):
+        return value, index
+
+    merged = [value]
+    j = index + 1
+    while j < len(parts):
+        if parts[j].startswith("--"):
+            break
+        merged.append(parts[j])
+        if parts[j].rstrip().endswith("]"):
+            break
+        j += 1
+    return " ".join(merged), j
+
+
+def merge_split_value_tail(
+    value: str,
+    parts: list[str],
+    index: int,
+) -> tuple[str, int]:
+    """合并被 shlex 拆开的 ``[...]`` 或 ``field=[...]`` 参数值。"""
+    if looks_like_open_bracket_list(value):
+        return merge_bracket_list_value_tail(value, parts, index)
+    if looks_like_open_bracket_assignment(value):
+        return merge_bracket_assignment_value_tail(value, parts, index)
+    return value, index
+
+
 def coerce_array_value(value: Any) -> list[Any] | None:
     """Normalize array CLI/YAML values; parse ``[a, b]`` strings into lists."""
     if isinstance(value, list):

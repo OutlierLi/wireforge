@@ -291,6 +291,11 @@ def _handle_from_frame(args: dict[str, Any], hex_text: str, set_overrides: dict)
         if k in schema_names:
             business_values[k] = v
 
+    try:
+        business_values = _coerce_business_values(business_values, target.input_schema)
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
+
     # 确保 target_info 中的关键字段存在
     ti = target.target_info
     if "di" in ti:
