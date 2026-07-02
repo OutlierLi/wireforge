@@ -24,7 +24,6 @@ DEFAULT_SUB: dict[str, str] = {
     "delay": "wait",
     "print": "text",
     "help": "show",
-    "split": "open",
     "run": "execute",
     "upg": "transfer",
     "wait-frame": "listen",

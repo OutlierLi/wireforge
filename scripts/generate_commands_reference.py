@@ -35,7 +35,6 @@ COMMAND_ZH: dict[str, str] = {
     "var": "会话变量管理（set/get/export 等）",
     "print": "打印文本，支持 ${变量} 插值",
     "help": "查看命令与子命令帮助",
-    "split": "在新终端窗口/标签/分栏中继承当前会话状态",
 }
 
 SUB_ZH: dict[str, dict[str, str]] = {
@@ -50,7 +49,6 @@ SUB_ZH: dict[str, dict[str, str]] = {
     "delay": {"wait": "延时等待"},
     "print": {"text": "打印文本"},
     "help": {"show": "显示命令帮助"},
-    "split": {"open": "打开新终端窗口/标签"},
     "run": {"execute": "执行 TestPlan"},
     "upg": {"transfer": "固件文件传输"},
     "wait-frame": {"listen": "等待并匹配串口帧"},

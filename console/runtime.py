@@ -233,20 +233,6 @@ class Runtime:
             except Exception:
                 pass
 
-        elif command == "split":
-            try:
-                var_store.set("last_split", data, "json", source={
-                    "kind": "auto", "command": "split",
-                })
-            except Exception:
-                pass
-            try:
-                var_store.set("last_result", data, "json", source={
-                    "kind": "auto", "command": "split",
-                })
-            except Exception:
-                pass
-
         elif command == "serial":
             sub = str(args.get("sub") or "").lower()
             if sub == "send" or ("sent" in data and "sent_bytes" in data):

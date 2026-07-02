@@ -1,6 +1,6 @@
 # WireForge 命令参考
 
-> 自动生成于 2026-07-01 22:40:02 +0800；源文件 [`console/commands.json`](../../console/commands.json)。
+> 自动生成于 2026-07-02 20:36:15 +0800；源文件 [`console/commands.json`](../../console/commands.json)。
 > 重新生成：`python3 scripts/generate_commands_reference.py`
 
 ## 符号说明
@@ -36,21 +36,15 @@ JSON/API 调用直接传字符串即可，例如 `{"hex": "68 0C ..."}`。
 
 **功能**：新增自动应答规则
 
-**用法**：`/auto_rule add <id> <match> <then> [afn] [di] [dir] [field] [func] [name] [proto] [source]`
+**用法**：`/auto_rule add [id] [match] [name] [source] [then]`
 
 | 参数 | 必填/可选 | 类型 | 说明 |
 |------|-----------|------|------|
-| `id` | 必填 | str | 规则ID（唯一，后续 show/enable/delete/update/test 均用此标识）；示例 csg_query_vendor_ack、auto_reply_login |
-| `match` | 必填 | str | 匹配条件：regex/JSON 片段，或用 field/di/afn/dir 指定解码字段条件；与 --field/--di/--afn/--dir 二选一或组合；不可省略；示例 010300E8、68.*16、{"all":["010300E8","0040"]} |
-| `then` | 必填 | str | 匹配后执行的命令（Shell 命令行，与 /send /print 相同写法）；无需 JSON；--then /print --text=ok 即可（shell 会自动合并 --text）；输入 / 可联想嵌套命令；示例 /print --text=success、/send --hex "68 0D 00 80 00 01 01 00 01 E8 00 6B 16"、/log --message matched |
-| `afn` | 可选 | hex | 按 AFN 精确匹配（decoded 条件） |
-| `di` | 可选 | str | 按 DI 精确匹配（decoded 条件） |
-| `dir` | 可选 | choice | 按方向匹配（decoded 条件）；示例 downlink、uplink |
-| `field` | 可选 | str | 解码字段条件 field=path=value，可替代或补充 match |
-| `func` | 可选 | hex | 按功能码匹配（DLT645 decoded 条件）；示例 0x11、11 |
-| `name` | 可选 | str | 规则显示名称（可选，list 时展示；不影响匹配逻辑） |
-| `proto` | 可选 | choice | decode 匹配所用协议（默认 csg）；decoded/di/afn/func 条件依赖此协议解析帧；645 用 --proto dlt645 --di --func；示例 csg、dlt645 |
+| `id` | 可选 | str | 规则ID（省略则自动生成） |
+| `match` | 可选 | str | 正则匹配模式 (regex) |
+| `name` | 可选 | str | 规则名称 |
 | `source` | 可选 | str | 触发源 serial:default |
+| `then` | 可选 | str | 匹配后执行的命令 |
 
 #### `/auto_rule list`
 
@@ -288,12 +282,12 @@ JSON/API 调用直接传字符串即可，例如 `{"hex": "68 0C ..."}`。
 
 **功能**：发送并等待匹配响应
 
-**用法**：`/request send <send> 〔to〕 [proto] [timeout] [wait.afn] [wait.di] [wait.dir]`
+**用法**：`/request send <send> 〔name〕 [proto] [timeout] [wait.afn] [wait.di] [wait.dir]`
 
 | 参数 | 必填/可选 | 类型 | 说明 |
 |------|-----------|------|------|
 | `send` | 必填 | str | Hex frame to send；示例 68 0C 00 40 03 01 01 03 00 E8 30 16 |
-| `to` | 推荐 | str | Serial connection target；示例 default、cco |
+| `name` | 推荐 | str | Serial connection name；示例 default、cco |
 | `proto` | 可选 | choice | Protocol for decode (auto-detect if omitted)；示例 csg、dlt645 |
 | `timeout` | 可选 | int | Max wait time in ms；默认 `5000`；示例 3000、5000 |
 | `wait.afn` | 可选 | str | Expected AFN in response |
@@ -362,7 +356,7 @@ JSON/API 调用直接传字符串即可，例如 `{"hex": "68 0C ..."}`。
 | 参数 | 必填/可选 | 类型 | 说明 |
 |------|-----------|------|------|
 | `port` | 必填 | str | 串口号；默认 `mock://loop`；mock=内存回环, virtual=跨进程总线, 其他=物理串口；示例 mock://loop、virtual://demo、/dev/ttyUSB0、COM3 |
-| `name` | 推荐 | str | 连接名称（注册到串口池）；默认 `default`；后续 send/wait-frame 等用 `--to` 选择；示例 default、cco、sta1 |
+| `name` | 推荐 | str | 连接名称（注册到串口池）；默认 `default`；后续 send/wait-frame 等用 --to 选择此名称；示例 default、cco、sta1 |
 | `baudrate` | 可选 | int | 波特率；默认 `9600`；示例 9600、115200 |
 | `bytesize` | 可选 | int | 数据位；默认 `8`；示例 8 |
 | `display` | 可选 | choice | RX 终端显示格式；默认 `hex`；示例 hex、ascii |
@@ -402,12 +396,19 @@ JSON/API 调用直接传字符串即可，例如 `{"hex": "68 0C ..."}`。
 
 **功能**：仅发送十六进制帧
 
-**用法**：`/serial send <hex> 〔to〕`
+**用法**：`/serial send 〔build〕 〔hex〕 〔to〕 [afn] [di] [dir] [func] [proto] [set]`
 
 | 参数 | 必填/可选 | 类型 | 说明 |
 |------|-----------|------|------|
-| `hex` | 必填 | str | 发送数据(十六进制)；示例 68 0C 00 40 03 01 01 03 00 E8 30 16 |
+| `build` | 推荐 | bool | 用 /build 路由构造报文再发送；--build --proto csg --afn --di ... 与 /build 相同；与 --hex 二选一 |
+| `hex` | 推荐 | str | 发送数据(十六进制)；与 --build 二选一；示例 68 0C 00 40 03 01 01 03 00 E8 30 16 |
 | `to` | 推荐 | str | 选择已注册的连接名称；仅一个已连接串口时可省略；多连接时必须指定；示例 default、cco |
+| `afn` | 可选 | hex | 应用功能码 AFN（CSG，--build 模式）；示例 0x00、0x03 |
+| `di` | 可选 | str | 数据标识 DI（--build 模式）；示例 E8010001、00010000 |
+| `dir` | 可选 | choice | 传输方向（--build 模式）；默认 `downlink`；示例 downlink、uplink |
+| `func` | 可选 | hex | 功能码 func（DLT645，--build 模式）；示例 0x11、0x13 |
+| `proto` | 可选 | choice | 协议类型（--build 模式）；示例 csg、dlt645 |
+| `set` | 可选 | str | 覆盖 build 字段值（--build 模式）；示例 wait_time=0、freeze_year=26 |
 
 #### `/serial set`
 
@@ -434,25 +435,6 @@ JSON/API 调用直接传字符串即可，例如 `{"hex": "68 0C ..."}`。
 **功能**：ports 的别名
 
 **用法**：`/serial list`
-
----
-
-## /split
-
-**功能**：在新终端窗口/标签/分栏中继承当前会话状态
-
-### 子命令
-
-#### `/split open`
-
-**功能**：打开新终端窗口/标签
-
-**用法**：`/split open [dry-run] [mode]`
-
-| 参数 | 必填/可选 | 类型 | 说明 |
-|------|-----------|------|------|
-| `dry-run` | 可选 | bool | 仅打印启动命令，不实际执行 |
-| `mode` | 可选 | choice | 启动模式；默认 `tab`；示例 split、tab、window |
 
 ---
 
@@ -602,11 +584,11 @@ JSON/API 调用直接传字符串即可，例如 `{"hex": "68 0C ..."}`。
 
 **功能**：等待并匹配串口帧
 
-**用法**：`/wait-frame listen 〔to〕 [expect] [expect.afn] [expect.di] [expect.dir] [proto] [timeout]`
+**用法**：`/wait-frame listen 〔name〕 [expect] [expect.afn] [expect.di] [expect.dir] [proto] [timeout]`
 
 | 参数 | 必填/可选 | 类型 | 说明 |
 |------|-----------|------|------|
-| `to` | 推荐 | str | Serial connection target；示例 default、cco |
+| `name` | 推荐 | str | Serial connection name；示例 default、cco |
 | `expect` | 可选 | str | Full expect JSON: {"all":[{"path":"$.afn","op":"eq","value":"04"}]} |
 | `expect.afn` | 可选 | str | Expected AFN value |
 | `expect.di` | 可选 | str | Expected DI value |

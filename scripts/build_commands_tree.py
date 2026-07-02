@@ -25,7 +25,6 @@ DEFAULT_SUB: dict[str, str] = {
     "delay": "wait",
     "print": "text",
     "help": "show",
-    "split": "open",
     "run": "execute",
     "upg": "transfer",
     "wait-frame": "listen",
@@ -370,30 +369,6 @@ def _help_command(entry: dict[str, Any]) -> dict[str, Any]:
                     required=False,
                     desc="Command name, e.g. /serial",
                     examples=["/serial", "/serial open"],
-                ),
-            },
-        ),
-    }
-    return out
-
-
-def _split_command(entry: dict[str, Any]) -> dict[str, Any]:
-    out = _base(entry)
-    out["sub_commands"] = {
-        "open": _sub(
-            entry["desc"],
-            {
-                "mode": _p(
-                    type="choice",
-                    required=False,
-                    desc="启动模式",
-                    examples=["split", "tab", "window"],
-                    default="tab",
-                ),
-                "dry-run": _p(
-                    type="bool",
-                    required=False,
-                    desc="仅打印启动命令，不实际执行",
                 ),
             },
         ),
@@ -859,7 +834,6 @@ BUILDERS: dict[str, Any] = {
     "delay": _delay_command,
     "print": _print_command,
     "help": _help_command,
-    "split": _split_command,
     "run": _run_command,
     "upg": _upg_command,
     "wait-frame": _wait_frame_command,

@@ -9,92 +9,30 @@
       "add": {
         "desc": "Add a new rule with match condition and actions",
         "params": {
-          "id": {
-            "type": "str",
-            "required": true,
-            "order": 1,
-            "desc": "规则ID（唯一，后续 show/enable/delete/update/test 均用此标识）",
-            "examples": [
-              "csg_query_vendor_ack",
-              "auto_reply_login"
-            ]
-          },
           "match": {
             "type": "str",
-            "required": true,
-            "order": 2,
-            "desc": "匹配条件：regex/JSON 片段，或 --match --proto 进入协议 decode 路由（同 /build）",
-            "examples": [
-              "010300E8",
-              "68.*16",
-              "{\"all\":[\"010300E8\",\"0040\"]}"
-            ],
-            "note": "空格后可选 --proto csg 再 --afn/--di（带功能缩略）；或 --field path=value；或直接写 regex"
-          },
-          "then": {
-            "type": "str",
-            "required": true,
-            "order": 3,
-            "desc": "匹配后执行的命令（Shell 命令行，与 /send /print 相同写法）",
-            "examples": [
-              "/print --text=success",
-              "/send --hex \"68 0D 00 80 00 01 01 00 01 E8 00 6B 16\"",
-              "/log --message matched"
-            ],
-            "note": "无需 JSON；--then /print --text=ok 即可（shell 会自动合并 --text）；输入 / 可联想嵌套命令"
+            "required": false,
+            "desc": "正则匹配模式 (regex)"
           },
           "name": {
             "type": "str",
             "required": false,
-            "desc": "规则显示名称（可选，list 时展示；不影响匹配逻辑）"
+            "desc": "规则名称"
           },
           "source": {
             "type": "str",
             "required": false,
             "desc": "触发源 serial:default"
           },
-          "field": {
+          "then": {
             "type": "str",
             "required": false,
-            "desc": "解码字段条件 field=path=value，可替代或补充 match"
+            "desc": "匹配后执行的命令"
           },
-          "di": {
+          "id": {
             "type": "str",
             "required": false,
-            "desc": "按 DI 精确匹配（decoded 条件）"
-          },
-          "afn": {
-            "type": "hex",
-            "required": false,
-            "desc": "按 AFN 精确匹配（decoded 条件）"
-          },
-          "dir": {
-            "type": "choice",
-            "required": false,
-            "desc": "按方向匹配（decoded 条件）",
-            "examples": [
-              "downlink",
-              "uplink"
-            ]
-          },
-          "func": {
-            "type": "hex",
-            "required": false,
-            "desc": "按功能码匹配（DLT645 decoded 条件）",
-            "examples": [
-              "0x11",
-              "11"
-            ]
-          },
-          "proto": {
-            "type": "choice",
-            "required": false,
-            "desc": "decode 匹配所用协议（默认 csg）",
-            "examples": [
-              "csg",
-              "dlt645"
-            ],
-            "note": "decoded/di/afn/func 条件依赖此协议解析帧；645 用 --proto dlt645 --di --func"
+            "desc": "规则ID（省略则自动生成）"
           }
         }
       },
@@ -430,7 +368,6 @@
           "filter": {
             "type": "str",
             "required": false,
-            "repeatable": true,
             "desc": "额外 AND 过滤条件，可多次使用",
             "examples": [
               "档案",
@@ -549,6 +486,16 @@
               "68 0C 00 40 03 01 01 03 00 E8 30 16"
             ]
           },
+          "name": {
+            "type": "str",
+            "required": false,
+            "recommended": true,
+            "desc": "Serial connection name",
+            "examples": [
+              "default",
+              "cco"
+            ]
+          },
           "timeout": {
             "type": "int",
             "required": false,
@@ -591,16 +538,6 @@
             "type": "dynamic",
             "required": false,
             "desc": "Additional wait paths: --wait.user_data.result=success"
-          },
-          "to": {
-            "type": "str",
-            "required": false,
-            "recommended": true,
-            "desc": "Serial connection target",
-            "examples": [
-              "default",
-              "cco"
-            ]
           }
         }
       }
@@ -698,7 +635,6 @@
           "var": {
             "type": "str",
             "required": false,
-            "repeatable": true,
             "desc": "Override plan variable; may be repeated",
             "examples": [
               "cco=COM9",
@@ -1002,36 +938,6 @@
       "list": {
         "desc": "Alias for ports",
         "params": {}
-      }
-    }
-  },
-  "split": {
-    "desc": "Open a new terminal window/tab/pane inheriting current session state",
-    "module": "console.handlers.split",
-    "handler": "handle",
-    "enabled": true,
-    "params": {},
-    "sub_commands": {
-      "open": {
-        "desc": "Open a new terminal window/tab/pane inheriting current session state",
-        "params": {
-          "mode": {
-            "type": "choice",
-            "required": false,
-            "desc": "启动模式",
-            "examples": [
-              "split",
-              "tab",
-              "window"
-            ],
-            "default": "tab"
-          },
-          "dry-run": {
-            "type": "bool",
-            "required": false,
-            "desc": "仅打印启动命令，不实际执行"
-          }
-        }
       }
     }
   },
@@ -1379,6 +1285,16 @@
       "listen": {
         "desc": "Listen on serial port, decode frames, and match against expect conditions",
         "params": {
+          "name": {
+            "type": "str",
+            "required": false,
+            "recommended": true,
+            "desc": "Serial connection name",
+            "examples": [
+              "default",
+              "cco"
+            ]
+          },
           "timeout": {
             "type": "int",
             "required": false,
@@ -1426,16 +1342,6 @@
             "type": "dynamic",
             "required": false,
             "desc": "Additional expect paths: --expect.user_data.result=success"
-          },
-          "to": {
-            "type": "str",
-            "required": false,
-            "recommended": true,
-            "desc": "Serial connection target",
-            "examples": [
-              "default",
-              "cco"
-            ]
           }
         }
       }

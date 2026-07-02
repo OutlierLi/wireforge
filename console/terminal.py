@@ -6,7 +6,6 @@ when prompt_toolkit is not installed.
 
 from __future__ import annotations
 
-import argparse
 import sys
 from collections.abc import Iterable
 from pathlib import Path
@@ -16,8 +15,7 @@ from console.api import complete_cmd, exec_text
 from console.display import render_response
 
 
-_ROOT = Path(__file__).resolve().parent.parent
-HISTORY_FILE = _ROOT / "log" / ".wireforge_terminal_history"
+HISTORY_FILE = Path(__file__).resolve().parent.parent / "log" / ".wireforge_terminal_history"
 
 
 def run_terminal(
@@ -25,29 +23,12 @@ def run_terminal(
     stdin: TextIO | None = None,
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
-    restore_state: Path | None = None,
 ) -> int:
     """Run the interactive plain terminal."""
 
     inp = stdin or sys.stdin
     out = stdout or sys.stdout
     err = stderr or sys.stderr
-
-    # 恢复会话状态（/split 继承）
-    if restore_state:
-        try:
-            from console.session import restore_session
-            summary = restore_session(restore_state)
-            out.write(f"[restored state from {restore_state}]\n")
-            vars_n = summary.get("variables_count", 0)
-            rules_n = summary.get("rules_count", 0)
-            if vars_n or rules_n:
-                out.write(f"  variables: {vars_n}, rules: {rules_n}\n")
-            errors = summary.get("errors", [])
-            for e in errors:
-                err.write(f"  restore warning: {e}\n")
-        except Exception as e:
-            err.write(f"restore failed: {e}\n")
 
     out.write("WireForge terminal, type /help or /exit\n")
     try:
@@ -144,16 +125,7 @@ def _should_exit(line: str) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        prog="wireforge-terminal",
-        description="WireForge interactive protocol console",
-    )
-    parser.add_argument(
-        "--restore-state", type=Path, default=None,
-        help="Restore session state from YAML file (used by /split)",
-    )
-    args = parser.parse_args(argv)
-    return run_terminal(restore_state=args.restore_state)
+    return run_terminal()
 
 
 if __name__ == "__main__":
