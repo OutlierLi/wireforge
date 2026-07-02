@@ -50,13 +50,13 @@ variants:
         length: 1
       description: 通信模块接口协议发布日期(YYMMDD)
     - name: vendor_code
-      type: array
+      type: ascii
       length: 2
-      item_type: ascii
+      description: 厂商代码(2字节ASCII, 小端)
     - name: chip_code
-      type: array
+      type: ascii
       length: 2
-      item_type: ascii
+      description: 芯片代码(2字节ASCII, 小端)
     - name: version_date
       type: struct
       fields:

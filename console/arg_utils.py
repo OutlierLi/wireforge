@@ -110,15 +110,73 @@ def merge_split_value_tail(
     return value, index
 
 
-def coerce_array_value(value: Any) -> list[Any] | None:
-    """Normalize array CLI/YAML values; parse ``[a, b]`` strings into lists."""
+def is_ascii_char_array(field: Any) -> bool:
+    """array + 单元素 ascii item → 可用字符串按字符拆分（如 ``HS`` → ``[H,S]``）。"""
+    if getattr(field, "type", None) != "array":
+        return False
+    children = getattr(field, "children", None) or []
+    return len(children) == 1 and getattr(children[0], "type", None) == "ascii"
+
+
+def coerce_array_value(value: Any, *, field: Any = None) -> list[Any] | None:
+    """Normalize array CLI/YAML values; parse ``[a, b]`` or ascii 字符串为字符列表。"""
     if isinstance(value, list):
         return value
     if isinstance(value, str):
-        parsed = parse_bracket_list(value)
+        raw = strip_nested_quotes(value.strip())
+        parsed = parse_bracket_list(raw)
         if parsed is not None:
             return parsed
+        if field is not None and is_ascii_char_array(field):
+            if not raw:
+                return []
+            chars = list(raw)
+            expected = getattr(field, "length", None)
+            if expected is not None and len(chars) != expected:
+                name = getattr(field, "name", "array")
+                raise ValueError(
+                    f"{name}: expected {expected} ascii chars, got {len(chars)} in {raw!r}"
+                )
+            return chars
     return None
+
+
+def coerce_business_values(
+    business_values: dict[str, Any],
+    input_schema: list[Any],
+) -> dict[str, Any]:
+    """解析括号数组、ascii 字符串数组，并从 array 长度推断 count_ref。"""
+    schema_by_name = {f.name: f for f in input_schema}
+    out = dict(business_values)
+
+    for name, field in schema_by_name.items():
+        if field.type != "array" or name not in out:
+            continue
+        coerced = coerce_array_value(out[name], field=field)
+        if coerced is not None:
+            out[name] = coerced
+
+    for name, field in schema_by_name.items():
+        if field.type != "array" or not field.count_ref:
+            continue
+        count_name = field.count_ref
+        arr = out.get(name)
+        if not isinstance(arr, list):
+            continue
+        arr_len = len(arr)
+        if count_name not in out:
+            out[count_name] = arr_len
+        else:
+            try:
+                count_val = int(out[count_name])
+            except (TypeError, ValueError):
+                continue
+            if count_val != arr_len:
+                raise ValueError(
+                    f"{count_name}={out[count_name]} 与 {name} 长度 {arr_len} 不一致"
+                )
+
+    return out
 
 
 def clean_string_arg(value: Any, *, key: str = "") -> Any:

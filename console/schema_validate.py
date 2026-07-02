@@ -27,6 +27,13 @@ def validate_business_values(
     input_schema: list[InputField],
 ) -> list[str]:
     """Return human-readable validation errors; empty list means OK."""
+    from console.arg_utils import coerce_business_values
+
+    try:
+        user_values = coerce_business_values(dict(user_values), input_schema)
+    except ValueError as exc:
+        return [str(exc)]
+
     schema_by_name = {field.name: field for field in input_schema}
     errors: list[str] = []
     for name, value in user_values.items():

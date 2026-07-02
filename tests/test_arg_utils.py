@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from console.arg_utils import (
     coerce_array_value,
+    coerce_business_values,
     merge_bracket_list_value_tail,
     parse_bracket_list,
 )
@@ -40,6 +41,56 @@ def test_parse_bracket_list_empty():
 
 def test_parse_bracket_list_not_bracket():
     assert parse_bracket_list("000000000001") is None
+
+
+def test_vendor_code_schema_is_scalar_ascii():
+    from console.build_resolver import resolve
+
+    target = resolve({
+        "proto": "csg",
+        "afn": "0x03",
+        "di": "E8000301",
+        "dir": "uplink",
+    })
+    vendor = next(f for f in target.input_schema if f.name == "vendor_code")
+    assert vendor.type == "ascii"
+    assert vendor.length == 2
+
+
+def test_build_vendor_code_string_little_endian_on_wire():
+    import protocol_tool.utils.logger as lg
+
+    lg.log_build = lg.log_decode = lambda *a, **k: None
+
+    result = build_frame_from_args({
+        "proto": "csg",
+        "dir": "uplink",
+        "afn": "0x03",
+        "di": "E8000301",
+        "vendor_code": "HS",
+        "chip_code": "D2",
+        "version_date.year": "26",
+        "version_date.month": "07",
+        "version_date.day": "02",
+        "version": "26",
+    })
+    assert result["success"] is True, result.get("error", result.get("detail"))
+    frame = result["data"]["frame"].replace(" ", "").upper()
+    # vendor_code HS → 53 48, chip_code D2 → 32 44 (2-byte ASCII little-endian)
+    assert "53483244" in frame
+
+
+def test_coerce_business_values_does_not_split_node_address_array():
+    from console.build_resolver import resolve
+
+    target = resolve({
+        "proto": "csg",
+        "afn": "0x04",
+        "di": "E8020402",
+        "dir": "downlink",
+    })
+    addrs = next(f for f in target.input_schema if f.name == "slave_addrs")
+    assert coerce_array_value("000000000001", field=addrs) is None
 
 
 def test_merge_bracket_list_value_tail():

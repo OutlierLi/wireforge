@@ -1150,12 +1150,8 @@ steps:
     afn: '0x03'
     di: E8000301
     dir: uplink
-    vendor_code: &id018
-    - A
-    - B
-    chip_code: &id019
-    - '0'
-    - '1'
+    vendor_code: &id018 "AB"
+    chip_code: &id019 "01"
     version_date.month: '06'
     version_date.day: '21'
     version: '1020'

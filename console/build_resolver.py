@@ -273,6 +273,7 @@ def _collect_input_fields(ir, leaf, leaf_id, parent_leaf=None) -> list[InputFiel
                 type="array",
                 required=required,
                 desc=desc,
+                length=lf.length,
                 children=children,
                 count_ref=lf.params.get("count_ref"),
             ))
