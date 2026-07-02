@@ -15,6 +15,8 @@ variants:
       router: afn00_di_router
       boundary:
         kind: remaining
+      on_unknown:
+        kind: raw
 - kind: variant
   id: csg_2016.afn01_group
   router: afn_router
@@ -28,6 +30,8 @@ variants:
       router: afn01_di_router
       boundary:
         kind: remaining
+      on_unknown:
+        kind: raw
 - kind: variant
   id: csg_2016.afn02_group
   router: afn_router
@@ -41,6 +45,8 @@ variants:
       router: afn02_di_router
       boundary:
         kind: remaining
+      on_unknown:
+        kind: raw
 - kind: variant
   id: csg_2016.afn03_group
   router: afn_router
@@ -54,6 +60,8 @@ variants:
       router: afn03_di_router
       boundary:
         kind: remaining
+      on_unknown:
+        kind: raw
 - kind: variant
   id: csg_2016.afn04_group
   router: afn_router
@@ -67,6 +75,8 @@ variants:
       router: afn04_di_router
       boundary:
         kind: remaining
+      on_unknown:
+        kind: raw
 - kind: variant
   id: csg_2016.afn05_group
   router: afn_router
@@ -80,6 +90,8 @@ variants:
       router: afn05_di_router
       boundary:
         kind: remaining
+      on_unknown:
+        kind: raw
 - kind: variant
   id: csg_2016.afn06_group
   router: afn_router
@@ -93,6 +105,8 @@ variants:
       router: afn06_di_router
       boundary:
         kind: remaining
+      on_unknown:
+        kind: raw
 - kind: variant
   id: csg_2016.afn07_group
   router: afn_router
@@ -106,4 +120,6 @@ variants:
       router: afn07_di_router
       boundary:
         kind: remaining
+      on_unknown:
+        kind: raw
 

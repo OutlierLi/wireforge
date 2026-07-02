@@ -33,7 +33,7 @@ routers:
     keys:
       - afn
     target_kind: variant
-    fallback: error
+    fallback: raw
     description: "按 AFN 路由到功能分组"
 
   afn00_di_router:
@@ -42,7 +42,7 @@ routers:
       - di
       - control.add
     target_kind: variant
-    fallback: error
+    fallback: raw
     description: "AFN=00 确认/否认 — 按 DI+地址域标志路由"
 
   afn01_di_router:
@@ -52,7 +52,7 @@ routers:
       - control.dir
       - control.add
     target_kind: variant
-    fallback: error
+    fallback: raw
     description: "AFN=01 初始化 — 按 DI+传输方向+地址域标志路由"
 
   afn02_di_router:
@@ -62,7 +62,7 @@ routers:
       - control.dir
       - control.add
     target_kind: variant
-    fallback: error
+    fallback: raw
     description: "AFN=02 管理任务 — 按 DI+传输方向+地址域标志路由"
 
   afn03_di_router:
@@ -72,7 +72,7 @@ routers:
       - control.dir
       - control.add
     target_kind: variant
-    fallback: error
+    fallback: raw
     description: "AFN=03 读参数 — 按 DI+传输方向+地址域标志路由"
 
   afn04_di_router:
@@ -82,7 +82,7 @@ routers:
       - control.dir
       - control.add
     target_kind: variant
-    fallback: error
+    fallback: raw
     description: "AFN=04 写参数 — 按 DI+传输方向+地址域标志路由"
 
   afn05_di_router:
@@ -92,7 +92,7 @@ routers:
       - control.dir
       - control.add
     target_kind: variant
-    fallback: error
+    fallback: raw
     description: "AFN=05 上报信息 — 按 DI+传输方向+地址域标志路由"
 
   afn06_di_router:
@@ -102,7 +102,7 @@ routers:
       - control.dir
       - control.add
     target_kind: variant
-    fallback: error
+    fallback: raw
     description: "AFN=06 请求信息 — 按 DI+传输方向+地址域标志路由"
 
   afn07_di_router:
@@ -112,13 +112,13 @@ routers:
       - control.dir
       - control.add
     target_kind: variant
-    fallback: error
+    fallback: raw
     description: "AFN=07 文件传输 — 按 DI+传输方向+地址域标志路由"
 
 build:
   default_frame: csg_2016.frame
 
 policies:
-  unknown_message: error
-  unknown_variant: error
+  unknown_message: preserve_payload
+  unknown_variant: raw
   strict_route_uniqueness: true

@@ -157,7 +157,10 @@ def resolve(target_info: dict[str, Any]) -> BuildTarget:
     # 收集 input_schema: 遍历从叶子到根的所有字段
     msg_name = path_info.get("message_id", "")
     msg_leaf = next((l for l in ir.leaves.values() if l.name == msg_name), None)
-    input_fields = _collect_input_fields(ir, leaf, leaf_id, parent_leaf=msg_leaf)
+    input_fields = _collect_input_fields(
+        ir, leaf, leaf_id, parent_leaf=msg_leaf,
+        raw_fallback=bool(path_info.get("raw_fallback")),
+    )
     frame_defaults = _collect_frame_defaults(ir, proto, info)
 
     # 派生字段 (帧级自动计算)
@@ -183,7 +186,7 @@ def resolve(target_info: dict[str, Any]) -> BuildTarget:
     )
 
 
-def _collect_input_fields(ir, leaf, leaf_id, parent_leaf=None) -> list[InputField]:
+def _collect_input_fields(ir, leaf, leaf_id, parent_leaf=None, raw_fallback: bool = False) -> list[InputField]:
     """递归收集叶子节点及其子路由的所有用户输入字段。
 
     同时收集父级消息的非路由字段（如 CSG 地址域 address_area）。
@@ -230,11 +233,26 @@ def _collect_input_fields(ir, leaf, leaf_id, parent_leaf=None) -> list[InputFiel
             sub_router = lf.params.get("router", "")
             if sub_router in ir.routers:
                 rnode = ir.routers[sub_router]
+                if raw_fallback and rnode.fallback_policy == "raw":
+                    _add_field(InputField(
+                        name=lf.name,
+                        type="hex",
+                        required=False,
+                        desc=lf.params.get("description", "未识别变体时的原始数据域"),
+                    ))
+                    continue
                 for target_id in rnode.route_table.values():
                     if target_id in ir.leaves:
                         sub_leaf = ir.leaves[target_id]
                         for f in _collect_input_fields(ir, sub_leaf, target_id):
                             _add_field(f)
+                if rnode.fallback_policy == "raw":
+                    _add_field(InputField(
+                        name=lf.name,
+                        type="hex",
+                        required=False,
+                        desc=lf.params.get("description", "未识别变体时的原始数据域"),
+                    ))
         elif t in ("const", "const_repeat", "checksum",
                    "sum8", "xor8", "crc16_modbus", "crc16_ccitt", "crc8"):
             continue  # 固定/计算字段
@@ -402,6 +420,8 @@ def decode_frame(hex_text: str, proto: str | None = None) -> dict[str, Any]:
         if "dir" in control:
             dv = control["dir"]
             target_info["dir"] = "downlink" if dv == 0 else "uplink"
+        if "add" in control:
+            target_info["has_address"] = bool(control["add"])
 
     if "afn" in values and not isinstance(values["afn"], dict):
         target_info["afn"] = f"0x{int(values['afn']):02X}"

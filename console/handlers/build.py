@@ -245,6 +245,7 @@ def _handle_from_frame(args: dict[str, Any], hex_text: str, set_overrides: dict)
 
     # 4. 合并业务值：解码值 → --set 覆盖 → 用户直传参数
     business_values = _flatten_values(decoded["values"])
+    _merge_raw_payload_from_decode(business_values, decoded["values"])
     business_values.update(set_overrides)
 
     # 用户可能通过 --di / --func 等参数直接覆盖
@@ -304,6 +305,39 @@ def _handle_from_frame(args: dict[str, Any], hex_text: str, set_overrides: dict)
         return {"success": False, "error": err, "detail": detail, "path": target.path}
 
 
+def _merge_raw_payload_from_decode(flat: dict[str, Any], values: dict[str, Any]) -> None:
+    """从未识别变体的嵌套解码值中提取 raw/hex 数据域到 di_payload / data_content。"""
+    def _walk(obj: Any, prefix: str = "") -> None:
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                key = f"{prefix}.{k}" if prefix else k
+                if k in ("di_payload", "data_content", "di_data") and isinstance(v, (bytes, bytearray)):
+                    flat[k] = v.hex().upper()
+                    flat[key] = v.hex().upper()
+                elif isinstance(v, dict):
+                    _walk(v, key)
+                elif isinstance(v, (bytes, bytearray)) and k in ("di_payload", "data_content", "di_data"):
+                    flat[k] = v.hex().upper()
+                    flat[key] = v.hex().upper()
+        return None
+
+    _walk(values)
+    for k, v in values.items():
+        if k.endswith(".di_payload") and isinstance(v, (bytes, bytearray)):
+            flat["di_payload"] = v.hex().upper()
+        if k.endswith(".data_content") and isinstance(v, (bytes, bytearray)):
+            flat["data_content"] = v.hex().upper()
+        if k.endswith(".di_data") and isinstance(v, (bytes, bytearray)):
+            flat["di_data"] = v.hex().upper()
+
+
+def _format_decode_value(v: Any) -> Any:
+    """将解码值格式化为 JSON/CLI 友好形式。"""
+    if isinstance(v, (bytes, bytearray)):
+        return v.hex().upper()
+    return v
+
+
 def _flatten_values(values: dict[str, Any], prefix: str = "") -> dict[str, Any]:
     """扁平化解码值：嵌套 dict 展开为 dotted key。"""
     flat: dict[str, Any] = {}
@@ -311,9 +345,13 @@ def _flatten_values(values: dict[str, Any], prefix: str = "") -> dict[str, Any]:
         full_key = f"{prefix}.{k}" if prefix else k
         if isinstance(v, dict) and k not in ("control",):
             flat.update(_flatten_values(v, full_key))
+        elif isinstance(v, (bytes, bytearray)):
+            flat[full_key] = v.hex().upper()
         else:
             flat[full_key] = v
     # 同时保留原始嵌套 key（如 control、di）
-    flat.update({k: v for k, v in values.items() if k not in flat})
+    for k, v in values.items():
+        if k not in flat:
+            flat[k] = _format_decode_value(v)
     return flat
 

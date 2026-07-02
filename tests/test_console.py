@@ -254,10 +254,12 @@ class TestBuildFailRouteNotFound:
         _route_fail(r)
 
     def test_di_not_in_dlt645_variant(self):
+        """未知 DI 仍可按基本格式构造（数据域 raw）。"""
         r = exec_cmd("build", {
             "proto": "dlt645", "func": "0x11", "di": "FFFFFFFF", "dir": "uplink",
         })
-        _route_fail(r)
+        _ok(r, "unknown 645 DI build with raw payload")
+        _has_frame(r)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1121,6 +1123,45 @@ class TestBuildFromFrame:
             "from_frame": "FE FE FE FE 68 01 00 00 00 00 00 68 91 08 33 33 34 33 59 39 54 53 70 16",
         })
         _fail(r, "cross-protocol mismatch")
+
+    def test_from_frame_unknown_di_csg(self):
+        """未知 CSG DI 仍可按基本格式 from_frame 重建"""
+        hex_frame = "68 10 00 40 03 01 FF FF 03 E8 AA BB CC DD 3B 16"
+        r = exec_cmd("build", {"from_frame": hex_frame})
+        _ok(r, "from-frame unknown CSG DI")
+        assert r["data"]["frame"] == hex_frame
+
+    def test_from_frame_unknown_di_dlt645(self):
+        """未知 DLT645 DI 仍可按基本格式 from_frame 重建"""
+        hex_frame = (
+            "FE FE FE FE 68 01 00 00 00 00 00 68 91 0C "
+            "CC CC CC CC 44 55 66 77 88 99 AA BB 9A 16"
+        )
+        r = exec_cmd("build", {"from_frame": hex_frame})
+        _ok(r, "from-frame unknown 645 DI")
+        assert r["data"]["frame"] == hex_frame
+
+
+class TestDecodeUnknownVariant:
+    """未识别变体：基本帧结构 + raw 数据域"""
+
+    def test_decode_unknown_di_csg(self):
+        hex_frame = "68 10 00 40 03 01 FF FF 03 E8 AA BB CC DD 3B 16"
+        r = exec_cmd("decode", {"proto": "csg", "hex": hex_frame})
+        _ok(r, "decode unknown CSG DI")
+        assert "raw_remaining" in r["data"]["path"] or "di_payload" in str(r["data"]["values"])
+        vals = r["data"]["values"]
+        raw_keys = [k for k in vals if "di_payload" in k or k == "data_content"]
+        assert raw_keys, "expected raw payload field in values"
+
+    def test_decode_unknown_di_dlt645(self):
+        hex_frame = (
+            "FE FE FE FE 68 01 00 00 00 00 00 68 91 0C "
+            "CC CC CC CC 44 55 66 77 88 99 AA BB 9A 16"
+        )
+        r = exec_cmd("decode", {"proto": "dlt645", "hex": hex_frame})
+        _ok(r, "decode unknown 645 DI")
+        assert "raw_remaining" in r["data"]["path"]
 
 
 # ═══════════════════════════════════════════════════════════════

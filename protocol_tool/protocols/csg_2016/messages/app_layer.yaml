@@ -32,6 +32,10 @@ messages:
           router: afn_router
           boundary:
             kind: remaining
+          on_unknown:
+            kind: raw
+          on_unknown:
+            kind: raw
           description: "数据标识内容"
 
   # ── 下行带地址域 (dir=0, add=1) ──
@@ -74,6 +78,8 @@ messages:
           router: afn_router
           boundary:
             kind: remaining
+          on_unknown:
+            kind: raw
 
   # ── 上行无地址域 (dir=1, add=0) ──
   - kind: message
@@ -100,6 +106,8 @@ messages:
           router: afn_router
           boundary:
             kind: remaining
+          on_unknown:
+            kind: raw
 
   # ── 上行带地址域 (dir=1, add=1) ──
   - kind: message
@@ -139,3 +147,5 @@ messages:
           router: afn_router
           boundary:
             kind: remaining
+          on_unknown:
+            kind: raw

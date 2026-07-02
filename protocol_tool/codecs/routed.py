@@ -158,12 +158,13 @@ class RoutedPayloadCodec(FieldCodec):
                 rnode = self._ir.routers.get(router_id)
                 if rnode and rnode.fallback_policy == "raw":
                     payload = self._coerce_raw_payload(field, value, context)
-                    if payload is not None:
-                        from protocol_tool.codecs.transforms import apply_transforms_encode
-                        payload = apply_transforms_encode(payload, field.transforms)
-                        context.raw_sections[field.name] = payload
-                        writer.write(payload)
-                        return
+                    if payload is None:
+                        payload = b""
+                    from protocol_tool.codecs.transforms import apply_transforms_encode
+                    payload = apply_transforms_encode(payload, field.transforms)
+                    context.raw_sections[field.name] = payload
+                    writer.write(payload)
+                    return
             if router_id:
                 raise RouteError(
                     f"Build error: no route found for router {router_id!r} "

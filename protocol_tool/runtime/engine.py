@@ -445,6 +445,33 @@ class BuildEngine:
         path_steps: list[dict] = []
         visited: set[str] = set()
 
+        def _known_selector_in_router(rnode: RouterNode) -> bool:
+            """路由表中是否存在与 info 相同的 di/afn/func（用于区分未知变体 vs 地址域不匹配）。"""
+            for key_str in rnode.route_table:
+                try:
+                    key_vals = json.loads(key_str)
+                except (json.JSONDecodeError, TypeError):
+                    key_vals = [key_str]
+                if not isinstance(key_vals, list):
+                    key_vals = [key_vals]
+                for i, path in enumerate(rnode.key_paths):
+                    if i >= len(key_vals):
+                        break
+                    short = path.split(".", 1)[-1]
+                    want = key_vals[i]
+                    if short == "di" and "di" in info:
+                        di_info = info["di"]
+                        if isinstance(want, str) and isinstance(di_info, str):
+                            if want.upper() == di_info.upper():
+                                return True
+                        elif want == di_info:
+                            return True
+                    elif short == "afn" and "afn" in info and want == info["afn"]:
+                        return True
+                    elif short == "func" and "func" in info and want == info["func"]:
+                        return True
+            return False
+
         def _walk(router_id: str, depth: int = 0) -> bool:
             if depth > 10 or router_id in visited:
                 return False
@@ -559,13 +586,17 @@ class BuildEngine:
                                     "leaf_id": target_id, "leaf_name": leaf.name,
                                 })
                                 return True
-                            # 无 DI/变体定义、仅 raw fallback 时，消息级 leaf 即为终端
-                            if not sub_rnode.route_table and sub_rnode.fallback_policy == "raw":
+                            # 无匹配 DI/变体时 raw fallback；已知 DI 但地址域不匹配时不 fallback
+                            if (
+                                sub_rnode.fallback_policy == "raw"
+                                and not _known_selector_in_router(sub_rnode)
+                            ):
                                 raw_fallback_terminal = True
                     if raw_fallback_terminal:
                         path_steps.append({
                             "router_id": router_id, "key_str": key_str,
                             "leaf_id": target_id, "leaf_name": leaf.name,
+                            "raw_fallback": True,
                         })
                         return True
                     # Undo saved values if recursion failed
@@ -596,6 +627,7 @@ class BuildEngine:
             "leaf_name": terminal["leaf_name"],
             "message_id": path_steps[0]["leaf_name"],  # first leaf is the frame-level message
             "route_vals": dict(route_vals),
+            "raw_fallback": bool(terminal.get("raw_fallback")),
             "path_str": " → ".join(
                 f"{s['router_id']}[{s['key_str']}]→{s['leaf_name']}" for s in path_steps
             ),

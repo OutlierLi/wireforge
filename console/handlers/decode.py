@@ -37,6 +37,14 @@ def handle(args: dict[str, Any]) -> dict:
         frame = bytes.fromhex(hx)
         result = de.decode(frame)
         wire_fields = wire_fields_from_trace(result.trace)
+        values_out: dict[str, Any] = {}
+        for k, v in result.values.items():
+            if k.startswith(("read_", "csg_")) and isinstance(v, (str, int)):
+                continue
+            if isinstance(v, (str, int, dict)):
+                values_out[k] = v
+            elif isinstance(v, (bytes, bytearray)):
+                values_out[k] = v.hex().upper()
         return {
             "success": True,
             "data": {
@@ -44,8 +52,8 @@ def handle(args: dict[str, Any]) -> dict:
                 "path": result.path_str,
                 "frame": result.raw_hex,
                 "fields": wire_fields,
-                "values": {k: v for k, v in result.values.items()
-                           if isinstance(v, (str, int, dict)) and not k.startswith(("read_", "csg_"))},
+                "values": values_out,
+                "warnings": result.warnings if result.warnings else None,
             },
         }
     except Exception as e:

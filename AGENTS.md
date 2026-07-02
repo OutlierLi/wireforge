@@ -223,7 +223,63 @@ One-shot (same turn):
 
 If decode fails (invalid or unrecognized frame), MCP returns `FAILED` with `from_frame decode failed`.
 
+**未识别变体**（未知 DI/AFN、地图无对应 payload 定义）时，`from_frame` 仍可用：解码得到帧头 + raw 数据域，`input_schema` 暴露 `di_payload`（CSG）或 `di_data`（645）等 hex 字段；传 `{}` 可原样重建，或仅在 `fields` 里覆盖 raw/路由字段。整帧校验和/帧界无效时仍会失败。
+
 For greenfield builds without a source frame, use the standard [Build Flow](#build-flow) above (`need: "protocol_match"`).
+
+## Unknown Variant / Raw Payload（未识别变体）
+
+CSG 2016 与 DLT645-2007 对**协议地图中未注册的 DI/AFN 变体**采用 **raw fallback**，不会仅因 payload 未定义而整帧失败。
+
+### 解码行为（`/decode` 与 MCP decode）
+
+| 层级 | 行为 |
+|------|------|
+| 帧级 | 照常解析（CSG：`68` + 长度 + 控制域 + 用户数据区；645：前导 + `68` + 地址 + 控制 + 长度 + 数据域） |
+| 路由级 | 已知 AFN/func + 未知 DI → 路由路径含 `raw_remaining`；未知 AFN（CSG）→ 用户数据区剩余字节为 raw |
+| 数据域 | 以 **hex 字符串**输出，字段名因协议/层级而异：`di_payload`（CSG AFN 组内）、`data_content`（CSG 未知 AFN）、`di_data`（645 读/写数据应答） |
+| 告警 | `warnings` 中会说明 router fallback 到 raw |
+
+整帧无法识别为 CSG/645（校验和错误、帧界非法、main 路由无法匹配 dir/add）时仍报错——raw 仅作用于**变体/payload 未定义**，不替代非法物理帧。
+
+### 构造与 from_frame
+
+- **`/build from-frame`**：未知 DI 的源帧可解码 → resolve → 重建；`fields` 中只需覆盖要改的项（含 `di_payload` / `di_data` hex）。
+- **`/build`**（无源帧）：指定 `proto` + `afn`/`func` + `di` + `dir` 等路由参数；未注册 DI 时 schema 提供 raw hex 字段，可不填（空数据域）或填入自定义 payload hex。
+- **TestPlan**：mock/断言未知上行帧时，可对 `resp.decoded.*.di_payload` / `di_data` 做 hex 断言，或先 `/decode` 确认字段名。
+
+### Agent 处理要点
+
+| 场景 | 行为 |
+|------|------|
+| 用户给完整 hex 要求解析 | 直接 MCP decode 或 `/decode`；有 `raw_remaining` 时说明 payload 为 raw，并列出已解析的 AFN/DI/地址等 |
+| 用户要从旧帧改几个字节 | 走 [From-Frame Build Flow](#from-frame-build-flow)；未知 DI 同样适用 |
+| 用户要构造未扩展的新 DI | 可走 `/build` + raw 字段，或建议 [Protocol Extend Flow](#protocol-extend-flow) 正式入库 |
+| CSG 地址域歧义 | 与已知变体相同：缺 `has_address`/`addr` 且 downlink 同时存在带/不带地址路由时需用户澄清 |
+
+### 示例（CSG 未知 DI）
+
+解码：
+
+```text
+/decode proto csg hex 68 10 00 40 03 01 FF FF 03 E8 AA BB CC DD 3B 16
+→ path: … → afn03_di_router[…] → raw_remaining
+→ values 含 di、afn 及 di_payload（hex）
+```
+
+from_frame 修改 raw：
+
+```json
+{"from_frame": "68 10 00 40 03 01 FF FF 03 E8 AA BB CC DD 3B 16", "set": "di_payload=11223344"}
+```
+
+### 示例（645 未知 DI）
+
+```text
+/decode proto dlt645 hex FE FE FE FE 68 01 00 00 00 00 00 68 91 0C CC CC CC CC 44 55 66 77 88 99 AA BB 9A 16
+→ path: … read_data_response_di[di=99999999] → raw_remaining
+→ di_data 为 raw hex（已 -33H 解码后的逻辑值）
+```
 
 ## Protocol Extend Flow
 
@@ -326,6 +382,10 @@ python3 scripts/bootstrap_protocol_cache.py
 ## Decode Flow
 
 For complete HEX decode requests, call MCP once with `raw_input`. MCP may detect the protocol and return `SUCCEEDED`.
+
+**未识别变体**：若帧为合法 CSG/645 但 DI/AFN 变体未在协议地图注册，decode **仍成功**——解析帧头与路由字段，payload 以 raw hex 返回（路径含 `raw_remaining`）。详见 [Unknown Variant / Raw Payload](#unknown-variant--raw-payload未识别变体)。
+
+仅当帧界/校验和非法、或 CSG `main` 路由无法匹配 dir/add 时 decode 失败。
 
 ## Build 输出铁律（OpenCode / Agent）
 
