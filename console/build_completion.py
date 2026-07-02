@@ -1,5 +1,8 @@
 """`/build` / `/route` 动态补全 — 路由键 → protocol_map 取值 → resolve schema。
 
+路由键顺序（逐层收窄候选）：
+  dir → afn/func → di → addr（仅当 AFN+DI 已定时仍存在带/不带地址域的分歧）→ 业务字段
+
 语义：
 - AFN / func：类别（初始化、读参数…），标签来自 IR router 描述 + DI 数量
 - DI：具体功能（复位硬件、设置时间…），标签来自 protocol_map entry description
@@ -22,8 +25,8 @@ MAP_PATH = ROOT / "compiled" / "protocol_map.yaml"
 _IR_PROTO = {"csg": "csg_2016", "dlt645": "dlt645_2007"}
 
 _ROUTE_KEYS: dict[str, tuple[str, ...]] = {
-    "csg": ("afn", "di", "dir"),
-    "dlt645": ("func", "di", "dir"),
+    "csg": ("dir", "afn", "di", "addr"),
+    "dlt645": ("dir", "func", "di", "addr"),
 }
 _ROUTE_META = frozenset({
     "proto", "func", "afn", "di", "dir", "direction", "addr", "has_address",
@@ -53,9 +56,74 @@ def _is_build_dynamic_mode(used_args: dict[str, Any]) -> bool:
     return _is_protocol_route_mode(used_args, command="build")
 
 
+def _route_key_order(proto: str) -> tuple[str, ...]:
+    return _ROUTE_KEYS.get(proto, ())
+
+
+def _category_route_key(proto: str) -> str:
+    return "afn" if proto == "csg" else "func"
+
+
+def _coerce_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _has_address_from_used(used_args: dict[str, Any]) -> bool | None:
+    if used_args.get("has_address") not in (None, ""):
+        return _coerce_bool(used_args["has_address"])
+    if used_args.get("addr") not in (None, ""):
+        return _coerce_bool(used_args["addr"])
+    return None
+
+
+def _entry_has_address(entry: dict[str, Any]) -> bool:
+    rp = entry.get("route_params") or {}
+    return bool(rp.get("has_address"))
+
+
+def _implicit_has_address_from_entries(entries: list[dict[str, Any]]) -> bool | None:
+    values = {_entry_has_address(entry) for entry in entries}
+    if len(values) == 1:
+        return next(iter(values))
+    return None
+
+
+def _effective_used_args(used_args: dict[str, Any]) -> dict[str, Any]:
+    """补全/resolve 用：地址域唯一时隐式注入 has_address。"""
+    effective = dict(used_args)
+    if _has_address_from_used(effective) is not None:
+        effective["has_address"] = _has_address_from_used(effective)
+        return effective
+    implicit = _implicit_has_address_from_entries(_filter_entries(effective, apply_implicit_addr=False))
+    if implicit is not None:
+        effective["has_address"] = implicit
+    return effective
+
+
+def _needs_addr_choice(used_args: dict[str, Any]) -> bool:
+    """AFN/func + DI + dir 确定后，若仍有多条 has_address 分歧才询问 addr。"""
+    if _route_key_used("addr", used_args):
+        return False
+    proto = _proto_family(used_args.get("proto"))
+    if not proto:
+        return False
+    category = _category_route_key(proto)
+    if not _route_key_used("dir", used_args):
+        return False
+    if not _route_key_used(category, used_args):
+        return False
+    if not _route_key_used("di", used_args):
+        return False
+    entries = _filter_entries(used_args, apply_implicit_addr=False)
+    values = {_entry_has_address(entry) for entry in entries}
+    return len(values) > 1
+
+
 def _route_key_used(key: str, used_args: dict[str, Any]) -> bool:
     if key == "addr":
-        return used_args.get("addr") not in (None, "") or used_args.get("has_address") not in (None, "")
+        return _has_address_from_used(used_args) is not None
     val = used_args.get(key)
     if val in (None, ""):
         return False
@@ -81,17 +149,21 @@ def _parse_missing_route_keys(error: str) -> list[str]:
 
 
 def _target_info_from_used(used_args: dict[str, Any]) -> dict[str, Any]:
+    effective = _effective_used_args(used_args)
     info: dict[str, Any] = {}
-    proto = _proto_family(used_args.get("proto"))
+    proto = _proto_family(effective.get("proto"))
     if proto:
         info["proto"] = proto
     for key in ("func", "afn", "di", "dir", "direction", "freeze_type", "event_type"):
-        if used_args.get(key) not in (None, ""):
-            info[key] = used_args[key]
-    if used_args.get("addr") not in (None, ""):
-        info["addr"] = used_args["addr"]
-    if used_args.get("has_address") not in (None, ""):
-        info["has_address"] = used_args["has_address"]
+        if effective.get(key) not in (None, ""):
+            info[key] = effective[key]
+    has_address = _has_address_from_used(effective)
+    if has_address is not None:
+        info["has_address"] = has_address
+    elif effective.get("has_address") not in (None, ""):
+        info["has_address"] = effective["has_address"]
+    if effective.get("addr") not in (None, ""):
+        info["addr"] = effective["addr"]
     return info
 
 
@@ -122,11 +194,20 @@ def _normalize_hex(value: Any) -> str:
     return text.upper()
 
 
-def _filter_entries(used_args: dict[str, Any]) -> list[dict[str, Any]]:
+def _filter_entries(
+    used_args: dict[str, Any],
+    *,
+    apply_implicit_addr: bool = True,
+) -> list[dict[str, Any]]:
     proto = _proto_family(used_args.get("proto"))
     if not proto:
         return []
     entries = _iter_entries(proto)
+    has_address = _has_address_from_used(used_args)
+    if has_address is None and apply_implicit_addr:
+        has_address = _implicit_has_address_from_entries(
+            _filter_entries(used_args, apply_implicit_addr=False),
+        )
     result: list[dict[str, Any]] = []
     for entry in entries:
         rp = entry.get("route_params") or {}
@@ -142,6 +223,8 @@ def _filter_entries(used_args: dict[str, Any]) -> list[dict[str, Any]]:
         if used_args.get("dir") not in (None, ""):
             if str(rp.get("dir", "")).lower() != str(used_args["dir"]).lower():
                 continue
+        if has_address is not None and _entry_has_address(entry) != has_address:
+            continue
         result.append(entry)
     return result
 
@@ -284,12 +367,43 @@ def _distinct_values_labeled(
 
 
 def _entries_for_route_value(used_args: dict[str, Any], param_key: str) -> list[dict[str, Any]]:
+    if param_key == "addr":
+        return _filter_entries(used_args, apply_implicit_addr=False)
+    if param_key == "dir":
+        partial = {k: v for k, v in used_args.items() if k != "dir"}
+        return _filter_entries(partial, apply_implicit_addr=False)
+    if param_key in ("afn", "func", "di"):
+        return _filter_entries(used_args, apply_implicit_addr=False)
+    return _filter_entries(used_args, apply_implicit_addr=True)
+
+
+def _distinct_addr_values(entries: list[dict[str, Any]]) -> list[tuple[str, str]]:
+    values = {_entry_has_address(entry) for entry in entries}
+    out: list[tuple[str, str]] = []
+    if False in values:
+        out.append(("false", "无地址域"))
+    if True in values:
+        out.append(("true", "带地址域"))
+    return out
+
+
+def _collect_pending_route_keys(used_args: dict[str, Any]) -> list[str]:
     proto = _proto_family(used_args.get("proto"))
-    if not proto:
-        return []
-    if param_key in ("afn", "func"):
-        return _iter_entries(proto)
-    return _filter_entries(used_args)
+    order = list(_route_key_order(proto))
+    pending: list[str] = []
+    for key in order:
+        if key == "addr" and not _needs_addr_choice(used_args):
+            continue
+        if not _route_key_used(key, used_args):
+            pending.append(key)
+    if pending:
+        return pending
+    err = _try_resolve_error(used_args)
+    if err:
+        missing = _parse_missing_route_keys(err)
+        if missing:
+            return [k for k in missing if not _route_key_used(k, used_args)]
+    return []
 
 
 def _value_prefix_matches(candidate: str, prefix: str) -> bool:
@@ -367,7 +481,8 @@ def _resolve_schema_cached(
 
 
 def _schema_fields(used_args: dict[str, Any]) -> list[tuple[str, bool, str, str]]:
-    frozen = tuple(sorted((k, str(v)) for k, v in used_args.items() if v not in (None, "")))
+    effective = _effective_used_args(used_args)
+    frozen = tuple(sorted((k, str(v)) for k, v in effective.items() if v not in (None, "")))
     cached = _resolve_schema_cached(frozen)
     return list(cached or [])
 
@@ -383,17 +498,7 @@ def _try_resolve_error(used_args: dict[str, Any]) -> str | None:
 
 
 def _next_route_keys(used_args: dict[str, Any]) -> list[str]:
-    proto = _proto_family(used_args.get("proto"))
-    order = list(_ROUTE_KEYS.get(proto, ()))
-    pending = [k for k in order if not _route_key_used(k, used_args)]
-    if pending:
-        return pending
-    err = _try_resolve_error(used_args)
-    if err:
-        missing = _parse_missing_route_keys(err)
-        if missing:
-            return [k for k in missing if not _route_key_used(k, used_args)]
-    return []
+    return _collect_pending_route_keys(used_args)
 
 
 def _field_used(name: str, used_args: dict[str, Any]) -> bool:
@@ -434,11 +539,11 @@ def protocol_route_argument_completions(
         if typing_flag and not _flag_matches(flag, flag_prefix):
             continue
         desc = {
+            "dir": "传输方向（downlink/uplink）",
+            "addr": "地址域（false=无地址域，true=带地址域）",
             "afn": "应用功能码 AFN（类别：初始化/读参数/…，具体功能看 DI）",
             "func": "功能码 func（类别，具体功能看 DI）",
             "di": "数据标识 DI（决定具体功能）",
-            "dir": "传输方向",
-            "addr": "地址域 has_address",
         }.get(key, "")
         completions.append(_make_flag_item(key, desc=desc, dynamic=True))
         if not typing_flag:
@@ -489,13 +594,11 @@ def protocol_route_value_completions(
     if not _is_protocol_route_mode(used_args, command=command):
         return None
 
-    if param_key in ("afn", "func", "di", "dir"):
+    if param_key in ("afn", "func", "di", "dir", "addr"):
         entries = _entries_for_route_value(used_args, param_key)
         proto = _proto_family(used_args.get("proto"))
-        if param_key == "dir":
-            labeled = _distinct_values_labeled(entries, "dir", proto_family=proto)
-            if not labeled:
-                labeled = [("downlink", ""), ("uplink", "")]
+        if param_key == "addr":
+            labeled = _distinct_addr_values(entries)
         else:
             labeled = _distinct_values_labeled(entries, param_key, proto_family=proto)
 
@@ -504,21 +607,26 @@ def protocol_route_value_completions(
             for val, desc in labeled
             if _value_prefix_matches(val, value_prefix)
         ]
-        if param_key == "dir" and not value_prefix:
-            if not any(c["value"] == "downlink" for c in out):
-                out.insert(0, _make_value_item("downlink", "dir", default=True))
+        if param_key in ("dir", "addr") and not value_prefix and out:
+            if len(out) == 1:
+                out[0]["default"] = True
+                out[0]["label"] = f"{out[0]['value']} (default)"
+            elif param_key == "dir" and any(c["value"] == "downlink" for c in out):
+                for item in out:
+                    if item["value"] == "downlink":
+                        item["default"] = True
+                        item["label"] = "downlink (default)"
+                        break
+            elif param_key == "addr" and any(c["value"] == "false" for c in out):
+                for item in out:
+                    if item["value"] == "false":
+                        item["default"] = True
+                        item["label"] = "false (default)"
+                        break
         return out
 
-    if command not in ("build", "serial_send_build"):
+    if command not in ("build", "serial_send_build", "route"):
         return None
-
-    if param_key == "addr" and command == "build":
-        vals = ["false", "true"]
-        return [
-            _make_value_item(v, "addr", default=(v == "false" and not value_prefix))
-            for v in vals
-            if _value_prefix_matches(v, value_prefix)
-        ]
 
     schema = _schema_fields(used_args)
     for name, _required, _desc, default in schema:
@@ -599,10 +707,11 @@ def auto_rule_match_argument_completions(
 
 
 _AUTO_RULE_MATCH_ROUTE_DESC = {
+    "dir": "按方向匹配（可选）",
+    "addr": "按地址域匹配（可选）",
     "afn": "按 AFN 匹配（类别，可选）",
     "func": "按 func 匹配（DLT645，可选）",
     "di": "按 DI 匹配（具体功能，可选）",
-    "dir": "按方向匹配（可选）",
 }
 
 
@@ -616,9 +725,7 @@ def _auto_rule_match_route_argument_completions(
         return []
     typing_flag = bool(flag_prefix)
     completions: list[dict[str, Any]] = []
-    for key in _ROUTE_KEYS.get(proto, ()):
-        if _route_key_used(key, used_args):
-            continue
+    for key in _collect_pending_route_keys(used_args):
         flag = f"--{key}"
         if typing_flag and not _flag_matches(flag, flag_prefix):
             continue

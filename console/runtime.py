@@ -20,6 +20,7 @@ from typing import Any
 from console.arg_utils import (
     HEX_MERGE_KEYS,
     clean_string_arg,
+    merge_bracket_list_value_tail,
     merge_hex_value_tail,
     merge_quoted_value_tail,
 )
@@ -417,6 +418,8 @@ def parse_command_text(text: str) -> tuple[str, dict[str, Any]]:
             if "=" in raw:
                 key, value = raw.split("=", 1)
                 value, i = merge_quoted_value_tail(value, parts, i)
+                if key not in HEX_MERGE_KEYS:
+                    value, i = merge_bracket_list_value_tail(value, parts, i)
                 _add_arg(args, key, clean_string_arg(value, key=key))
             elif i + 1 < len(parts) and not parts[i + 1].startswith("--"):
                 key = raw
@@ -424,6 +427,8 @@ def parse_command_text(text: str) -> tuple[str, dict[str, Any]]:
                 i += 1
                 if key in HEX_MERGE_KEYS:
                     value, i = merge_hex_value_tail(value, parts, i)
+                else:
+                    value, i = merge_bracket_list_value_tail(value, parts, i)
                 _add_arg(args, key, clean_string_arg(value, key=key))
             else:
                 _add_arg(args, raw, True)

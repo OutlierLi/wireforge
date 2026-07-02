@@ -223,41 +223,66 @@ class TestBuildDynamicCompletion:
         _resolve_schema_cached.cache_clear()
         _load_ir_routers.cache_clear()
 
-    def test_proto_csg_suggests_afn_not_func(self):
+    def test_proto_csg_suggests_dir_first(self):
         vals = _values("/build --proto=csg ")
-        assert "--afn" in vals
+        assert "--dir" in vals
+        assert "--afn" not in vals
         assert "--func" not in vals
 
-    def test_proto_dlt645_suggests_func_not_afn(self):
+    def test_proto_dlt645_suggests_dir_first(self):
         vals = _values("/build --proto=dlt645 ")
-        assert "--func" in vals
+        assert "--dir" in vals
+        assert "--func" not in vals
         assert "--afn" not in vals
 
-    def test_afn_value_from_map(self):
-        vals = _values("/build --proto=csg --afn=0x")
+    def test_dir_then_afn_not_addr(self):
+        vals = _values("/build --proto=csg --dir=downlink ")
+        assert "--afn" in vals
+        assert "--addr" not in vals
+
+    def test_afn_value_filtered_by_dir(self):
+        vals = _values("/build --proto=csg --dir=downlink --afn=0x")
         assert any("0x03" in v or "0x00" in v for v in vals)
 
-    def test_di_value_filtered_by_afn(self):
-        vals = _values("/build --proto=csg --afn=0x03 --di=E8")
+    def test_di_value_filtered_by_dir_and_afn(self):
+        vals = _values("/build --proto=csg --dir=downlink --afn=0x03 --di=E8")
         assert any("E803" in v.upper() for v in vals)
 
-    def test_resolved_schema_fields(self):
-        vals = _values("/build --proto=csg --afn=0x03 --di=E8030306 --dir=downlink ")
+    def test_uplink_only_di_not_offered_on_downlink(self):
+        vals = _values("/build --proto=csg --dir=downlink --afn=0x02 --di=")
+        assert "E8000203" in vals
+        assert "E8000103" not in vals
+
+    def test_uplink_only_di_offered_on_uplink(self):
+        vals = _values("/build --proto=csg --dir=uplink --afn=0x02 --di=")
+        assert "E8000103" in vals
+
+    def test_dir_values_only_from_filtered_routes(self):
+        vals = _values("/build --proto=csg --dir=uplink --afn=0x02 --di=E8000103 --dir=")
+        assert vals == ["uplink"]
+
+    def test_resolved_schema_fields_without_explicit_addr(self):
+        vals = _values("/build --proto=csg --dir=downlink --afn=0x03 --di=E8030306 ")
         assert "--start_slave_index" in vals or "--slave_count" in vals
         assert "--afn" not in vals
-        assert "--proto" not in vals
+        assert "--addr" not in vals
+
+    def test_addr_not_prompted_when_route_unique(self):
+        vals = _values("/build --proto=csg --dir=downlink --afn=0x00 --di=E8010001 ")
+        assert "--addr" not in vals
+        assert "--wait_time" in vals
 
     def test_dir_default_downlink(self):
-        vals = _values("/build --proto=csg --afn=0x03 --di=E8030306 --dir=")
+        vals = _values("/build --proto=csg --dir=")
         assert "downlink" in vals
 
     def test_ack_route_suggests_wait_time_not_set(self):
-        vals = _values("/build --proto=csg --afn=0x00 --di=E8010001 --dir=downlink ")
+        vals = _values("/build --proto=csg --dir=downlink --afn=0x00 --di=E8010001 ")
         assert "--wait_time" in vals
         assert "--set" not in vals
 
     def test_wait_time_default_value(self):
-        vals = _values("/build --proto=csg --afn=0x00 --di=E8010001 --dir=downlink --wait_time=")
+        vals = _values("/build --proto=csg --dir=downlink --afn=0x00 --di=E8010001 --wait_time=")
         assert "0" in vals
 
 
@@ -277,7 +302,7 @@ class TestRouteDynamicCompletion:
         assert any(v.startswith("E8") for v in vals)
 
     def test_route_csg_di_prefix_filter(self):
-        vals = _values("/route --proto=csg --afn=0x03 --di=E803")
+        vals = _values("/route --proto=csg --dir=downlink --afn=0x03 --di=E803")
         assert all(v.upper().startswith("E803") for v in vals)
         assert "00010000" not in vals
 
@@ -293,25 +318,25 @@ class TestRouteDynamicCompletion:
         assert "00010000" not in vals
 
     def test_afn_shows_category_not_di_function(self):
-        r = complete_text("/route --proto=csg --afn=")
+        r = complete_text("/route --proto=csg --dir=downlink --afn=")
         labels = [c.get("label", "") for c in r["data"]["completions"]]
         afn01 = next((l for l in labels if l.startswith("0x01")), "")
         assert "复位硬件" not in afn01
         assert "初始化" in afn01
 
     def test_di_shows_specific_function(self):
-        r = complete_text("/route --proto=csg --afn=0x01 --di=")
+        r = complete_text("/route --proto=csg --dir=downlink --afn=0x01 --di=")
         labels = [c.get("label", "") for c in r["data"]["completions"]]
         assert any("复位硬件" in l for l in labels)
         assert any("E8020101" in l for l in labels)
 
     def test_di_space_form_completes(self):
-        vals = _values("/build --proto=csg --afn=0x01 --di ")
+        vals = _values("/build --proto=csg --dir=downlink --afn=0x01 --di ")
         assert len(vals) >= 3
         assert "E8020101" in vals
 
     def test_di_space_partial_prefix(self):
-        vals = _values("/build --proto=csg --afn=0x01 --di E802")
+        vals = _values("/build --proto=csg --dir=downlink --afn=0x01 --di E802")
         assert all(v.startswith("E802") for v in vals)
 
 
@@ -343,29 +368,33 @@ class TestAutoRuleMatchCompletion:
         assert "--field" in vals
         assert "68.*16" in vals
 
-    def test_match_proto_csg_suggests_afn(self):
+    def test_match_proto_csg_suggests_dir(self):
         vals = _values("/auto_rule add --id test --match --proto csg ")
-        assert "--afn" in vals
-        assert "--then" in vals
-        assert "--func" not in vals
-
-    def test_match_afn_suggests_di_dir_and_then(self):
-        vals = _values("/auto_rule add --id test --match --proto csg --afn 0x04 ")
-        assert "--di" in vals
         assert "--dir" in vals
-        assert "--then" in vals
-        assert "--wait_time" not in vals
+        assert "--afn" in vals
+        assert "--di" in vals
         assert "--addr" not in vals
+        assert "--then" in vals
+
+    def test_match_dir_suggests_afn_di_not_addr(self):
+        vals = _values("/auto_rule add --id test --match --proto csg --dir downlink ")
+        assert "--afn" in vals
+        assert "--di" in vals
+        assert "--addr" not in vals
+        assert "--then" in vals
 
     def test_match_proto_afn_di_labeled(self):
-        r = complete_text("/auto_rule add --id test --match --proto csg --afn=0x00 --di=")
+        r = complete_text(
+            "/auto_rule add --id test --match --proto csg --dir=downlink --afn=0x00 --di="
+        )
         labels = [c.get("label", "") for c in r["data"]["completions"]]
         assert any("E8010001" in lb for lb in labels)
         assert any("—" in lb for lb in labels)
 
     def test_match_route_complete_suggests_then_not_build_schema(self):
         vals = _values(
-            "/auto_rule add --id test --match --proto csg --afn=0x00 --di=E8010001 --dir=downlink "
+            "/auto_rule add --id test --match --proto csg --dir=downlink "
+            "--afn=0x00 --di=E8010001 "
         )
         assert "--then" in vals
         assert "--wait_time" not in vals
@@ -373,7 +402,8 @@ class TestAutoRuleMatchCompletion:
 
     def test_match_complete_suggests_then(self):
         vals = _values(
-            "/auto_rule add --id test --match --proto csg --afn=0x00 --di=E8010001 --dir=downlink "
+            "/auto_rule add --id test --match --proto csg --dir=downlink "
+            "--afn=0x00 --di=E8010001 "
         )
         assert "--then" in vals
 
@@ -396,12 +426,12 @@ class TestAutoRuleMatchCompletion:
         assert "--proto" in vals
         assert "--build" not in vals
 
-    def test_then_serial_send_build_proto_csg_suggests_afn(self):
+    def test_then_serial_send_build_proto_csg_suggests_dir(self):
         vals = _values(
             "/auto_rule add --id test --match --proto csg --afn 0x01 "
             "--then /serial send --build --proto csg "
         )
-        assert "--afn" in vals
+        assert "--dir" in vals
         assert "--proto" not in vals
 
     def test_then_tail_not_truncated_at_proto(self):
@@ -434,18 +464,22 @@ class TestSerialSendBuildCompletion:
         assert "--proto" in vals
         assert "--hex" not in vals
 
-    def test_send_build_proto_csg_suggests_afn(self):
+    def test_send_build_proto_csg_suggests_dir(self):
         vals = _values("/serial send --build --proto csg ")
-        assert "--afn" in vals
+        assert "--dir" in vals
+        assert "--afn" not in vals
 
     def test_send_build_di_labeled(self):
-        r = complete_text("/serial send --build --proto csg --afn=0x00 --di=")
+        r = complete_text(
+            "/serial send --build --proto csg --dir=downlink --afn=0x00 --di="
+        )
         labels = [c.get("label", "") for c in r["data"]["completions"]]
         assert any("E8010001" in lb for lb in labels)
 
     def test_send_build_complete_suggests_to(self):
         vals = _values(
-            "/serial send --build --proto csg --afn=0x00 --di=E8010001 --dir=downlink --wait_time=0 "
+            "/serial send --build --proto csg --dir=downlink "
+            "--afn=0x00 --di=E8010001 --wait_time=0 "
         )
         assert "--to" in vals
 

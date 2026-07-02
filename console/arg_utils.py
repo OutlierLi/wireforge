@@ -24,10 +24,67 @@ def looks_like_hex_token(value: str) -> bool:
     return bool(token) and _HEX_TOKEN_RE.fullmatch(token) is not None
 
 
+def parse_bracket_list(value: str) -> list[str] | None:
+    """Parse CLI bracket list syntax: ``[a, b, c]`` → ``['a', 'b', 'c']``."""
+    raw = strip_nested_quotes(value.strip())
+    if not raw.startswith("[") or not raw.endswith("]"):
+        return None
+    inner = raw[1:-1].strip()
+    if not inner:
+        return []
+    items: list[str] = []
+    for part in inner.split(","):
+        part = strip_nested_quotes(part.strip())
+        if part:
+            items.append(part)
+    return items
+
+
+def looks_like_open_bracket_list(value: str) -> bool:
+    raw = strip_nested_quotes(str(value).strip())
+    return raw.startswith("[") and not raw.endswith("]")
+
+
+def merge_bracket_list_value_tail(
+    value: str,
+    parts: list[str],
+    index: int,
+) -> tuple[str, int]:
+    """``--slave_addrs [a, b]`` 被 shlex 按逗号/空格拆段时，向后合并至 ``]``。"""
+    if not looks_like_open_bracket_list(value):
+        return value, index
+
+    merged = [value]
+    j = index + 1
+    while j < len(parts):
+        if parts[j].startswith("--"):
+            break
+        merged.append(parts[j])
+        if parts[j].rstrip().endswith("]"):
+            break
+        j += 1
+    return " ".join(merged), j
+
+
+def coerce_array_value(value: Any) -> list[Any] | None:
+    """Normalize array CLI/YAML values; parse ``[a, b]`` strings into lists."""
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        parsed = parse_bracket_list(value)
+        if parsed is not None:
+            return parsed
+    return None
+
+
 def clean_string_arg(value: Any, *, key: str = "") -> Any:
     if not isinstance(value, str):
         return value
-    return strip_nested_quotes(value)
+    stripped = strip_nested_quotes(value)
+    parsed = parse_bracket_list(stripped)
+    if parsed is not None:
+        return parsed
+    return stripped
 
 
 def compact_hex(text: str) -> str:

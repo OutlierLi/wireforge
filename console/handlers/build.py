@@ -12,6 +12,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from console.arg_utils import coerce_array_value, parse_bracket_list
+
 ROOT = Path(__file__).resolve().parent.parent.parent
 
 
@@ -55,8 +57,11 @@ def _parse_set_args(raw: str | list[str] | None) -> dict[str, Any]:
 
 
 def _smart_coerce(value: str) -> Any:
-    """智能类型转换：hex → int, 数字 → int, 其他保持字符串。"""
+    """智能类型转换：hex → int, 数字 → int, bracket list → list, 其他保持字符串。"""
     v = value.strip()
+    parsed = parse_bracket_list(v)
+    if parsed is not None:
+        return parsed
     if v.lower().startswith("0x"):
         try:
             return int(v, 16)
@@ -69,6 +74,39 @@ def _smart_coerce(value: str) -> Any:
         except ValueError:
             return v
     return v
+
+
+def _coerce_business_values(
+    business_values: dict[str, Any],
+    input_schema: list,
+) -> dict[str, Any]:
+    """解析 CLI 括号数组，并从 array 长度推断 count_ref 字段（如 slave_count）。"""
+    schema_by_name = {f.name: f for f in input_schema}
+    out = dict(business_values)
+
+    for name, field in schema_by_name.items():
+        if field.type != "array" or name not in out:
+            continue
+        coerced = coerce_array_value(out[name])
+        if coerced is not None:
+            out[name] = coerced
+
+    for name, field in schema_by_name.items():
+        if field.type != "array" or not field.count_ref:
+            continue
+        count_name = field.count_ref
+        arr = out.get(name)
+        if not isinstance(arr, list):
+            continue
+        arr_len = len(arr)
+        if count_name not in out:
+            out[count_name] = arr_len
+        elif int(out[count_name]) != arr_len:
+            raise ValueError(
+                f"{count_name}={out[count_name]} 与 {name} 长度 {arr_len} 不一致"
+            )
+
+    return out
 
 
 _BUILD_TARGET_KEYS = frozenset({
@@ -120,6 +158,11 @@ def build_frame_from_args(
     ):
         from console.build_resolver import _hex_byte_length
         business_values["payload_length"] = _hex_byte_length(business_values["payload"])
+
+    try:
+        business_values = _coerce_business_values(business_values, target.input_schema)
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
 
     unknown_fields = [k for k in business_values if k not in schema_names]
     missing_required = [

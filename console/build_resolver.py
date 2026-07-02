@@ -38,6 +38,7 @@ class InputField:
     unit: str = ""
     # struct sub-fields
     children: list[InputField] = field(default_factory=list)
+    count_ref: str | None = None  # array: count field name (e.g. slave_count)
     derived: dict[str, Any] | None = None
 
     def to_dict(self) -> dict:
@@ -273,6 +274,7 @@ def _collect_input_fields(ir, leaf, leaf_id, parent_leaf=None) -> list[InputFiel
                 required=required,
                 desc=desc,
                 children=children,
+                count_ref=lf.params.get("count_ref"),
             ))
         else:
             derive = lf.params.get("derive")
