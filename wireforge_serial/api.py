@@ -319,6 +319,11 @@ def bind_rx_display(transport: SerialTransport, cid: str) -> None:
     transport.on_rx_chunk = lambda d: _log_and_display_rx(cid, d)
 
 
+def bind_rx_quiet(transport: SerialTransport, cid: str) -> None:
+    """升级等场景：仅写 serial.log，不在终端打印 RX，也不触发 auto_rule。"""
+    transport.on_rx_chunk = lambda d: _log_rx_quiet(cid, d)
+
+
 def write_with_tx_display(transport: SerialTransport, cid: str, data: bytes) -> int:
     """发送并实时打印/记录 TX；发送后清除 on_tx。"""
     transport.on_tx = lambda d: _log_and_display_tx(cid, d)
@@ -326,6 +331,27 @@ def write_with_tx_display(transport: SerialTransport, cid: str, data: bytes) -> 
         return transport.write(data)
     finally:
         transport.on_tx = None
+
+
+def write_quiet(transport: SerialTransport, cid: str, data: bytes) -> int:
+    """发送并仅写 serial.log，不在终端打印 TX。"""
+    log_tx(cid, data)
+    return transport.write(data)
+
+
+def _log_rx_quiet(device: str, data: bytes) -> None:
+    log_rx(device, data)
+    try:
+        from console.runtime import update_last_rx
+
+        update_last_rx({
+            "id": device,
+            "to": device,
+            "rx": data.hex(" ").upper(),
+            "rx_bytes": len(data),
+        })
+    except Exception:
+        pass
 
 
 def _log_and_display_tx(device: str, data: bytes) -> None:

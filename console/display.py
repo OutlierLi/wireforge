@@ -148,6 +148,13 @@ def try_compact_display(command_line: str, response: dict[str, Any]) -> list[str
         if lines:
             return lines
 
+    if command == "upg":
+        sent = data.get("sent_segments")
+        total = data.get("total_segments")
+        duration = data.get("duration_seconds")
+        if sent is not None and total is not None:
+            return [f"[upg]: success {sent}/{total} segments, {duration}s"]
+
     return None
 
 
@@ -199,11 +206,44 @@ def _render_build_response(response: dict[str, Any], stdout: TextIO) -> None:
         stdout.write(f"  path: {path}\n")
 
 
+def _render_upg_response(response: dict[str, Any], stdout: TextIO) -> None:
+    tag = "upg"
+    if response.get("status") == "success":
+        compact = try_compact_display("/upg", response)
+        if compact:
+            for line in compact:
+                stdout.write(f"{line}\n")
+            return
+        stdout.write(f"[{tag}]: success\n")
+        _render_value(response.get("data") or {}, stdout, 1)
+        return
+
+    status = response.get("status", "error")
+    error = response.get("error") or status
+    stdout.write(f"[{tag}]: {error}\n")
+    detail = response.get("detail") or {}
+    reason = detail.get("failure_reason") or error
+    if reason:
+        stdout.write(f"  reason: {reason}\n")
+    label = detail.get("last_label")
+    if label:
+        stdout.write(f"  step: {label}\n")
+    if detail.get("last_tx_hex"):
+        stdout.write(f"  last_tx: {detail['last_tx_hex']}\n")
+    if detail.get("last_rx_hex"):
+        stdout.write(f"  last_rx: {detail['last_rx_hex']}\n")
+    if detail.get("last_rx_di"):
+        stdout.write(f"  last_rx_di: {detail['last_rx_di']}\n")
+
+
 def render_response(command_line: str, response: dict[str, Any], stdout: TextIO) -> None:
     """渲染命令响应到终端。"""
     command, _args = _parse_command_line(command_line)
     if command == "build":
         _render_build_response(response, stdout)
+        return
+    if command == "upg":
+        _render_upg_response(response, stdout)
         return
 
     compact = try_compact_display(command_line, response)

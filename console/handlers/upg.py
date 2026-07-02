@@ -185,11 +185,12 @@ def handle(args: dict[str, Any]) -> dict:
     except FileTransferError as exc:
         return fail(str(exc))
 
-    from wireforge_serial.api import bind_rx_display, write_with_tx_display
+    from wireforge_serial.api import bind_rx_quiet, write_quiet
 
-    bind_rx_display(transport, conn_name)
+    bind_rx_quiet(transport, conn_name)
 
     results["to"] = conn_name
+    transfer_diag: dict[str, Any] = {}
 
     log_serial("upg_start", port="", data={
         "to": conn_name,
@@ -242,13 +243,14 @@ def handle(args: dict[str, Any]) -> dict:
         expected: str = "response",
         diag: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        trace = transfer_diag if diag is None else diag
         attempts = (params["retries"] if retry_count is None else retry_count) + 1
         last_error: str | None = None
         for attempt in range(1, attempts + 1):
             try:
-                write_with_tx_display(transport, conn_name, frame)
-                if diag is not None:
-                    diag["last_send_hex"] = frame.hex(" ")
+                trace["last_label"] = label
+                trace["last_tx_hex"] = frame.hex(" ").upper()
+                write_quiet(transport, conn_name, frame)
                 deadline = time.monotonic() + max(timeout, 0.0)
                 while time.monotonic() < deadline:
                     remaining = max(0.0, deadline - time.monotonic())
@@ -260,36 +262,37 @@ def handle(args: dict[str, Any]) -> dict:
                         last_error = f"{label} ignored non-CSG bytes while waiting for {expected}"
                         continue
                     for index, raw_frame in enumerate(frames):
+                        trace["last_rx_hex"] = raw_frame.hex(" ").upper()
                         decoded = decode_frame(raw_frame)
                         if decoded is None:
                             last_error = f"{label} ignored decode error while waiting for {expected}"
                             continue
+                        rx_di = parsed_di(decoded)
+                        if rx_di:
+                            trace["last_rx_di"] = rx_di
                         if accept is None or accept(decoded):
                             return decoded
                         last_error = (
-                            f"{label} ignored DI={parsed_di(decoded) or '<unknown>'} "
+                            f"{label} ignored DI={rx_di or '<unknown>'} "
                             f"while waiting for {expected}"
                         )
                 if last_error is None or "ignored" in (last_error or ""):
                     last_error = f"{label} waiting for {expected} timeout"
                 if attempt < attempts:
                     continue
-                if diag is not None:
-                    diag["last_error"] = last_error
+                trace["last_error"] = last_error
                 raise RuntimeError(last_error)
             except RuntimeError:
                 raise
             except Exception as exc:
                 last_error = f"{label} transport error: {type(exc).__name__}: {exc}"
                 if attempt >= attempts:
-                    if diag is not None:
-                        diag["last_error"] = last_error
+                    trace["last_error"] = last_error
                     raise RuntimeError(last_error) from exc
             finally:
                 if params["interval"] > 0:
                     time.sleep(params["interval"])
-        if diag is not None:
-            diag["last_error"] = last_error or "unknown"
+        trace["last_error"] = last_error or "unknown"
         raise RuntimeError(last_error or f"{label} failed")
 
     def is_ack_or_nak(decoded: dict[str, Any]) -> bool:
@@ -338,92 +341,99 @@ def handle(args: dict[str, Any]) -> dict:
     start_segment = 0
 
     try:
-        if params["clear_mode"] == "always":
-            clear_frame = build_frame("E8020701", clear_file_info_payload(params["dest"]))
-            expect_ack("CLEAR", clear_frame)
-        elif params["resume_enabled"]:
-            try:
-                query_frame = build_frame("E8000703")
-                decoded = receive_di(
-                    "QUERY_FILE_INFO",
-                    query_frame,
-                    params["ack_timeout"],
-                    "E8000703",
-                    retry_count=0,
+        try:
+            if params["clear_mode"] == "always":
+                clear_frame = build_frame("E8020701", clear_file_info_payload(params["dest"]))
+                expect_ack("CLEAR", clear_frame)
+            elif params["resume_enabled"]:
+                try:
+                    query_frame = build_frame("E8000703")
+                    decoded = receive_di(
+                        "QUERY_FILE_INFO",
+                        query_frame,
+                        params["ack_timeout"],
+                        "E8000703",
+                        retry_count=0,
+                    )
+                    file_info = payload_from_decoded(decoded)
+                except RuntimeError as exc:
+                    file_info = None
+                    results["resume_note"] = str(exc)
+                else:
+                    if file_info and same_file_info(
+                        file_info,
+                        file_type=params["file_type"],
+                        file_id=params["file_id"],
+                        dest_address=params["dest"],
+                        package=package,
+                    ):
+                        start_segment = min(int(file_info.get("received_segments", 0)), package.total_segments)
+                        if start_segment > 0:
+                            results["resumed_from"] = start_segment
+                    elif file_info and params["clear_mode"] == "auto":
+                        clear_frame = build_frame("E8020701", clear_file_info_payload(params["dest"]))
+                        expect_ack("CLEAR", clear_frame)
+
+            if start_segment == 0:
+                start_frame = build_frame(
+                    "E8020701",
+                    start_file_info_payload(
+                        file_type=params["file_type"],
+                        file_id=params["file_id"],
+                        dest_address=params["dest"],
+                        package=package,
+                        timeout_minutes=params["timeout_minutes"],
+                    ),
                 )
-                file_info = payload_from_decoded(decoded)
-            except RuntimeError as exc:
-                file_info = None
-                results["resume_note"] = str(exc)
-            else:
-                if file_info and same_file_info(
-                    file_info,
-                    file_type=params["file_type"],
-                    file_id=params["file_id"],
-                    dest_address=params["dest"],
-                    package=package,
-                ):
-                    start_segment = min(int(file_info.get("received_segments", 0)), package.total_segments)
-                    if start_segment > 0:
-                        results["resumed_from"] = start_segment
-                elif file_info and params["clear_mode"] == "auto":
-                    clear_frame = build_frame("E8020701", clear_file_info_payload(params["dest"]))
-                    expect_ack("CLEAR", clear_frame)
+                expect_ack("START", start_frame)
+                results["file_info_ack"] = True
 
-        if start_segment == 0:
-            start_frame = build_frame(
-                "E8020701",
-                start_file_info_payload(
-                    file_type=params["file_type"],
-                    file_id=params["file_id"],
-                    dest_address=params["dest"],
-                    package=package,
-                    timeout_minutes=params["timeout_minutes"],
-                ),
-            )
-            expect_ack("START", start_frame)
-            results["file_info_ack"] = True
+            segments_to_send = package.segments[start_segment:]
+            last_segment_number = segments_to_send[-1].number if segments_to_send else None
+            sent = 0
 
-        segments_to_send = package.segments[start_segment:]
-        last_segment_number = segments_to_send[-1].number if segments_to_send else None
-        sent = 0
+            for segment in segments_to_send:
+                seg_frame = build_frame("E8020702", segment_payload(segment))
+                seg_timeout = (
+                    params["final_ack_timeout"]
+                    if segment.number == last_segment_number
+                    else params["ack_timeout"]
+                )
+                expect_ack(f"SEGMENT[{segment.number}]", seg_frame, timeout=seg_timeout)
+                sent += 1
+                transferred = start_segment + sent
+                remaining = max(package.total_segments - transferred, 0)
+                percent = 100.0 if package.total_segments == 0 else transferred * 100.0 / package.total_segments
+                _write_progress_bar(transferred, package.total_segments, remaining, percent)
 
-        for segment in segments_to_send:
-            seg_frame = build_frame("E8020702", segment_payload(segment))
-            seg_timeout = (
-                params["final_ack_timeout"]
-                if segment.number == last_segment_number
-                else params["ack_timeout"]
-            )
-            expect_ack(f"SEGMENT[{segment.number}]", seg_frame, timeout=seg_timeout)
-            sent += 1
-            transferred = start_segment + sent
-            remaining = max(package.total_segments - transferred, 0)
-            percent = 100.0 if package.total_segments == 0 else transferred * 100.0 / package.total_segments
-            _write_progress_bar(transferred, package.total_segments, remaining, percent)
+            finish_result: dict[str, Any] | None = None
+            if params["finish_mode"] == "progress":
+                finish_result = _wait_progress_finish(build_frame, receive_di, params["finish_timeout"])
+            elif params["finish_mode"] == "report":
+                finish_result = {"mode": "report", "skipped": True}
+            elif params["finish_mode"] != "none":
+                return fail(f"unsupported finish mode: {params['finish_mode']}")
 
-        finish_result: dict[str, Any] | None = None
-        if params["finish_mode"] == "progress":
-            finish_result = _wait_progress_finish(build_frame, receive_di, params["finish_timeout"])
-        elif params["finish_mode"] == "report":
-            finish_result = {"mode": "report", "skipped": True}
-        elif params["finish_mode"] != "none":
-            return fail(f"unsupported finish mode: {params['finish_mode']}")
+        except RuntimeError as exc:
+            results["duration_seconds"] = round(time.monotonic() - start_time, 1)
+            _finish_progress_bar()
+            _apply_transfer_diag(results, transfer_diag)
+            results["failure_reason"] = str(exc)
+            return fail(str(exc), detail=results)
 
-    except RuntimeError as exc:
-        results["duration_seconds"] = round(time.monotonic() - start_time, 1)
+        elapsed = time.monotonic() - start_time
+        results["sent_segments"] = sent
+        results["duration_seconds"] = round(elapsed, 1)
+        results["success"] = True
+        results["finish"] = finish_result
         _finish_progress_bar()
-        return fail(str(exc), detail=results)
 
-    elapsed = time.monotonic() - start_time
-    results["sent_segments"] = sent
-    results["duration_seconds"] = round(elapsed, 1)
-    results["success"] = True
-    results["finish"] = finish_result
-    _finish_progress_bar()
+        log_serial("upg_complete", port="", data=results)
+        return ok(results)
+    finally:
+        from wireforge_serial.api import bind_rx_display
 
-    log_serial("upg_complete", port="", data=results)
-    return ok(results)
+        bind_rx_display(transport, conn_name)
 
 
 def _parse_transfer_params(args: dict[str, Any]) -> dict[str, Any]:
@@ -557,6 +567,12 @@ def _wait_progress_finish(
             raise RuntimeError(f"file processing incomplete, failed_node_count={failed}")
         time.sleep(1.0)
     raise RuntimeError("finish progress timeout")
+
+
+def _apply_transfer_diag(results: dict[str, Any], diag: dict[str, Any]) -> None:
+    for key in ("last_label", "last_tx_hex", "last_rx_hex", "last_rx_di", "last_error"):
+        if key in diag:
+            results[key] = diag[key]
 
 
 def _write_progress_bar(transferred: int, total: int, remaining: int, percent: float) -> None:

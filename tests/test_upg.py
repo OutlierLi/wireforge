@@ -433,6 +433,97 @@ class TestUpgTransferFlow(unittest.TestCase):
             self.assertEqual(r["data"]["finish"]["mode"], "progress")
 
 
+class TestUpgQuietIo(unittest.TestCase):
+    def test_upg_does_not_display_serial_frames(self) -> None:
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fw = Path(temp_dir) / "fw.bin"
+            fw.write_bytes(bytes(range(64)))
+            transport = UpgradeResponderTransport(expected_segments=1)
+            with patch("console.handlers.upg.get_connection", return_value=transport), \
+                 patch("wireforge_serial.logger.display_tx") as mock_tx, \
+                 patch("wireforge_serial.logger.display_rx") as mock_rx:
+                r = exec_cmd("upg", {
+                    "file": str(fw),
+                    "to": "dev1",
+                    "segment-size": 128,
+                    "no-cache": True,
+                    "no-resume": True,
+                })
+            _ok(r)
+            mock_tx.assert_not_called()
+            mock_rx.assert_not_called()
+
+    def test_upg_failure_includes_last_frame_detail(self) -> None:
+        class NakTransport(UpgradeResponderTransport):
+            def write(self, data: bytes) -> int:
+                self.sent_count += 1
+                nak = _build_uplink("00", "E8010002", {"error_code": 3})
+                self._queue.append(nak)
+                return len(data)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fw = Path(temp_dir) / "fw.bin"
+            fw.write_bytes(bytes(range(64)))
+            transport = NakTransport(expected_segments=1)
+            with patch("console.handlers.upg.get_connection", return_value=transport):
+                r = exec_cmd("upg", {
+                    "file": str(fw),
+                    "to": "dev1",
+                    "segment-size": 128,
+                    "no-cache": True,
+                    "no-resume": True,
+                    "retries": 0,
+                })
+            _fail(r)
+            detail = r.get("detail") or {}
+            self.assertIn("last_tx_hex", detail)
+            self.assertIn("last_rx_hex", detail)
+            self.assertIn("failure_reason", detail)
+
+
+class TestUpgDisplay(unittest.TestCase):
+    def test_upg_success_compact_display(self) -> None:
+        from io import StringIO
+        from console.display import render_response
+
+        out = StringIO()
+        render_response("/upg --file fw.bin", {
+            "status": "success",
+            "data": {
+                "sent_segments": 3,
+                "total_segments": 3,
+                "duration_seconds": 1.2,
+            },
+        }, out)
+        text = out.getvalue()
+        self.assertIn("[upg]: success 3/3 segments", text)
+        self.assertNotIn("last_tx", text)
+
+    def test_upg_failure_shows_last_frame_only(self) -> None:
+        from io import StringIO
+        from console.display import render_response
+
+        out = StringIO()
+        render_response("/upg --file fw.bin", {
+            "status": "execution_error",
+            "error": "SEGMENT[1] denied: checksum error",
+            "detail": {
+                "failure_reason": "SEGMENT[1] denied: checksum error",
+                "last_label": "SEGMENT[1]",
+                "last_tx_hex": "68 AA",
+                "last_rx_hex": "68 BB",
+                "last_rx_di": "E8010002",
+            },
+        }, out)
+        text = out.getvalue()
+        self.assertIn("reason:", text)
+        self.assertIn("last_tx: 68 AA", text)
+        self.assertIn("last_rx: 68 BB", text)
+        self.assertNotIn("file_size", text)
+
+
 class TestUpgRegistry(unittest.TestCase):
     def test_upg_registered(self) -> None:
         from console.api import list_cmds
