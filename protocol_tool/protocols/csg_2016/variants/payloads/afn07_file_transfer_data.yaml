@@ -19,7 +19,7 @@ variants:
       type: uint16_le
       description: 文件段长度
     - name: segment_data
-      type: hex
+      type: bytes
       length_from: segment_length
       description: 文件段内容
     - name: segment_crc
