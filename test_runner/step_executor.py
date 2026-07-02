@@ -10,6 +10,7 @@ from runtime.command_runtime import execute as runtime_execute
 from test_runner.context import RunContext, StepRecord
 from test_runner.conditions import values_equal
 from test_runner.expressions import eval_expression
+from test_runner.lab_context import LabError
 from test_runner.variables import VariableError, resolve_value
 
 
@@ -64,8 +65,14 @@ class StepExecutor:
                 resolved["args"] = resolve_value(resolved["args"], self._scope(ctx))
             if action not in {"loop", "if", "expr", "set_var", "assert"}:
                 try:
-                    _, resolved["args"] = self._to_command(action, dict(resolved["args"] or {}))
+                    translated, lab_meta = self._apply_lab_context(action, dict(resolved["args"] or {}), ctx)
+                    _, resolved["args"] = self._to_command(action, translated)
+                    if lab_meta:
+                        resolved["_lab"] = lab_meta
                 except VariableError:
+                    if not soft:
+                        raise
+                except LabError:
                     if not soft:
                         raise
         nested = resolved.get("steps")
@@ -84,9 +91,13 @@ class StepExecutor:
         resolved = self.resolve_step(step, ctx)
         action = str(resolved["action"])
         args = dict(resolved.get("args") or {})
+        lab_meta: dict[str, Any] | None = resolved.get("_lab") if isinstance(resolved.get("_lab"), dict) else None
 
         if ctx.dry_run:
-            return {"schema": "protocol-tui.v1", "status": "success", "data": {"dry_run": True, "action": action, "args": args}}
+            data: dict[str, Any] = {"dry_run": True, "action": action, "args": args}
+            if lab_meta:
+                data["_lab"] = lab_meta
+            return {"schema": "protocol-tui.v1", "status": "success", "data": data}
 
         if action == "sleep":
             ms = int(args.get("ms") or args.get("timeout_ms") or args.get("value") or 0)
@@ -120,11 +131,24 @@ class StepExecutor:
                 raise StepFailed(str(step["id"]), action, result)
             return result
 
+        if not lab_meta:
+            args, lab_meta = self._apply_lab_context(action, args, ctx)
+
+        if action == "wait_log":
+            result = self._wait_log(args)
+            if lab_meta:
+                self._attach_lab_meta(result, lab_meta)
+            if result.get("status") != "success":
+                raise StepFailed(str(step["id"]), action, result)
+            return result
+
         command, command_args = self._to_command(action, args)
         if action == "request":
             command_args = self._prepare_request_args(command_args)
 
         result = runtime_execute(command, command_args)
+        if lab_meta:
+            self._attach_lab_meta(result, lab_meta)
         if result.get("status") != "success":
             raise StepFailed(str(step["id"]), action, result)
         return result
@@ -201,6 +225,59 @@ class StepExecutor:
             out["hex"] = out["frame_hex"]
         return out
 
+    def _apply_lab_context(
+        self,
+        action: str,
+        args: dict[str, Any],
+        ctx: RunContext | Any,
+    ) -> tuple[dict[str, Any], dict[str, Any] | None]:
+        lab = getattr(ctx, "lab", None)
+        if lab is None:
+            return args, None
+        return lab.translate_args(action, args)
+
+    def _wait_log(self, args: dict[str, Any]) -> dict[str, Any]:
+        from wireforge_serial.api import get_connection, _connection_id, _normalize_args
+
+        args = _normalize_args(args)
+        target = _connection_id(args) or "default"
+        timeout_ms = int(args.get("timeout") or args.get("timeout_ms") or 5000)
+        expect = args.get("expect") if isinstance(args.get("expect"), dict) else {}
+        contains = str(expect.get("contains") or args.get("contains") or "")
+        if not contains:
+            return self._failure("wait_log requires expect.contains")
+        transport = get_connection(target)
+        if not transport:
+            return self._failure(
+                f"serial not connected (to={target}). use /serial connect --name {target} --port <port> first"
+            )
+
+        deadline = time.monotonic() + timeout_ms / 1000.0
+        chunks: list[str] = []
+        while time.monotonic() < deadline:
+            remaining = deadline - time.monotonic()
+            data = transport.read_response(min(0.2, remaining))
+            if data:
+                text = data.decode("utf-8", errors="replace")
+                chunks.append(text)
+                joined = "".join(chunks)
+                if contains in joined:
+                    return {
+                        "schema": "protocol-tui.v1",
+                        "status": "success",
+                        "data": {
+                            "matched": True,
+                            "contains": contains,
+                            "text": joined,
+                            "debug_line": joined,
+                        },
+                    }
+            time.sleep(0.02)
+        return self._failure(
+            "timeout: no debug log matched expect conditions",
+            {"timeout_ms": timeout_ms, "contains": contains, "text": "".join(chunks)},
+        )
+
     def _flatten_expect(self, args: dict[str, Any], prefix: str) -> dict[str, Any]:
         out = dict(args)
         expect = out.pop("expect", None)
@@ -249,6 +326,12 @@ class StepExecutor:
         if detail:
             result["detail"] = detail
         return result
+
+    @staticmethod
+    def _attach_lab_meta(result: dict[str, Any], lab_meta: dict[str, Any]) -> None:
+        data = result.setdefault("data", {})
+        if isinstance(data, dict):
+            data["_lab"] = lab_meta
 
 
 def _flatten_dict(value: dict[str, Any], prefix: str = "") -> dict[str, Any]:

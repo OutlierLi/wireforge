@@ -4,6 +4,7 @@ from copy import deepcopy
 from typing import Any
 
 from test_runner.error_codes import KNOWN_ACTIONS, PLAN_ACTION_UNKNOWN, PLAN_SCHEMA_INVALID, RunError
+from test_runner.lab_context import LabContext, LabError
 
 
 def validate_plan(plan: dict[str, Any]) -> dict[str, Any]:
@@ -30,6 +31,10 @@ def _collect_errors(plan: dict[str, Any], errors: list[dict[str, Any]]) -> None:
         errors.append(_err(PLAN_SCHEMA_INVALID, "plan.name is required"))
     if "steps" not in plan or not isinstance(plan["steps"], list):
         errors.append(_err(PLAN_SCHEMA_INVALID, "plan.steps must be a list"))
+    try:
+        LabContext.from_plan(plan)
+    except LabError as exc:
+        errors.append(_err(PLAN_SCHEMA_INVALID, str(exc)))
     for section in ("setup", "steps", "teardown"):
         steps = plan.get(section, [])
         if steps is None:
@@ -57,6 +62,8 @@ def _validate_steps(steps: list[Any], section: str, errors: list[dict[str, Any]]
             ))
         if not step.get("id"):
             step["id"] = f"{section}_{index + 1}"
+
+        _validate_target_channel_args(step, section, index, errors)
 
         if action == "loop":
             _validate_loop_step(step, section, index, errors)
@@ -110,6 +117,36 @@ def _validate_expr_step(step: dict[str, Any], section: str, index: int, errors: 
         errors.append(_err(PLAN_SCHEMA_INVALID, f"{step_id}: expr requires args.name", step_id=step_id))
     if args.get("expr") in (None, ""):
         errors.append(_err(PLAN_SCHEMA_INVALID, f"{step_id}: expr requires args.expr", step_id=step_id))
+
+
+def _validate_target_channel_args(
+    step: dict[str, Any],
+    section: str,
+    index: int,
+    errors: list[dict[str, Any]],
+) -> None:
+    step_id = str(step.get("id") or f"{section}_{index + 1}")
+    args = step.get("args") or {}
+    if not isinstance(args, dict):
+        return
+    has_target = args.get("target") not in (None, "")
+    has_channel = args.get("channel") not in (None, "")
+    if has_target != has_channel:
+        errors.append(_err(
+            PLAN_SCHEMA_INVALID,
+            f"{step_id}: target and channel must be provided together",
+            step_id=step_id,
+        ))
+    scope = args.get("scope")
+    if isinstance(scope, dict):
+        scope_has_target = scope.get("target") not in (None, "")
+        scope_has_channel = scope.get("channel") not in (None, "")
+        if scope_has_target != scope_has_channel:
+            errors.append(_err(
+                PLAN_SCHEMA_INVALID,
+                f"{step_id}: scope.target and scope.channel must be provided together",
+                step_id=step_id,
+            ))
 
 
 def _err(code: str, message: str, step_id: str = "") -> dict[str, Any]:

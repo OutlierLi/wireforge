@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from test_runner.lab_context import LabContext
+
 
 @dataclass
 class StepRecord:
@@ -32,6 +34,7 @@ class RunContext:
     failed_step: str = ""
     teardown_errors: list[dict[str, Any]] = field(default_factory=list)
     primary_error: dict[str, Any] | None = None
+    lab: LabContext | None = None
 
 
 def create_run_id(plan_name: str, when: datetime | None = None) -> str:

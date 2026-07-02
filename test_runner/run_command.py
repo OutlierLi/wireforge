@@ -34,6 +34,7 @@ from test_runner.plan_validator import validate_plan
 from test_runner.control_flow import execute_steps
 from test_runner.report_writer import ReportWriter, format_summary
 from test_runner.step_executor import StepExecutor
+from test_runner.lab_context import LabContext
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_REPORT_ROOT = ROOT / "log" / "run_reports"
@@ -63,6 +64,11 @@ class RunCommand:
                     "version": {"type": "integer", "const": 1},
                     "name": {"type": "string", "description": "Test plan name"},
                     "vars": {"type": "object", "description": "Global variables"},
+                    "target_profiles": {"type": "object", "description": "Reusable target profiles with arbitrary channels"},
+                    "profiles": {"type": "object", "description": "Alias for target_profiles"},
+                    "targets": {"type": "object", "description": "Named devices used by this plan"},
+                    "target_id": {"type": "string", "description": "Single-target shorthand id when using top-level channels"},
+                    "channels": {"type": "object", "description": "Single-target shorthand channel map"},
                     "timeout_ms": {"type": "integer", "description": "Overall run timeout in ms"},
                     "setup": {"type": "array", "description": "Pre-test steps"},
                     "steps": {"type": "array", "description": "Main test steps"},
@@ -94,6 +100,7 @@ class RunCommand:
                 "assert": "Compare expect values against vars",
                 "set_var": "Set a variable in scope",
                 "expr": "Evaluate arithmetic expression and store in vars",
+                "wait_log": "Wait for text on a debug/control serial channel",
                 "sleep": "Sleep for specified ms",
                 "loop": "Repeat nested steps over a list or count",
                 "if": "Run nested steps when when-condition matches",
@@ -155,6 +162,8 @@ class RunCommand:
             },
             "conventions": {
                 "default_port": "mock://auto",
+                "targets": "optional top-level targets map; each target can expose any channel names",
+                "target_channel_args": "steps may use args.target + args.channel; runner resolves to serial conn/to/name",
                 "real_port_override": "test.run options.vars.port",
                 "send_before_wait_frame": "send args.timeout must be 0",
                 "auto_rule_match": "hex DI substring from build, or semantic di/afn/dir (auto decode); match.all/match.any for composite",
@@ -288,6 +297,7 @@ class RunCommand:
             deadline_monotonic=deadline,
             vars={**(loaded.get("vars") or {}), **opts.vars},
             dry_run=opts.dry_run,
+            lab=LabContext.from_plan(loaded),
         )
         writer = ReportWriter(ctx, loaded)
         executor = StepExecutor()

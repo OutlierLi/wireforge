@@ -163,6 +163,7 @@ def build_execution_report(
             "vars": dict(ctx.vars),
             "dry_run": ctx.dry_run,
             "plan_file": str(ctx.plan_path) if ctx.plan_path else None,
+            "lab": ctx.lab.to_dict() if getattr(ctx, "lab", None) is not None else None,
         },
         "execution_summary": {
             "total_steps": len(ctx.records),
@@ -286,12 +287,12 @@ def group_comm_interactions(
         if action == "send":
             hx = _tx_hex_from_record(record)
             if hx:
-                pending_tx = {
+                pending_tx = _apply_lab_to_frame({
                     "dir": "TX",
                     "hex": hx,
                     "timestamp": ts,
                     "step_id": record.id,
-                }
+                }, _record_lab(record))
             continue
 
         if action in {"wait-frame", "wait_frame"}:
@@ -302,7 +303,10 @@ def group_comm_interactions(
             rx = _rx_hex_from_record(record)
             if rx:
                 frames.append(
-                    {"dir": "RX", "hex": rx, "timestamp": ts, "step_id": record.id}
+                    _apply_lab_to_frame(
+                        {"dir": "RX", "hex": rx, "timestamp": ts, "step_id": record.id},
+                        _record_lab(record),
+                    )
                 )
             if frames:
                 index += 1
@@ -489,6 +493,22 @@ def _record_data(record: StepRecord) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def _record_lab(record: StepRecord) -> dict[str, Any]:
+    data = _record_data(record)
+    lab = data.get("_lab")
+    return lab if isinstance(lab, dict) else {}
+
+
+def _apply_lab_to_frame(frame: dict[str, Any], lab: dict[str, Any]) -> dict[str, Any]:
+    if not lab:
+        return frame
+    out = dict(frame)
+    for key in ("target", "channel", "conn", "role", "protocol"):
+        if lab.get(key):
+            out[key] = lab[key]
+    return out
+
+
 def _tx_hex_from_record(record: StepRecord) -> str:
     data = _record_data(record)
     for key in ("sent", "hex", "frame_hex", "frame"):
@@ -506,26 +526,27 @@ def _rx_hex_from_record(record: StepRecord) -> str:
 
 def _request_frames(record: StepRecord, timestamp: str) -> list[dict[str, Any]]:
     data = _record_data(record)
+    lab = _record_lab(record)
     frames: list[dict[str, Any]] = []
     request = data.get("request")
     response = data.get("response")
     if isinstance(request, dict) and request.get("frame_hex"):
         frames.append(
-            {
+            _apply_lab_to_frame({
                 "dir": "TX",
                 "hex": request["frame_hex"],
                 "timestamp": timestamp,
                 "step_id": record.id,
-            }
+            }, lab)
         )
     if isinstance(response, dict) and response.get("frame_hex"):
         frames.append(
-            {
+            _apply_lab_to_frame({
                 "dir": "RX",
                 "hex": response["frame_hex"],
                 "timestamp": timestamp,
                 "step_id": record.id,
-            }
+            }, lab)
         )
     return frames
 
@@ -541,6 +562,10 @@ def _serial_entry(record: StepRecord) -> dict[str, Any] | None:
         "status": record.status,
         "elapsed_ms": record.elapsed_ms,
     }
+    lab = _record_lab(record)
+    for key in ("target", "channel", "conn", "role", "protocol"):
+        if lab.get(key):
+            entry[key] = lab[key]
     has_frame = False
 
     if record.action in {"serial.connect", "serial.open"} and data:

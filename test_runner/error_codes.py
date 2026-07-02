@@ -45,6 +45,7 @@ KNOWN_ACTIONS = {
     "wait-frame",
     "wait_frame",
     "request",
+    "wait_log",
     "serial.connect",
     "serial.disconnect",
     "serial.open",

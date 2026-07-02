@@ -16,6 +16,7 @@ _LOCATOR_KEYS = frozenset({
 })
 _BUILD_META_KEYS = frozenset({
     "resolve", "schema", "describe", "set", "from_frame", "from-frame",
+    "target", "channel", "scope", "to", "conn", "name",
 })
 _VAR_REF_RE = re.compile(r"\$\{([^}]+)\}")
 

@@ -27,6 +27,10 @@ class ReportWriter:
         self._timeline = self.ctx.report_dir / "timeline.log"
         self._frames = self.ctx.report_dir / "frames.log"
         self._errors = self.ctx.report_dir / "errors.log"
+        self._data_frames = self.ctx.report_dir / "data_frames.log"
+        self._debug_log = self.ctx.report_dir / "debug.log"
+        for path in (self._timeline, self._frames, self._errors, self._data_frames, self._debug_log):
+            path.touch(exist_ok=True)
 
     def write_resolved_plan(self, plan: dict[str, Any]) -> None:
         (self.ctx.report_dir / "resolved_plan.yaml").write_text(
@@ -75,6 +79,8 @@ class ReportWriter:
             "failed_step": self.ctx.failed_step,
             "teardown_errors": self.ctx.teardown_errors,
         }
+        if self.ctx.lab is not None:
+            report["lab"] = self.ctx.lab.to_dict()
         if primary_error:
             report["structured_error"] = primary_error.to_dict()
 
@@ -96,6 +102,8 @@ class ReportWriter:
                 for r in self.ctx.records
             ],
         }
+        if self.ctx.lab is not None:
+            summary_json["lab"] = self.ctx.lab.to_dict()
         (self.ctx.report_dir / "summary.json").write_text(
             json.dumps(summary_json, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -130,37 +138,41 @@ class ReportWriter:
         data = record.result.get("data") if isinstance(record.result, dict) else None
         if not isinstance(data, dict):
             return
+        lab_meta = data.get("_lab") if isinstance(data.get("_lab"), dict) else {}
         for key in ("frame", "frame_hex"):
             if data.get(key):
-                self._append(self._frames, f"[{now_iso()}] {record.id} {key}={data[key]}\n")
+                self._append_frame_line(record, lab_meta, f"{key}={data[key]}")
+        if data.get("debug_line"):
+            self._append_debug_line(record, lab_meta, str(data["debug_line"]))
         decoded = data.get("decoded") or data.get("values")
         if decoded:
-            self._append(
-                self._frames,
-                f"[{now_iso()}] {record.id} decoded={json.dumps(decoded, ensure_ascii=False)}\n",
-            )
+            self._append_frame_line(record, lab_meta, f"decoded={json.dumps(decoded, ensure_ascii=False)}")
         request = data.get("request")
         response = data.get("response")
         if isinstance(request, dict) and request.get("frame_hex"):
-            self._append(self._frames, f"[{now_iso()}] {record.id} tx={request['frame_hex']}\n")
+            self._append_frame_line(record, lab_meta, f"tx={request['frame_hex']}")
             if request.get("decoded"):
-                self._append(
-                    self._frames,
-                    f"[{now_iso()}] {record.id} tx_decoded={json.dumps(request['decoded'], ensure_ascii=False)}\n",
-                )
+                self._append_frame_line(record, lab_meta, f"tx_decoded={json.dumps(request['decoded'], ensure_ascii=False)}")
         if isinstance(response, dict) and response.get("frame_hex"):
-            self._append(self._frames, f"[{now_iso()}] {record.id} rx={response['frame_hex']}\n")
+            self._append_frame_line(record, lab_meta, f"rx={response['frame_hex']}")
             if response.get("decoded"):
-                self._append(
-                    self._frames,
-                    f"[{now_iso()}] {record.id} rx_decoded={json.dumps(response['decoded'], ensure_ascii=False)}\n",
-                )
+                self._append_frame_line(record, lab_meta, f"rx_decoded={json.dumps(response['decoded'], ensure_ascii=False)}")
         detail = record.result.get("detail") if isinstance(record.result, dict) else None
         if isinstance(detail, dict) and detail.get("last_decoded"):
-            self._append(
-                self._frames,
-                f"[{now_iso()}] {record.id} last_decoded={json.dumps(detail['last_decoded'], ensure_ascii=False)}\n",
-            )
+            self._append_frame_line(record, lab_meta, f"last_decoded={json.dumps(detail['last_decoded'], ensure_ascii=False)}")
+
+    def _append_frame_line(self, record: StepRecord, lab_meta: dict[str, Any], text: str) -> None:
+        prefix = _lab_prefix(record, lab_meta)
+        line = f"[{now_iso()}] {prefix}{text}\n"
+        self._append(self._frames, line)
+        role = str(lab_meta.get("role") or "")
+        channel = str(lab_meta.get("channel") or "")
+        if role != "debug_uart" and channel != "debug":
+            self._append(self._data_frames, line)
+
+    def _append_debug_line(self, record: StepRecord, lab_meta: dict[str, Any], text: str) -> None:
+        prefix = _lab_prefix(record, lab_meta)
+        self._append(self._debug_log, f"[{now_iso()}] {prefix}{text}\n")
 
     def _record_error(self, record: StepRecord) -> None:
         payload: dict[str, Any] = {
@@ -190,3 +202,15 @@ def format_summary(plan_name: str, records: list[StepRecord], status: str, error
         lines.append("FAIL")
     lines.append(f"report: {report_dir}")
     return "\n".join(lines) + "\n"
+
+
+def _lab_prefix(record: StepRecord, lab_meta: dict[str, Any]) -> str:
+    target = str(lab_meta.get("target") or "")
+    channel = str(lab_meta.get("channel") or "")
+    conn = str(lab_meta.get("conn") or "")
+    if target or channel:
+        scope = ".".join(part for part in (target, channel) if part)
+        if conn:
+            return f"{record.id} [{scope} {conn}] "
+        return f"{record.id} [{scope}] "
+    return f"{record.id} "

@@ -4,6 +4,7 @@ from copy import deepcopy
 from typing import Any
 
 from test_runner.error_codes import PLAN_VAR_UNRESOLVED, RunError
+from test_runner.lab_context import LabContext
 from test_runner.loop_helpers import loop_index_bindings
 from test_runner.step_executor import StepExecutor
 from test_runner.variables import VariableError, resolve_value
@@ -28,6 +29,7 @@ def dry_resolve(plan: dict[str, Any], vars: dict[str, Any] | None = None) -> dic
     class _Ctx:
         vars = ctx_vars
         step_results: dict[str, Any] = {}
+        lab = LabContext.from_plan(plan)
 
     ctx = _Ctx()
 
